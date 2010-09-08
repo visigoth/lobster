@@ -1,0 +1,42 @@
+Name: lobster
+Version: 0.1
+Description: The Lobster DSL for information flow policies
+License: AllRightsReserved
+License-file: LICENSE
+Cabal-version: >= 1.2
+Build-type: Simple
+Author: Joe Hurd, Brett Letner, Magnus Carlsson
+Maintainer: joe@galois.com, bletner@contractor.galois.com, magnus@galois.com
+
+Library {
+  Build-depends:
+    array >= 0.1.0.0,
+    base >= 2.1.1,
+    containers >= 0.1.0.0,
+    filepath >= 1.1.0.0,
+    fgl >= 5.4.1,
+    haskell98 >= 1.0,
+    mtl >= 1.0.1,
+    parallel
+
+  Exposed-modules:
+-- Lobster abstract syntax, parsing, and compilation into native policy
+    Lobster.Domain
+    Lobster.Monad
+    Lobster.Abs
+    Lobster.ErrM
+    Lobster.Lex
+    Lobster.Par
+    Lobster.Print
+    Lobster.Skel
+    Lobster.Policy
+    Lobster.Symbion
+    Lobster.Syntax
+    Lobster.Version
+    Lobster.Common
+
+-- This is a sledgehammer: not all modules use CPP, but this appears to be
+-- necessary to get any module CPP:ed before shipping it to haddock.
+  extensions: CPP, Generics
+  hs-source-dirs: src
+}
