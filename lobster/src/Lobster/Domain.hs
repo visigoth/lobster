@@ -1,7 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans #-}
-
---  -Werror
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 {- |
 Module      :  $Header$

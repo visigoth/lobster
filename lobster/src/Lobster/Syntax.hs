@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      :  $Header$
 Description :  Lobster abstract syntax

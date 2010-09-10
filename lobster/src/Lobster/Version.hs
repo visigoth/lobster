@@ -1,4 +1,4 @@
-{-# OPTIONS -Wall -Werror -cpp #-}
+{-# OPTIONS -cpp #-}
 
 module Lobster.Version where
 

@@ -1,7 +1,5 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 module Policy where
 
-import Control.Monad
 import System.FilePath((<.>))
 import qualified System.IO
 

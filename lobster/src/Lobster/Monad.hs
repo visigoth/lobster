@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror -cpp #-}
+{-# OPTIONS_GHC -cpp #-}
 {- |
 Module      :  $Header$
 Description :  A custom error monad

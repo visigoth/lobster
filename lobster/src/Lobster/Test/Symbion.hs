@@ -1,5 +1,3 @@
-{-# OPTIONS -Wall -Werror #-}
-
 {- |
 Module      :  $Header$
 Description :  Tests for Symbion graphs and graph predicates.

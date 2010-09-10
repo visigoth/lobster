@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 module Lobster.Common where
 
 import System.Console.GetOpt(getOpt, usageInfo,ArgOrder(..), OptDescr(..), ArgDescr(..))

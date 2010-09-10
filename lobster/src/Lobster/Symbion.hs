@@ -1,5 +1,3 @@
-{-# OPTIONS -Wall -Werror #-}
-
 {- |
 Module      :  $Header$
 Description :  Evaluates graphs and graph predicates.  Used to implement Symbion assertion language.

@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 import qualified Data.Char as Char
 import qualified Data.List as List
