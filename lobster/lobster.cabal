@@ -3,12 +3,12 @@ Version: 0.1
 Description: The Lobster DSL for information flow policies
 License: AllRightsReserved
 License-file: LICENSE
-Cabal-version: >= 1.2
+Cabal-version: >= 1.8.0.6
 Build-type: Simple
 Author: Joe Hurd, Brett Letner, Magnus Carlsson
 Maintainer: joe@galois.com, bletner@contractor.galois.com, magnus@galois.com
 
-Library {
+Library
   Build-depends:
     array >= 0.1.0.0,
     base >= 4.0 && < 5.0,
@@ -42,4 +42,11 @@ Library {
 -- We can't run -Werror on the auto-generated source
 --  ghc-options: -Werror -Wall
   ghc-options: -Wall
-}
+
+
+Executable lobster-parse-test
+  Main-is:        Test.hs
+  hs-source-dirs: src
+  Build-Depends:  base >= 4.0 && < 5.0,
+                  haskell98 >= 1.0,
+                  lobster
