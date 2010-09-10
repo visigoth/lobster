@@ -44,9 +44,17 @@ Library
   ghc-options: -Wall
 
 
-Executable lobster-parse-test
+Executable lobster-parser-test
   Main-is:        Test.hs
-  hs-source-dirs: src
+  hs-source-dirs: testsrc
   Build-Depends:  base >= 4.0 && < 5.0,
+                  haskell98 >= 1.0,
+                  lobster
+
+Executable lobster-test
+  Main-is:        Main.hs
+  hs-source-dirs: testsrc
+  Build-Depends:  filepath >= 1.1.0.0 && <= 1.2,
+                  base >= 4.0 && < 5.0,
                   haskell98 >= 1.0,
                   lobster
