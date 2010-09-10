@@ -39,6 +39,7 @@ Library {
 -- necessary to get any module CPP:ed before shipping it to haddock.
   extensions: CPP, Generics
   hs-source-dirs: src
+-- We can't run -Werror on the auto-generated source
 --  ghc-options: -Werror -Wall
   ghc-options: -Wall
 }
