@@ -4,7 +4,7 @@ Description: The Lobster DSL for information flow policies
 License: AllRightsReserved
 License-file: LICENSE
 Cabal-version: >= 1.8.0.6
-Build-type: Simple
+Build-type: Custom
 Author: Joe Hurd, Brett Letner, Magnus Carlsson
 Maintainer: joe@galois.com, bletner@contractor.galois.com, magnus@galois.com
 
