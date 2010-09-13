@@ -11,7 +11,8 @@ Maintainer: joe@galois.com, bletner@contractor.galois.com, magnus@galois.com
 Library {
   Build-depends:
     array >= 0.1.0.0,
-    base >= 2.1.1,
+--    base >= 2.1.1,
+    base >= 4.0 && <= 5,
     containers >= 0.1.0.0,
     filepath >= 1.1.0.0,
     fgl >= 5.4.1,
