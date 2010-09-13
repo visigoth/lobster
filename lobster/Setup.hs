@@ -1,7 +1,8 @@
 import Distribution.Simple
 import Distribution.Simple.Setup
 import Distribution.Simple.UserHooks
-import Distribution.Simple.Utils (rawSystemExit)
+import Distribution.Simple.Utils ( rawSystemExit, warn, debug )
+import Distribution.Verbosity ( Verbosity )
 
 import System.Directory ( getCurrentDirectory, setCurrentDirectory,
                           removeFile )
@@ -32,11 +33,16 @@ bnfcFiles = [ "src/Lobster/Abs.hs"
 
 bnfc :: Args -> BuildFlags -> IO ()
 bnfc _ flags = do
-  putStr "Running bnfc build"
   let verbosity = (fromFlag $ buildVerbosity flags)
-  mapM_ removeFile bnfcFiles
+  warn verbosity "Running bnfc build"
+  mapM_ (removeFileIfExists verbosity) bnfcFiles
   -- cd src && bnfc -d Lobster/Lobster.cf
   orig <- getCurrentDirectory
   setCurrentDirectory "src"
   rawSystemExit verbosity "bnfc" ["-d", "Lobster/Lobster.cf"]
   setCurrentDirectory orig
+
+removeFileIfExists :: Verbosity -> FilePath -> IO ()
+removeFileIfExists v file = removeFile file `catch`
+                            \e -> debug v ("Could not remove file "++file++
+                                          " due to exception: "++show e)
