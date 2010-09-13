@@ -4,7 +4,8 @@
 ##############################################################################
 
 CABAL = runhaskell Setup.hs
-BNFC  = bnfc
+# BNFC isn't actually used
+# BNFC  = bnfc
 REFPOL = ../Reference-Policy
 
 ifdef PROFILING
