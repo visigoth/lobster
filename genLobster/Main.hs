@@ -8,7 +8,6 @@ import Data.Map (Map)
 import Data.Maybe
 import Data.NonEmptyList(NonEmptyList)
 import Data.Foldable(toList)
-import qualified Data.NonEmptyList as NE
 import Debug.Trace
 import SCD.M4.ModuleFiles
 import SCD.M4.PrettyPrint ()
