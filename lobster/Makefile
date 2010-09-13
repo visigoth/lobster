@@ -12,6 +12,7 @@ CABAL = cabal-dev --sandbox=../cabal-dev
 BNFC_FILES = \
   src/Lobster/Abs.hs \
   src/Lobster/Doc.tex \
+  src/Lobster/Doc.txt \
   src/Lobster/ErrM.hs \
   src/Lobster/Lex.x \
   src/Lobster/Par.y \
