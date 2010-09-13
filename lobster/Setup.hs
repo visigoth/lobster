@@ -1,7 +1,8 @@
 import Distribution.Simple
+import Distribution.Simple.Program.Types
 import Distribution.Simple.Setup
 import Distribution.Simple.UserHooks
-import Distribution.Simple.Utils ( rawSystemExit, warn, debug )
+import Distribution.Simple.Utils ( rawSystemExit, warn, debug, findProgramVersion )
 import Distribution.Verbosity ( Verbosity )
 
 import System.Directory ( getCurrentDirectory, setCurrentDirectory,
@@ -9,8 +10,15 @@ import System.Directory ( getCurrentDirectory, setCurrentDirectory,
 import System.Cmd       ( rawSystem )
 
 
-main = defaultMainWithHooks simpleUserHooks
-       { preBuild = \a b -> bnfc a b >> preBuild simpleUserHooks a b }
+main = do
+  defaultMainWithHooks simpleUserHooks
+       { preBuild = \a b -> bnfc a b >> preBuild simpleUserHooks a b
+       , hookedPrograms = [bnfcProgram] }
+
+bnfcProgram :: Program
+bnfcProgram = (simpleProgram "bnfc") {
+  programFindVersion = findProgramVersion "--numeric-version" id
+  }
 
 bnfcFiles :: [FilePath]
 bnfcFiles = [ "src/Lobster/Abs.hs"

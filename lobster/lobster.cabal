@@ -19,6 +19,9 @@ Library
     mtl >= 1.0.1,
     parallel >= 2.2 && <= 3.0
 
+  Build-tools:
+    bnfc >= 2.4.1.2 && <= 2.5
+
   Exposed-modules:
 -- Lobster abstract syntax, parsing, and compilation into native policy
     Lobster.Domain
