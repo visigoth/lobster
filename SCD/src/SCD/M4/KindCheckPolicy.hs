@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      : $Header$
 Description : Entry point for kind-checking SELinux policies.

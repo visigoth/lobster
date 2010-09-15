@@ -1,4 +1,4 @@
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {- |
 Module      : $Header$
 Description : Tests for M4 dependency analysis

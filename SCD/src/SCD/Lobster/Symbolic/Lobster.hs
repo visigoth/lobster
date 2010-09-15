@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 module SCD.Lobster.Symbolic.Lobster
     ( LobsterAST       -- Generated Lobster AST type
     , readFile         -- Generate AST for a readFile

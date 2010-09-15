@@ -1,5 +1,4 @@
 {-# LANGUAGE ExistentialQuantification, PatternGuards, RankNTypes, FlexibleContexts #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Text.ReadP

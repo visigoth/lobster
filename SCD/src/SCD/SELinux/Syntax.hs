@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      :  $Header$
 Description :  Abstract syntax for SELinux policies

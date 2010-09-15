@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 module Data.MapSet(union, difference, insert, delete, member, lookup,
   lookupWithKey, transitive, fixpoint) where

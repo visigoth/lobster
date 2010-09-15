@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 module System.Posix.Interaction(testProgram, testProcess,Interaction(..),OStream(..)) where
 
 import Control.Concurrent(forkIO,threadDelay)

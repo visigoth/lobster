@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      : $Header$
 Description : Test for quick and dirty Lobster generation

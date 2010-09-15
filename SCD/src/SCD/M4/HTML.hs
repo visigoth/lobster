@@ -1,5 +1,4 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      : $Header$
 Description : HTML generation from Shrimp

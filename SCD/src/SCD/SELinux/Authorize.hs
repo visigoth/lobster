@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      :  $Header$
 Description :  SELinux authorization relation

@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      :  $Header$
 Description :  Tests the SELinux authorization relation

@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      : $Header$
 Description : Tests for Shrimp M4 error suite

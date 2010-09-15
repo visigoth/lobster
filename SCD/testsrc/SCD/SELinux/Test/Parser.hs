@@ -1,5 +1,5 @@
 {-# LANGUAGE FlexibleInstances, GeneralizedNewtypeDeriving, ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 {- |
 Module      :  $Header$
 Description :  Tests the SELinux policy parser

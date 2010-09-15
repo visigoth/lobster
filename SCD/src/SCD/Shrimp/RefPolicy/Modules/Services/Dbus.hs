@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 module SCD.Shrimp.RefPolicy.Modules.Services.Dbus{-(Dbus, UserDbus, dbus, systemBusClientTemplate,
   userBusClientTemplate, readConfig, connectSystemBus, sendSystemBus,

@@ -1,5 +1,4 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 {- |
 Module      :  $Header$
 Description :  SELinux symbol tables

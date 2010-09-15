@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances, GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 {- |
 Module      : $Header$

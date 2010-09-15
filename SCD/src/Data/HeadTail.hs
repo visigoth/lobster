@@ -1,6 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, FunctionalDependencies, 
     FlexibleInstances #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 -- | The HeadTail class used for parsing with either strings or bytestrings.
 module Data.HeadTail(HeadTail(..)) where
 

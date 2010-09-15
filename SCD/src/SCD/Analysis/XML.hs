@@ -1,5 +1,4 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 --module SCD.Analysis.XML where
 
 import Text.XML.Light(parseXML, showElement, strContent, elChildren,

@@ -1,5 +1,5 @@
 {-# LANGUAGE StandaloneDeriving, GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-name-shadowing -fno-warn-orphans #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing -fno-warn-orphans #-}
 {- |
 Module      : $Header$
 Description : Tests for Shrimp's M4 subset parser

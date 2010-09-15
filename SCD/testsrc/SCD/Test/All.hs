@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 import qualified SCD.SELinux.Test.Parser as SELinuxParser
 import qualified SCD.SELinux.Test.Symbol as Symbol
@@ -9,8 +8,8 @@ import qualified SCD.M4.Test.KindCheck as KindCheck
 import qualified SCD.M4.Test.HTML as HTML
 import qualified SCD.M4.Test.ErrorSuite as ErrorSuite
 import qualified SCD.M4.Test.QuickLobster as QuickLobster
-import qualified SCD.Lobster.Test.Policy as Policy
-import qualified SCD.Lobster.Test.Symbion as Symbion
+-- import qualified SCD.Lobster.Test.Policy as Policy
+-- import qualified SCD.Lobster.Test.Symbion as Symbion
 
 import System.FilePath((</>),takeExtension)
 import System.Environment(getArgs)
@@ -60,10 +59,10 @@ main :: IO ()
 main =
     do as <- getArgs
        let cond s m = when (null as || s `elem` as) $ m >> return ()
-       cond "symbion" Symbion.checks
-       cond "lobster"      $ do
-         lobsterPolicies <- getLobsterPolicies
-         Policy.checks lobsterPolicies
+       -- cond "symbion" Symbion.checks
+       -- cond "lobster"      $ do
+       --   lobsterPolicies <- getLobsterPolicies
+       --   Policy.checks lobsterPolicies
        cond "errors"       $ ErrorSuite.checks errorSuiteDirectory
        cond "authorize" $ do
          policy <- SELinuxParser.checks referencePolicyFile

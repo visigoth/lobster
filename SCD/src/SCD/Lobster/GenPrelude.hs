@@ -1,4 +1,3 @@
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 -- | Generate Lobster prelude from Flask information (classes and permissions)
 

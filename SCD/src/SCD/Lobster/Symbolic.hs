@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 
 -- | Generate Lobster policy from symbolic IO execution of a program.
 module SCD.Lobster.Symbolic where

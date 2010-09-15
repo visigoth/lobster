@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 module SCD.Lobster.Symbolic.Combine(combine) where
 
 import Data.Map(Map, insert, findWithDefault)

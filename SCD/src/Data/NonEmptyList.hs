@@ -1,5 +1,4 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
-{-# OPTIONS_GHC -Wall -Werror #-}
 module Data.NonEmptyList where
 
 import Data.Foldable(Foldable(foldr), toList)
