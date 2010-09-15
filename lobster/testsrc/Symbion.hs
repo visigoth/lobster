@@ -14,24 +14,28 @@ Tests for the Lobster/Symbion.hs module
 
 module Symbion where
 
+import Test.Framework.Providers.HUnit
+import Test.Framework.Providers.API ( Test )
+
+import Test.HUnit hiding ( Test )
+
+
 import Lobster.Symbion
 
 --------------------------------------------------------------------------------
 -- Tests.
 --------------------------------------------------------------------------------
 
-checks :: IO ()
-checks = runTests $ ta ++ tb ++ tc ++ td
+testCases :: [Test]
+testCases = map buildCase $ zip [1 .. ] (ta ++ tb ++ tc ++ td)
 
-runTests :: Eq a => [GrPred a] -> IO ()
-runTests ts =  mapM_ runTest $ zip [1 .. ] ts
+-- buildCase :: Eq a => (Int, GrPred a) -> Test
+buildCase (i, tst) = do
+  testCase ("Symbion test #"++ show i) runTst
+  where runTst = case evalGrPred tst of
+                   Ok    -> return ()
+                   Err e -> assertFailure $ "failed:" ++ ppErr e
 
-runTest :: Eq a => (Int, GrPred a) -> IO ()
-runTest (i,p) = do
-  putStr $ "symbion test #" ++ show i ++ " "
-  case evalGrPred p of
-    Ok -> putStrLn "passed."
-    Err e -> error $ "failed:" ++ ppErr e
 
 ga :: LGraph Char
 ga = mkLGraph show [] [('a','a')]

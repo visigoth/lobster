@@ -60,4 +60,7 @@ Executable lobster-test
   Build-Depends:  filepath >= 1.1.0.0 && <= 1.2,
                   base >= 4.0 && < 5.0,
                   haskell98 >= 1.0,
+                  test-framework,
+                  test-framework-hunit,
+                  HUnit >= 1.2.2.1,
                   lobster
