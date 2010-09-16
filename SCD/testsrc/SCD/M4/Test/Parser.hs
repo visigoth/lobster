@@ -16,10 +16,10 @@ import SCD.M4.PrettyPrint()
 import System.Directory(getDirectoryContents)
 import Data.List(isSuffixOf)
 import Control.Monad(when)
-import Test.QuickCheck.Generate(Generate(..), generateArbitrary)
-import Test.QuickCheck(Arbitrary(..))
+import Test.QuickCheck.Generate (Generate(..), generateArbitrary)
+import Test.QuickCheck(Arbitrary(..), CoArbitrary(..))
 import System.Random(StdGen, next, split, random)
-import SCD.SELinux.Test.Parser(test, testParser, Parsable(..))
+import SCD.SELinux.Test.Parser(testN, testParser, Parsable(..))
 import Data.NonEmptyList(NonEmptyList)
 import Prelude hiding (FilePath)
 import qualified System.FilePath as FilePath
@@ -41,14 +41,20 @@ import SCD.SELinux.Syntax(mkId, IsIdentifier, Identifier, ClassId(..),
 
 instance Arbitrary Interface where
   arbitrary = generateArbitrary
+
+instance CoArbitrary Interface where
   coarbitrary = error "Interface.coarbitrary"
 
 instance Arbitrary Implementation where
   arbitrary = generateArbitrary
+
+instance CoArbitrary Implementation where
   coarbitrary = error "Implementation.coarbitrary"
 
 instance Arbitrary FileContexts where
   arbitrary = generateArbitrary
+
+instance CoArbitrary FileContexts where
   coarbitrary = error "FileContexts.coarbitrary"
 
 generateId :: IsIdentifier i => Int -> StdGen -> i
@@ -169,9 +175,9 @@ allDescendantFiles f = do
 checks :: String -> IO ()
 checks directory = do
   putStrLn "\nBegin tests of the M4 interface parser"
-  test 1000 "parseInterface . render . pp" $ testParser parseInterface
-  test 1000 "parseImplementation . render . pp" $ testParser parseImplementation
-  test 1000 "parseFileContexts . render . pp" $ testParser parseFileContexts
+  testN 1000 "parseInterface . render . pp" $ testParser parseInterface
+  testN 1000 "parseImplementation . render . pp" $ testParser parseImplementation
+  testN 1000 "parseFileContexts . render . pp" $ testParser parseFileContexts
   print directory
   c <- filter (\f -> any (`isSuffixOf` f) [".if",".te",".fc"]) `fmap`
        allDescendantFiles directory

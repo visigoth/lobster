@@ -8,8 +8,6 @@ import qualified SCD.M4.Test.KindCheck as KindCheck
 import qualified SCD.M4.Test.HTML as HTML
 import qualified SCD.M4.Test.ErrorSuite as ErrorSuite
 import qualified SCD.M4.Test.QuickLobster as QuickLobster
--- import qualified SCD.Lobster.Test.Policy as Policy
--- import qualified SCD.Lobster.Test.Symbion as Symbion
 
 import System.FilePath((</>),takeExtension)
 import System.Environment(getArgs)
@@ -17,11 +15,13 @@ import Control.Monad(when)
 import Directory(getDirectoryContents)
 import Control.Monad(liftM)
 
+import Test.Framework (defaultMain, testGroup)
+
 referencePolicyFile :: String
 referencePolicyFile = Authorize.testDirectory </> "policy.conf"
 
 policyDirectory :: String
-policyDirectory = "../Reference-Policy/refpolicy"
+policyDirectory = "../../data/Reference-Policy/refpolicy"
 
 modulesDirectory :: String
 modulesDirectory = policyDirectory </> "modules"
@@ -30,7 +30,7 @@ testappDirectory :: String
 testappDirectory = "../SELinux/testapp"
 
 lobsterExamplePoliciesDirectory :: String
-lobsterExamplePoliciesDirectory = "src/SCD/Lobster/Test/examples"
+lobsterExamplePoliciesDirectory = "testsrc/SCD/Lobster/Test/examples"
 
 htmlDirectory :: String
 htmlDirectory = "dist/html"
@@ -53,23 +53,40 @@ getLobsterPolicies = do
     return $ fns ++ [(False,testappPolicy)]
 
 errorSuiteDirectory :: String
-errorSuiteDirectory = "src/SCD/M4/Test/ErrorSuite"
+errorSuiteDirectory = "testsrc/SCD/M4/Test/ErrorSuite"
+
+-- main :: IO ()
+-- main =
+--     do as <- getArgs
+--        let cond s m = when (null as || s `elem` as) $ m >> return ()
+--        -- cond "symbion" Symbion.checks
+--        -- cond "lobster"      $ do
+--        --   lobsterPolicies <- getLobsterPolicies
+--        --   Policy.checks lobsterPolicies
+--        cond "errors"       $ ErrorSuite.checks errorSuiteDirectory
+--        cond "authorize" $ do
+--          policy <- SELinuxParser.checks referencePolicyFile
+--          (policy',symbols) <- Symbol.checks referencePolicyFile policy
+--          Authorize.checks referencePolicyFile policy' symbols
+--        cond "m4parser"     $ M4Parser.checks modulesDirectory
+--        cond "dependencies" $ Dependencies.checks modulesDirectory
+--        cond "kindcheck"    $ KindCheck.checks policyDirectory [testappDirectory </> "testapp"]
+--        cond "html"         $ HTML.checks policyDirectory htmlDirectory
+--        cond "quicklobster" $ QuickLobster.checks policyDirectory lobsterDirectory
 
 main :: IO ()
-main =
-    do as <- getArgs
-       let cond s m = when (null as || s `elem` as) $ m >> return ()
-       -- cond "symbion" Symbion.checks
-       -- cond "lobster"      $ do
-       --   lobsterPolicies <- getLobsterPolicies
-       --   Policy.checks lobsterPolicies
-       cond "errors"       $ ErrorSuite.checks errorSuiteDirectory
-       cond "authorize" $ do
-         policy <- SELinuxParser.checks referencePolicyFile
-         (policy',symbols) <- Symbol.checks referencePolicyFile policy
-         Authorize.checks referencePolicyFile policy' symbols
-       cond "m4parser"     $ M4Parser.checks modulesDirectory
-       cond "dependencies" $ Dependencies.checks modulesDirectory
-       cond "kindcheck"    $ KindCheck.checks policyDirectory [testappDirectory </> "testapp"]
-       cond "html"         $ HTML.checks policyDirectory htmlDirectory
-       cond "quicklobster" $ QuickLobster.checks policyDirectory lobsterDirectory
+main = do
+  defaultMain $ tests
+--   SELinuxParser.checks referencePolicyFile
+  return ()
+
+
+tests = [ testGroup "errors" $
+                    ErrorSuite.testCases errorSuiteDirectory
+        , testGroup "SELinux policy parser" $
+                    SELinuxParser.testCases referencePolicyFile
+        -- , testGroup "authorize" $ do
+        --     policy <- SELinuxParser.checks referencePolicyFile
+        --     (policy',symbols) <- Symbol.checks referencePolicyFile policy
+        --     Authorize.checks referencePolicyFile policy' symbols
+        ]

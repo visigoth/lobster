@@ -12,7 +12,7 @@ module Test.QuickCheck.Generate(
 import GHC.Base(Unit(..), (:*:)(..), (:+:)(..))
 #endif
 import System.Random(StdGen, randomR, split, random, next)
-import Test.QuickCheck(Gen, rand,sized)
+import Test.QuickCheck.Gen ( sized, Gen(..) )
 import Data.Word(Word8, Word16)
 
 -- | Generate random data of given size.  Has generic default methods.
@@ -89,11 +89,14 @@ instance Generate Word8 where
   minLn _ _ = 2
   maxLn _ _ = 2
 
+rand :: Gen StdGen
+rand = MkGen (\r n -> r)
+
 generateArbitrary :: Generate a => Gen a
-generateArbitrary = 
+generateArbitrary =
   do r <- rand
      s <- sized return
-     return (generate s r)               
+     return (generate s r)
 
 -- Local
 

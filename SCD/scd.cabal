@@ -25,7 +25,6 @@ Library
                      regex-compat >= 0.71.0.1,
                      regex-posix >= 0.71,
                      syb >= 0.1.0.0,
-                     QuickCheck == 1.2.0.0,
                      xml >= 1.3.2
                      -- ^ can be removed when bnfc is updated for Data.Char
 
@@ -47,7 +46,6 @@ Library
                      Data.Strict
                      Data.NonEmptyList
                      Data.List.GroupSort
-                     Test.QuickCheck.Fail
 
       -- SCD.Lobster: utilities for interfacing with the Lobster language
                      SCD.Lobster.Utilities
@@ -124,12 +122,17 @@ Executable tests
                      mtl >= 1.0.1,
                      pretty >= 1.0.0.0,
                      process >= 1.0.1.1,
-                     QuickCheck == 1.2.0.0,
+                     QuickCheck >= 2.2,
                      random >= 1.0.0.0,
                      regex-compat >= 0.71.0.1,
                      regex-posix >= 0.71,
                      syb >= 0.1.0.0,
                      xml >= 1.3.2,
+
+                     test-framework,
+                     test-framework-hunit,
+                     test-framework-quickcheck2,
+                     HUnit >= 1.2.2.1,
 
                      scd >= 0.1,
                      lobster >= 0.1

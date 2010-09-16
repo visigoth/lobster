@@ -10,7 +10,7 @@ kind-checks the error suite policy, and then compares the resulting
 parse tree of XML errors versus a golden XML file from the repository.
 -}
 
-module SCD.M4.Test.ErrorSuite (checks) where
+module SCD.M4.Test.ErrorSuite (checks, testCases) where
 
 import SCD.M4.KindCheck          (defaultKindCheckOptions)
 import SCD.M4.KindCheckPolicy    (kcPolicyDoc)
@@ -21,6 +21,34 @@ import System.FilePath           (splitPath, joinPath, dropTrailingPathSeparator
 import Control.Arrow             (second)
 import Text.Regex                (mkRegex, subRegex)
 import Text.XML.Light            (Content(..), Element(..), Attr(..), CData(..), parseXMLDoc, ppTopElement)
+
+import Test.Framework.Providers.HUnit
+import Test.Framework.Providers.API ( Test )
+import Test.HUnit hiding ( Test )
+
+testCases :: FilePath -> [Test]
+testCases path = [testCase "Golden xml comparison" checkXml]
+    where checkXml = do
+            cwd <- getCurrentDirectory
+            let pd         = cwd </> path
+                opts       = defaultOptions{ xmlErrorOutput = True }
+                process    = procXML . parseXMLDoc . cleanup
+
+            (_,xml) <- second procXML `fmap` kcPolicyDoc opts defaultKindCheckOptions pd []
+            refXml  <- process `fmap` readFile (pd </> "ErrorSuite.golden.xml")
+
+            let render = maybe "" ppTopElement
+                failMsg = "FAILED:\n" ++ render xml ++ "\nGolden:\n" ++ render refXml++"\n"
+
+            writeFile "xml.out"   $ render xml
+            writeFile "refXml.out" $ render refXml
+
+            -- Compare the parse tree of the golden XML output (after prepending
+            -- the appropriate parent path) against the parse tree of the
+            -- just-generated XML.  They should be exactly the same.
+
+            assertEqual failMsg xml refXml
+
 
 -- | Verify the resulting errors from parsing and kind-checking the
 -- error suite policy versus the \"golden\" XML file.
