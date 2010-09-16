@@ -85,6 +85,7 @@ tests = [ testGroup "errors" $
                     ErrorSuite.testCases errorSuiteDirectory
         , testGroup "SELinux policy parser" $
                     SELinuxParser.testCases referencePolicyFile
+        , testGroup "Symbol tests" $ Symbol.testCases referencePolicyFile
         -- , testGroup "authorize" $ do
         --     policy <- SELinuxParser.checks referencePolicyFile
         --     (policy',symbols) <- Symbol.checks referencePolicyFile policy
