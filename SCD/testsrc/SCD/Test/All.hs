@@ -15,7 +15,7 @@ import Control.Monad(when)
 import Directory(getDirectoryContents)
 import Control.Monad(liftM)
 
-import Test.Framework (defaultMain, testGroup)
+import Test.Framework (Test, defaultMain, testGroup)
 
 referencePolicyFile :: String
 referencePolicyFile = Authorize.testDirectory </> "policy.conf"
@@ -76,18 +76,22 @@ errorSuiteDirectory = "testsrc/SCD/M4/Test/ErrorSuite"
 
 main :: IO ()
 main = do
-  defaultMain $ tests
+  tests >>= defaultMain
 --   SELinuxParser.checks referencePolicyFile
   return ()
 
-
-tests = [ testGroup "errors" $
-                    ErrorSuite.testCases errorSuiteDirectory
-        , testGroup "SELinux policy parser" $
-                    SELinuxParser.testCases referencePolicyFile
-        , testGroup "Symbol tests" $ Symbol.testCases referencePolicyFile
-        -- , testGroup "authorize" $ do
-        --     policy <- SELinuxParser.checks referencePolicyFile
-        --     (policy',symbols) <- Symbol.checks referencePolicyFile policy
-        --     Authorize.checks referencePolicyFile policy' symbols
-        ]
+tests :: IO [Test]
+tests = do authorizeTests <- Authorize.testCases referencePolicyFile
+           return [ testGroup "errors" $
+                              ErrorSuite.testCases errorSuiteDirectory
+                  , testGroup "SELinux policy parser" $
+                              SELinuxParser.testCases referencePolicyFile
+                  , testGroup "Symbol tests" $
+                              Symbol.testCases referencePolicyFile
+                  , testGroup "Authorize tests" authorizeTests
+--        cond "m4parser"     $ M4Parser.checks modulesDirectory
+--        cond "dependencies" $ Dependencies.checks modulesDirectory
+--        cond "kindcheck"    $ KindCheck.checks policyDirectory [testappDirectory </> "testapp"]
+--        cond "html"         $ HTML.checks policyDirectory htmlDirectory
+--        cond "quicklobster" $ QuickLobster.checks policyDirectory lobsterDirectory
+                  ]

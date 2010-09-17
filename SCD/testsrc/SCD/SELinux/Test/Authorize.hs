@@ -10,7 +10,11 @@ Portability :  portable
 
 Tests the SELinux authorization relation
 -}
-module SCD.SELinux.Test.Authorize where
+module SCD.SELinux.Test.Authorize
+    ( testCases
+    , testDirectory
+    )
+where
 
 {-import Debug.Trace(trace)-}
 
@@ -19,20 +23,29 @@ import qualified System.IO
 import qualified System.IO.Error
 import qualified System.Process
 import qualified Text.ParserCombinators.ReadP as ReadP
-import Control.Monad({-ap,foldM,-}liftM)
+import Control.Monad ({-ap,foldM,-}liftM)
+import Control.Arrow ( left, right )
+import Control.Monad.Error ()
 import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 --import System.Posix.POpen(popen)
 import SCD.SELinux.Syntax
 import SCD.SELinux.Monad
+
+
 import qualified SCD.SELinux.Symbol as Symbol
+import qualified SCD.SELinux.Test.Symbol as Symbol        ( tryBuildSymbolTable )
 import qualified SCD.SELinux.Authorize as Authorize
-import SCD.SELinux.Test.Parser(tryParsePolicyFile{-,parsePolicyFile-})
-import SCD.SELinux.Test.Symbol(tryBuildSymbolTable{-,buildSymbolTable-})
+import qualified SCD.SELinux.Test.Parser as SELinuxParser ( tryParsePolicyFile, parsePolicyFile )
+
+
 import Prelude hiding (FilePath)
 import System.Environment(getEnv)
---import System.IO.Error(catch)
+
+import Test.HUnit                     ( Assertion, assertFailure )
+import Test.Framework.Providers.HUnit ( testCase )
+import Test.Framework                 ( Test, testGroup )
 
 quotify :: String -> String
 quotify x = if elem ' ' x then "'" ++ x ++ "'" else x
@@ -58,28 +71,28 @@ buildAuthorize filename policy symbol =
           auth
 
 tryBuildAuthorizeFile ::
-    String -> IO (Either String (Policy,Symbol.SymbolTable,Authorize.Authorize))
+    String -> IO (Either String (Policy, Symbol.SymbolTable, Authorize.Authorize))
 tryBuildAuthorizeFile filename =
-    do parseResult <- tryParsePolicyFile filename
+    do parseResult <- SELinuxParser.tryParsePolicyFile filename
        case parseResult of
          Left err -> return (Left (err ++ " (parse error)"))
          Right policy ->
-             case tryBuildSymbolTable policy of
+             case Symbol.tryBuildSymbolTable policy of
                Left err -> return (Left (err ++ " (scope error)"))
                Right (policy',symbol) ->
                    case tryBuildAuthorize policy' symbol of
                      Left err -> return (Left (err ++ " (authorization error)"))
                      Right auth -> return (Right (policy',symbol,auth))
 
-buildAuthorizeFile ::
-    String -> IO (Policy,Symbol.SymbolTable,Authorize.Authorize)
-buildAuthorizeFile filename =
-    do buildResult <- tryBuildAuthorizeFile filename
-       case buildResult of
-         Left err ->
-             error ("ERROR: couldn't process policy file " ++
-                    filename ++ ":\n" ++ err)
-         Right p_s_a -> return p_s_a
+-- buildAuthorizeFile ::
+--     String -> IO (Policy, Symbol.SymbolTable, Authorize.Authorize)
+-- buildAuthorizeFile filename =
+--     do buildResult <- tryBuildAuthorizeFile filename
+--        case buildResult of
+--          Left err ->
+--              error ("ERROR: couldn't process policy file " ++
+--                     filename ++ ":\n" ++ err)
+--          Right p_s_a -> return p_s_a
 
 data Command =
     BoolCommand BoolId Bool
@@ -542,7 +555,7 @@ badCheckpolicy pathFilename =
          `orDfa` stringToDfa "Error while expanding policy"
 
 testDirectory :: String
-testDirectory = "src/SCD/SELinux/Test/data"
+testDirectory = "testsrc/SCD/SELinux/Test/data"
 
 confSuffix :: String
 confSuffix = ".conf"
@@ -561,15 +574,15 @@ findPrefixPolicyFiles dir prefix =
                 [(n,s')] -> if s' == confSuffix then Just (n :: Int) else Nothing
                 _ -> Nothing
 
-checkTestPolicy :: String -> IO ()
-checkTestPolicy filename =
-    let pathFilename = testDirectory ++ "/" ++ filename in
-    do putStrLn ("Checking test policy file " ++ filename)
-       (_,symbol,auth) <- buildAuthorizeFile pathFilename
-       putStr ("built the authorization relation for " ++
-               filename ++ ":\n" ++ Authorize.summarize auth)
-       crossCheckpolicy pathFilename (Just (symbol,auth))
-       return ()
+-- checkTestPolicy :: String -> IO ()
+-- checkTestPolicy filename =
+--     let pathFilename = testDirectory ++ "/" ++ filename in
+--     do putStrLn ("Checking test policy file " ++ filename)
+--        (_,symbol,auth) <- buildAuthorizeFile pathFilename
+--        putStr ("built the authorization relation for " ++
+--                filename ++ ":\n" ++ Authorize.summarize auth)
+--        crossCheckpolicy pathFilename (Just (symbol,auth))
+--        return ()
 
 checkAmbiguousPolicy :: String -> IO ()
 checkAmbiguousPolicy filename =
@@ -595,25 +608,63 @@ checkBadPolicy filename =
 
 checkAllPolicies :: IO ()
 checkAllPolicies =
-    do testPolicies <- findPrefixPolicyFiles testDirectory "test"
-       mapM_ checkTestPolicy testPolicies
+    do -- testPolicies <- findPrefixPolicyFiles testDirectory "test"
+       -- mapM_ checkTestPolicy testPolicies
        ambiguousPolicies <- findPrefixPolicyFiles testDirectory "ambiguous"
        mapM_ checkAmbiguousPolicy ambiguousPolicies
        badPolicies <- findPrefixPolicyFiles testDirectory "bad"
        mapM_ checkBadPolicy badPolicies
 
-authorizeTest :: String -> Policy -> Symbol.SymbolTable ->
-                 IO Authorize.Authorize
-authorizeTest filename policy symbol =
-    do let auth = buildAuthorize filename policy symbol
-       putStr ("SUCCESS: built the authorization relation for " ++
-               filename ++ ":\n" ++ Authorize.summarize auth)
-       return auth
+authorizeTest :: String -> Assertion
+authorizeTest filename = do
+  policy <- SELinuxParser.parsePolicyFile filename
+  let result = do
+        (policy', symbols) <- left (showString "Could not initiate authorizeTest: ") $
+                              Symbol.tryBuildSymbolTable policy
+        Authorize.build policy' symbols
+        return ()
+  either assertFailure return result
 
-checks :: String -> Policy -> Symbol.SymbolTable -> IO Authorize.Authorize
-checks filename policy symbol =
-    do putStrLn "\nBegin tests of the SELinux policy authorization relation"
-       checkAllPolicies
-       auth <- authorizeTest filename policy symbol
-       putStrLn "End tests of the SELinux policy authorization relation"
-       return auth
+testPolicies :: IO Test
+testPolicies =
+    do t <- (fmap . map) (\(n, a)->buildTest n a) assertions
+       return $ testGroup "Check Test Policies" t
+    where
+      assertions :: IO [(String, Assertion)]
+      assertions = (fmap . map) (\name->(name, buildAssertion name)) testPolicies
+
+      testPolicies :: IO [String]
+      testPolicies = findPrefixPolicyFiles testDirectory "test"
+
+      buildTest :: String -> Assertion -> Test
+      buildTest filename assertion = testCase ("Check file: " ++ filename) assertion
+
+      buildAssertion :: String -> Assertion
+      buildAssertion filename =
+              let pathFilename = (testDirectory ++ "/" ++ filename) in
+              do
+                 tryResult <- tryBuildAuthorizeFile pathFilename
+                 case tryResult of
+                   Left err              -> assertFailure err
+                   Right (_,symbol,auth) -> crossCheckpolicy pathFilename (Just (symbol,auth))
+
+testCases :: String -> IO [Test]
+testCases filename = do pTests <- testPolicies
+                        return [ testGroup "Check All Policies"
+                                               [ pTests
+                 -- ambiguousPolicies <- findPrefixPolicyFiles testDirectory "ambiguous"
+                 -- mapM_ checkAmbiguousPolicy ambiguousPolicies
+                 -- badPolicies <- findPrefixPolicyFiles testDirectory "bad"
+                 -- mapM_ checkBadPolicy badPolicies
+                                               ]
+                               , testCase ("Test authorization relation for "++filename) $
+                                          authorizeTest filename
+                               ]
+
+-- checks :: String -> Policy -> Symbol.SymbolTable -> IO Authorize.Authorize
+-- checks filename policy symbol =
+--     do putStrLn "\nBegin tests of the SELinux policy authorization relation"
+--        checkAllPolicies
+--        auth <- authorizeTest filename policy symbol
+--        putStrLn "End tests of the SELinux policy authorization relation"
+--        return auth
