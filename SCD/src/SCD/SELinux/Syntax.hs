@@ -90,6 +90,7 @@ instance Data Identifier where
   toConstr = undefined
   dataTypeOf = undefined
 
+-- | Ignore the position information when comparing Identifiers.
 instance Eq Identifier where
   I _ s1 == I _ s2 = s1 == s2
 

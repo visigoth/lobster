@@ -8,7 +8,7 @@ Copyright   : (c) Galois, Inc.
 Shrimp error types and pretty-printing
 -}
 
-module SCD.M4.Errors(Error(..), occurrences, flatten, distribute,
+module SCD.M4.Errors(Error(..), nubError, occurrences, flatten, distribute,
   errorsByType) where
 
 import SCD.M4.Syntax(IfdefId, M4Id, LayerModule, ModuleId)
@@ -29,8 +29,8 @@ import Text.PrettyPrint.Pp(Pp, pp, pnest, above)
 import Data.Set(Set)
 import Data.Map(assocs, empty, insertWith, Map)
 import Data.Foldable(toList)
-import Data.List(intersperse)
-import Data.List.GroupSort(groupSort)
+import Data.List           (intersperse, nub)
+import Data.List.GroupSort (groupSort)
 
 import Data.Generics(Data, Typeable, toConstr, constrIndex, ConIndex)
 
@@ -96,6 +96,13 @@ flatten = flip flat [] where
   flat (ErrorsIn _ es:l) r = flat es (flat l r)
   flat (e:l)             r = e:flat l r
   flat []                r = r
+
+nubError :: [Error] -> [Error]
+nubError es = nub $ map nubErrorsIn es
+
+nubErrorsIn :: Error -> Error
+nubErrorsIn (ErrorsIn x es) = ErrorsIn x $ nubError es
+nubErrorsIn x               = x
 
 distribute :: [Error] -> [Error]
 distribute = concatMap dist where

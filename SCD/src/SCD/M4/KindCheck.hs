@@ -34,10 +34,12 @@ module SCD.M4.KindCheck
        , T, P, Env
        ) where
 
+-- import Debug.Trace ( trace )
+
 import SCD.M4.Kind
 import SCD.M4.KindInfo
 
-import SCD.M4.Errors(Error(..))
+import SCD.M4.Errors(Error(..), nubError)
 
 import SCD.M4.Syntax(IfdefId, LevelId, MlsRange(..), M4Id,
   LayerModule, Policy(..), PolicyModule(..), Interface(..),
@@ -82,7 +84,7 @@ import Data.Set(Set)
 import Data.Graph(SCC(..), graphFromEdges, dfs)
 import Data.Foldable(Foldable, mapM_, toList, foldlM)
 
-import Data.List(genericLength,partition)
+import Data.List   ( genericLength, partition )
 import Data.Monoid(Monoid)
 
 import Control.Arrow(first)
@@ -122,11 +124,13 @@ type T a = P Env [Error] KindInfo a
 
 runT :: Options -> KindCheckOptions -> T a -> ((a,KindInfo),[Error])
 runT os kcOpts t
-  = getRes $ runP t emptyKindInfo iEnv
+  = getRes $ compRes $ runP t emptyKindInfo iEnv
   where
     getRes (a,errs)
      | not (emitErrors kcOpts) = (length errs) `seq` (a,[])
      | otherwise = (a,errs)
+
+    compRes (a, errs) = (a, nubError errs)
 
     iEnv =
       Env{ base            = Map.empty
@@ -792,7 +796,7 @@ substMap al getI rm = do
 
 substId :: [[SignedId Identifier]] -> Identifier -> T [Identifier]
 substId al i = do
-  mapM_ (checkNoM4 i) (fst fs:map snd (snd fs))
+  mapM_ (checkNoM4 i) $ fst fs:map snd (snd fs)
   return $
     case wholeFragments fs of
      Just n -> fromMaybe [] (lookup n am)
