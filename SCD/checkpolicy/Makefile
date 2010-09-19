@@ -4,7 +4,8 @@
 PREFIX ?= $(DESTDIR)/usr
 BINDIR ?= $(PREFIX)/bin
 MANDIR ?= $(PREFIX)/share/man
-LIBDIR ?= $(PREFIX)/lib
+# LIBDIR ?= $(PREFIX)/lib
+LIBDIR ?= ../libsepol-2.0.41/src/
 INCLUDEDIR ?= $(PREFIX)/include
 TARGETS = checkpolicy checkmodule
 

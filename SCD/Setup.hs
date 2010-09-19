@@ -8,30 +8,30 @@ import Distribution.PackageDescription (PackageDescription(..))
 import Distribution.Simple.LocalBuildInfo (LocalBuildInfo(..), InstallDirs(..), absoluteInstallDirs)
 
 main = defaultMainWithHooks simpleUserHooks
-    { preConf = \a b -> make a b >> preConf simpleUserHooks a b
-    , preClean = \a b -> makeClean a b >> preClean simpleUserHooks a b
+    { preConf = \a b -> make libsepolSrcPath a b >> make checkPolicySrcPath a b >> preConf simpleUserHooks a b
+    , preClean = \a b -> makeClean libsepolSrcPath a b >> makeClean checkPolicySrcPath a b >> preClean simpleUserHooks a b
     }
 
 -- | The location of the native source, relative to the project root:
-nativeCodePath :: FilePath
-nativeCodePath = "checkpolicy"
+checkPolicySrcPath :: FilePath
+checkPolicySrcPath = "checkpolicy"
 
-nativeBuildDir :: FilePath -> FilePath
-nativeBuildDir cabalDir = cabalDir++"/dist/"++nativeCodePath
+libsepolSrcPath :: FilePath
+libsepolSrcPath = "libsepol-2.0.41"
 
-make :: Args -> ConfigFlags -> IO ()
-make _ flags = do
+make :: FilePath -> Args -> ConfigFlags -> IO ()
+make dir _ flags = do
   let verbosity = (fromFlag $ configVerbosity flags)
   cabalDir <- getCurrentDirectory
-  setCurrentDirectory nativeCodePath
+  setCurrentDirectory dir
   rawSystemLog verbosity "make" []
   setCurrentDirectory cabalDir
 
-makeClean :: Args -> CleanFlags -> IO ()
-makeClean _ flags = do
+makeClean :: FilePath -> Args -> CleanFlags -> IO ()
+makeClean dir _ flags = do
   let verbosity = (fromFlag $ cleanVerbosity flags)
   origDir <- getCurrentDirectory
-  setCurrentDirectory nativeCodePath
+  setCurrentDirectory dir
   rawSystemLog verbosity "make" ["clean"]
   setCurrentDirectory origDir
 
