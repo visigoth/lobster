@@ -12,7 +12,7 @@ YACC = bison -y
 
 CFLAGS ?= -g -Wall -Werror -Wshadow -O2 -pipe -fno-strict-aliasing
 
-override CFLAGS += -I. -I${INCLUDEDIR} -I./libsepol-2.0.41/include
+override CFLAGS += -I. -I${INCLUDEDIR} -I../libsepol-2.0.41/include
 
 CHECKOBJS = y.tab.o lex.yy.o queue.o module_compiler.o parse_util.o \
 	    policy_define.o
@@ -24,7 +24,7 @@ LDLIBS=$(LIBDIR)/libsepol.a -lfl
 GENERATED=lex.yy.c y.tab.c y.tab.h
 
 all:  $(TARGETS)
-	$(MAKE) -C test
+#	$(MAKE) -C test
 
 checkpolicy: $(CHECKPOLOBJS)
 
