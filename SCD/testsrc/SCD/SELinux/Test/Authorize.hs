@@ -492,8 +492,7 @@ genCheckpolicyCommand interactive filename = do
            const (return "checkpolicy/checkpolicy")
        rootDir <-
            getEnv "SCDROOTDIR" `catch`
-           const (return ".")
---           const (return "dev/scd/SCD")
+           const (return "dev/scd/SCD")
        plat <- platform
        let command ssh = policyProgram : (if interactive then ["-d"] else []) ++
                          [(if ssh then rootDir ++ "/" else "") ++ filename]
