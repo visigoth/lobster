@@ -4,11 +4,14 @@ import Distribution.Simple
 import Distribution.Verbosity
 import Distribution.Simple.Setup
 import Distribution.Simple.Utils (rawSystemExit, rawSystemStdout, info, warn, debug)
+import Distribution.System ( buildOS, OS(Linux) )
 import Distribution.PackageDescription (PackageDescription(..))
 import Distribution.Simple.LocalBuildInfo (LocalBuildInfo(..), InstallDirs(..), absoluteInstallDirs)
 
+
+
 main = defaultMainWithHooks simpleUserHooks
-    { preConf = \a b -> make libsepolSrcPath a b >> make checkPolicySrcPath a b >> preConf simpleUserHooks a b
+    { preConf = \a b -> compileCheckpolicy a b >> preConf simpleUserHooks a b
     , preClean = \a b -> makeClean libsepolSrcPath a b >> makeClean checkPolicySrcPath a b >> preClean simpleUserHooks a b
     }
 
@@ -18,6 +21,17 @@ checkPolicySrcPath = "checkpolicy"
 
 libsepolSrcPath :: FilePath
 libsepolSrcPath = "libsepol-2.0.41"
+
+-- | Conditionally compiles libsepol and checkpolicy, dependant on the
+-- OS of the build machine.  checkpolicy doesn't build on OS X due to
+-- Endianess issues, but it is only used for testing, so we can safely
+-- skip it.
+compileCheckpolicy :: Args -> ConfigFlags -> IO ()
+compileCheckpolicy a b = do
+  case buildOS of
+    Linux -> make libsepolSrcPath a b >> make checkPolicySrcPath a b
+    _     -> return ()
+
 
 make :: FilePath -> Args -> ConfigFlags -> IO ()
 make dir _ flags = do

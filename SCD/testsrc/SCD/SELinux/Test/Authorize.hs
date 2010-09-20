@@ -515,9 +515,7 @@ crossCheckpolicy ::
 crossCheckpolicy pathFilename symbol_auth =
     do commands <- readCommands pathFilename
        checkpolicy <- crossCheckpolicyCommand pathFilename
-{-
-       putStrLn (concat (List.intersperse " " (map quotify checkpolicy)))
--}
+--       putStrLn (concat (List.intersperse " " (map quotify checkpolicy)))
        (inp,out,_,_) <-
            System.Process.runInteractiveProcess
              (head checkpolicy) (tail checkpolicy) Nothing Nothing
