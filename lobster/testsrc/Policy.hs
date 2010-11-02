@@ -44,11 +44,14 @@ lobsterExamplePoliciesDirectory = "test/examples"
 testappPolicy :: String
 testappPolicy = testappDirectory </> "testapp.lsr"
 
+-- | Retrieves all the tests from the test/examples directory,
+-- creating a @(True, <path>)@ entry for all files named
+-- @exampleN.lsr@ and a @(False, <path>)@ entry for all files named
+-- @errorN.lsr@
 getLobsterExamplePolicies :: IO [(Bool,FilePath)]
 getLobsterExamplePolicies = do
     fns <- getDirectoryContents lobsterExamplePoliciesDirectory
     return (map rejoin $ List.sort $ Maybe.mapMaybe split fns)
-
   where
     split :: String -> Maybe (String,Int,String,String)
     split f =
