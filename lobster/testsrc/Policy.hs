@@ -38,10 +38,10 @@ checkPolicy (shouldFail, testPolicyFilename) =
          Left e  -> if shouldFail
                      then return ()
                      else do
-                       error $ "should have failed on " ++ testPolicyFilename ++ "\n"
+                       error $ "should have succeeded on " ++ testPolicyFilename ++ "\n"
                              ++ "Output: \n" ++ e
          Right _ -> if shouldFail
-                     then error $ "should have succeeded on " ++ testPolicyFilename
+                     then error $ "should have failed on " ++ testPolicyFilename
                      else return ()
 
 testappDirectory :: String
