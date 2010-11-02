@@ -34,10 +34,19 @@ buildCase (i, params) = do
 checkPolicy :: (Bool, FilePath) -> IO ()
 checkPolicy (shouldFail, testPolicyFilename) =
     do succeeded <- testPolicy testPolicyFilename
-       if succeeded /= shouldFail then return ()
-          else error $ "ERROR: should have " ++
-                       (if shouldFail then "failed" else "succeeded") ++
-                       " on " ++ testPolicyFilename
+       case succeeded of
+         Left e  -> if shouldFail
+                     then return ()
+                     else do
+                       error $ "should have failed on " ++ testPolicyFilename ++ "\n"
+                             ++ "Output: \n" ++ e
+         Right _ -> if shouldFail
+                     then error $ "should have succeeded on " ++ testPolicyFilename
+                     else return ()
+       -- if succeeded /= shouldFail then return ()
+       --    else error $ "should have " ++
+       --                 (if shouldFail then "failed" else "succeeded") ++
+       --                 " on " ++ testPolicyFilename
 
 testappDirectory :: String
 testappDirectory = "../SELinux/testapp"
@@ -79,17 +88,19 @@ getLobsterPolicies = do
 -- | Test a lobster file to see if it will parse, interpret, and
 -- flatten.  This is a wrapper around 'checkFile' that catches
 -- exceptions and transforms them into @False@ return values.
-testPolicy :: FilePath -> IO Bool
-testPolicy file = catch (checkFile file) ((\_->return False)::SomeException -> IO Bool)
+testPolicy :: FilePath -> IO (Either String ())
+testPolicy file = catch (checkFile file) handler
+    where handler :: SomeException -> IO (Either String ())
+          handler e = return $ Left (show e)
 
 -- | Attempt to parse, interpret, and flatten a lobster source file.
 -- Throws exceptions in some failure cases.
-checkFile :: FilePath -> IO Bool
+checkFile :: FilePath -> IO (Either String ())
 checkFile file = do
   policy <- P.parsePolicyFile file
   let (es, domain) = P.interpretPolicy policy
   case lefts es of
     [] -> case runP (P.flattenDomain domain ) of
-            Left  _ -> return False
-            Right _ -> return True
-    _  -> return False
+            Left  e -> return $ Left e
+            Right _ -> return $ Right ()
+    xs  -> return $ Left (unlines xs)
