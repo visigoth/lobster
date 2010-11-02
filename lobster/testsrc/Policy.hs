@@ -4,6 +4,10 @@ import System.FilePath((<.>))
 import Directory(getDirectoryContents)
 import System.FilePath((</>))
 
+import Prelude hiding (catch)
+import Control.Exception (catch, SomeException)
+import Data.Either (lefts)
+
 import qualified System.IO
 import qualified Data.Char as Char
 import qualified Data.List as List
@@ -71,60 +75,21 @@ getLobsterPolicies = do
     fns <- getLobsterExamplePolicies
     return $ fns ++ [(False,testappPolicy)]
 
-parsePolicyFile :: FilePath -> IO (Maybe Policy)
-parsePolicyFile filename =
-    do chars <- readFile filename
-       let toks = Lex.tokens chars
-       case Par.pPolicy toks of
-         ErrM.Bad e ->
-             do putStr ("ERROR: unable to parse " ++ filename ++ ":\n" ++
-                        e ++ "\n")
-                return Nothing
-         ErrM.Ok policy ->
-             do putStr ("SUCCESS: parsed " ++ filename ++ "\n")
-                return (Just policy)
 
-interpretPolicy :: FilePath -> Policy -> IO (Maybe ([String],Domain))
-interpretPolicy filename policy =
-    case runP (P.toDomain policy) of
-      Left e ->
-          do putStr ("ERROR: couldn't interpret " ++ filename ++ ":\n" ++
-                     e ++ "\n")
-             return Nothing
-      Right (eexs,domain) ->
-          do sequence_ [ putStrLn x | Right x <- eexs ]
-             putStr ("SUCCESS: interpreted " ++ filename ++ "\n")
-             System.IO.writeFile
-               (filename <.> "lobster")
-               (P.prettyPrintDomain domain)
-             return (Just ([ e | Left e <- eexs ],domain))
-
-flattenDomain :: FilePath -> Domain -> IO (Maybe Domain)
-flattenDomain filename domain =
-    case runP (P.flattenDomain domain) of
-      Left e ->
-          do putStr ("ERROR: couldn't flatten " ++ filename ++ ":\n" ++
-                     e ++ "\n")
-             return Nothing
-      Right domain' ->
-          do putStr ("SUCCESS: flattened " ++ filename ++ "\n")
-             System.IO.writeFile
-               (filename <.> "flatten")
-               (P.prettyPrintDomain domain')
-             return (Just domain')
-
+-- | Test a lobster file to see if it will parse, interpret, and
+-- flatten.  This is a wrapper around 'checkFile' that catches
+-- exceptions and transforms them into @False@ return values.
 testPolicy :: FilePath -> IO Bool
-testPolicy testPolicyFilename =
-    do mpolicy <- parsePolicyFile testPolicyFilename
-       case mpolicy of
-         Nothing -> return False
-         Just policy ->
-             do mx <- interpretPolicy testPolicyFilename policy
-                case mx of
-                  Just ([],domain) ->
-                      do mdomain <- flattenDomain testPolicyFilename domain
-                         case mdomain of
-                           Nothing -> return False
-                           Just _ -> return True
-                  _ -> return False
+testPolicy file = catch (checkFile file) ((\_->return False)::SomeException -> IO Bool)
 
+-- | Attempt to parse, interpret, and flatten a lobster source file.
+-- Throws exceptions in some failure cases.
+checkFile :: FilePath -> IO Bool
+checkFile file = do
+  policy <- P.parsePolicyFile file
+  let (es, domain) = P.interpretPolicy policy
+  case lefts es of
+    [] -> case runP (P.flattenDomain domain ) of
+            Left  _ -> return False
+            Right _ -> return True
+    _  -> return False
