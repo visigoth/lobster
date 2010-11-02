@@ -5,10 +5,10 @@ class A() {
 }
 
 class B() {
-  port out : { type = input };
+  port in : { type = input };
 }
 
 domain a = A();
 domain b = B();
 
-a.in --> b.out;
+a.in --> b.in;
