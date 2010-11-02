@@ -21,6 +21,7 @@ module Lobster.Domain
   , singletonPortType
   , lookupPortType
   , unifyPortType
+  , directionPortType
   , prettyPrintPortType
   , DomainId
   , domainDomainPort
@@ -258,6 +259,12 @@ connectablePortType connectable (PortType m1) pt2 =
     where
       check (f,v) = connectableFlowPortType connectable f v pt2
 
+directionPortType :: PortType a -> Maybe Direction
+directionPortType pt = 
+    case lookupPortType pt Syntax.directionFlow of
+      Just (Direction d) -> Just d
+      _                  -> Nothing
+
 prettyPrintPortType :: (a -> String) -> PortType a -> String
 prettyPrintPortType v2s (PortType m) =
     "{" ++ List.intercalate ", " (map pp (Map.toList m)) ++ "}"
@@ -268,14 +275,14 @@ prettyPrintPortType v2s (PortType m) =
 -- Port directions.
 --------------------------------------------------------------------------------
 
-directionPortType :: Direction -> PortType a
-directionPortType d = singletonPortType Syntax.directionFlow (Direction d)
 
 originPortType :: Connection -> PortType a
 originPortType c =
     case originDirection c of
-      Just d -> directionPortType d
+      Just d -> mkDirPortType d
       Nothing -> anyPortType
+  where mkDirPortType :: Direction -> PortType a
+        mkDirPortType d = singletonPortType Syntax.directionFlow (Direction d)
 
 --------------------------------------------------------------------------------
 -- Subdomain IDs.

@@ -47,8 +47,9 @@ module Lobster.Policy
   , interpretPolicy
   , parsePolicyFile
   , PortTypeValue(..)
-  , positionPortType
   , PortType(..)
+  , positionPortType
+  , directionPortType
   , prettyPrintPortType
   )
 
@@ -424,13 +425,15 @@ anyPortType = PortType Domain.anyPortType
 singletonPortType :: FlowId -> Domain.PortTypeValue PortTypeValue -> PortType
 singletonPortType f v = PortType (Domain.singletonPortType f v)
 
-lookupPortType ::
-    PortType -> FlowId -> Maybe (Domain.PortTypeValue PortTypeValue)
+lookupPortType :: PortType -> FlowId -> Maybe (Domain.PortTypeValue PortTypeValue)
 lookupPortType (PortType pt) f = Domain.lookupPortType pt f
 
 unifyPortType :: PortType -> PortType -> PortType
 unifyPortType (PortType pt1) (PortType pt2) =
     PortType (Domain.unifyPortType unifyPortTypeValue pt1 pt2)
+
+directionPortType :: PortType -> Maybe Direction
+directionPortType (PortType pt) = Domain.directionPortType pt
 
 prettyPrintPortType :: PortType -> String
 prettyPrintPortType (PortType pt) =
