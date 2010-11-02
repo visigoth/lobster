@@ -43,10 +43,6 @@ checkPolicy (shouldFail, testPolicyFilename) =
          Right _ -> if shouldFail
                      then error $ "should have succeeded on " ++ testPolicyFilename
                      else return ()
-       -- if succeeded /= shouldFail then return ()
-       --    else error $ "should have " ++
-       --                 (if shouldFail then "failed" else "succeeded") ++
-       --                 " on " ++ testPolicyFilename
 
 testappDirectory :: String
 testappDirectory = "../SELinux/testapp"
