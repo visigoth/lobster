@@ -1,3 +1,5 @@
+// this was example5.lsr, but it was discovered to be buggy.
+
 class C () {
   port port3 : { position = subject };
 }
@@ -8,7 +10,7 @@ class D () {
 }
 
 class A () {
-    port port1 : { position = subject };
+    port port1 : { position = object };
 
     domain domainC = C ();
     domain domainD = D ();

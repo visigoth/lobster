@@ -41,8 +41,8 @@ class InternetC() {
   port io : {position=object};
   domain vscan2 = Checker2();
   domain fireWall = FireWall();
-  io --> vscan2.in;
-  vscan2.out --> fireWall.ext;
+  io <--> vscan2.in;
+  vscan2.out <--> fireWall.ext;
   fireWall.intR -- read;
   fireWall.intW -- write;
 }
@@ -90,8 +90,8 @@ domain internet = InternetC();
 
 
 secret.write --> high.read;
-high.write --> encrypt.in;
-encrypt.out --> logger.in;
+high.write <--> encrypt.in;
+encrypt.out <--> logger.in;
 internet.write -- logger.in;
 low.write --> secret.read;
 low.write --> internet.read;
