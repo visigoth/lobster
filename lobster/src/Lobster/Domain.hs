@@ -245,13 +245,13 @@ addPortType uv f v (PortType m) =
                Nothing -> v in
     PortType (Map.insert f v' m)
 
-unifyPortType :: Show a => (a -> a -> Maybe a) -> PortType a -> PortType a -> PortType a
+unifyPortType ::(a -> a -> Maybe a) -> PortType a -> PortType a -> PortType a
 unifyPortType uv (PortType m1) pt2 =
     foldr add pt2 (Map.toList m1)
     where
       add (f,v) pt = addPortType uv f v pt
 
-connectableFlowPortType :: Show a =>
+connectableFlowPortType ::
     (a -> a -> Bool) -> FlowId -> PortTypeValue a -> PortType a -> Bool
 connectableFlowPortType connectable f v (PortType m) =
     -- The bug is here! (or at least a contributing factor).  The
@@ -269,7 +269,7 @@ connectableFlowPortType connectable f v (PortType m) =
 -- is symmetric, then connectablePortType will also be symmetric.
 -- 
 -- TODO ERC: This is a prime candidate for random testing
-connectablePortType :: Show a => (a -> a -> Bool) -> PortType a -> PortType a -> Bool
+connectablePortType :: (a -> a -> Bool) -> PortType a -> PortType a -> Bool
 connectablePortType connectable (PortType m1) pt2@(PortType m2) =
     all consistent (Map.elems m2) && all check (Map.toList m1)
     where
