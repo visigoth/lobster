@@ -156,6 +156,7 @@ invertDirection d =
       OutputDirection -> InputDirection
       BidirectionalDirection -> BidirectionalDirection
 
+-- | Check to see if two directions can be connected to eachother.
 connectableDirection :: Direction -> Direction -> Bool
 connectableDirection d1 d2 = d2 == invertDirection d1
 
@@ -175,6 +176,10 @@ data PortTypeValue a =
   | Direction Direction
   | Value a
   deriving (Eq, Show, Ord)
+
+consistent :: PortTypeValue a -> Bool
+consistent Inconsistent = False
+consistent _            = True
 
 instance NFData a => NFData (PortTypeValue a) where
   rnf x = case x of
@@ -240,22 +245,33 @@ addPortType uv f v (PortType m) =
                Nothing -> v in
     PortType (Map.insert f v' m)
 
-unifyPortType :: (a -> a -> Maybe a) -> PortType a -> PortType a -> PortType a
+unifyPortType :: Show a => (a -> a -> Maybe a) -> PortType a -> PortType a -> PortType a
 unifyPortType uv (PortType m1) pt2 =
-    foldr add pt2 (Map.toList m1)
+    Debug.trace ("pt2: "++show pt2++"\n m1: "++(show $ Map.toList m1)) $ foldr add pt2 (Map.toList m1)
     where
       add (f,v) pt = addPortType uv f v pt
 
-connectableFlowPortType ::
+connectableFlowPortType :: Show a =>
     (a -> a -> Bool) -> FlowId -> PortTypeValue a -> PortType a -> Bool
 connectableFlowPortType connectable f v (PortType m) =
-    case Map.lookup f m of
-      Just v' -> connectablePortTypeValue connectable v v'
-      Nothing -> True
+    -- The bug is here! (or at least a contributing factor).  The
+    -- incoming port type valaue is 'Inconsistent', which would fail
+    -- to be connectable to any PortType value, however, the incomming
+    -- port type *has no port type values* so no comparisons are done,
+    -- and this returns True.
+    consistent v && checkMap
+     where checkMap = case Map.lookup f m of
+                        Just v' -> connectablePortTypeValue connectable v v'
+                        Nothing -> True
 
-connectablePortType :: (a -> a -> Bool) -> PortType a -> PortType a -> Bool
-connectablePortType connectable (PortType m1) pt2 =
-    all check (Map.toList m1)
+-- | connectablePortType determines if two 'PortType's are compatible
+-- (can pass data from one to the other).  If the connectable relation
+-- is symmetric, then connectablePortType will also be symmetric.
+-- 
+-- TODO ERC: This is a prime candidate for random testing
+connectablePortType :: Show a => (a -> a -> Bool) -> PortType a -> PortType a -> Bool
+connectablePortType connectable (PortType m1) pt2@(PortType m2) =
+    all consistent (Map.elems m2) && all check (Map.toList m1)
     where
       check (f,v) = connectableFlowPortType connectable f v pt2
 
