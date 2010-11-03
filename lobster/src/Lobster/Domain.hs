@@ -247,7 +247,7 @@ addPortType uv f v (PortType m) =
 
 unifyPortType :: Show a => (a -> a -> Maybe a) -> PortType a -> PortType a -> PortType a
 unifyPortType uv (PortType m1) pt2 =
-    Debug.trace ("pt2: "++show pt2++"\n m1: "++(show $ Map.toList m1)) $ foldr add pt2 (Map.toList m1)
+    foldr add pt2 (Map.toList m1)
     where
       add (f,v) pt = addPortType uv f v pt
 
