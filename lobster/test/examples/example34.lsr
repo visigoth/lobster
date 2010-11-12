@@ -35,4 +35,7 @@ encrypt.active --> internet.readwrite;
 assert [internet.*] -> [high.*] :: exists;
 assert [low.*] -> [high.*] :: exists;
 
+// all paths from high to low must go through the three specified
+// domains in the specified order, but no other aspects of the route are
+// constrained.
 assert [high.*] -> [low.*] :: .* [logger.*] .* [logfile.*] .* [encrypt.*] .*;
