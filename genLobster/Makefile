@@ -21,5 +21,5 @@ install: build
 
 .PHONY: test
 test: install
-#	time genLobster --multiple dist/test/refpolicy ../../data/Reference-Policy/refpolicy
+	time genLobster --multiple dist/test/refpolicy ../../data/Reference-Policy/refpolicy
 	for i in dist/test/refpolicy/*.lsr; do lobster-validate $$i || echo $$i failed; done
