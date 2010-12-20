@@ -284,7 +284,7 @@ data TokenConstructor =
  | EQUAL
 --
  | Error String
- deriving (Typeable, Data, Read, Show, Eq, Ord)
+ deriving (Read, Show, Eq, Ord)
 
 type Action = AlexPosn -> String -> Token
 
