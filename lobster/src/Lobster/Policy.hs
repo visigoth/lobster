@@ -56,7 +56,7 @@ module Lobster.Policy
 where
 
 import Control.Monad(foldM)
-import Control.Parallel.Strategies
+import Control.DeepSeq
 
 import qualified Data.Char as Char
 import qualified Data.List as List

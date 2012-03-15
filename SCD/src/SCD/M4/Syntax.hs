@@ -82,19 +82,19 @@ deriving instance Eq Content
 deriving instance Eq Element
 deriving instance Eq CData
 
-deriving instance Typeable Content
-deriving instance Typeable Attr
-deriving instance Typeable Element
-deriving instance Typeable CData
-deriving instance Typeable CDataKind
-deriving instance Typeable QName
-
-deriving instance Data Content
-deriving instance Data Attr
-deriving instance Data Element
-deriving instance Data CData
-deriving instance Data CDataKind
-deriving instance Data QName
+-- deriving instance Typeable Content
+-- deriving instance Typeable Attr
+-- deriving instance Typeable Element
+-- deriving instance Typeable CData
+-- deriving instance Typeable CDataKind
+-- deriving instance Typeable QName
+-- 
+-- deriving instance Data Content
+-- deriving instance Data Attr
+-- deriving instance Data Element
+-- deriving instance Data CData
+-- deriving instance Data CDataKind
+-- deriving instance Data QName
 #endif
 
 -- | M4 meta variables $0..$9, $*.

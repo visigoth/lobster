@@ -59,7 +59,7 @@ module Lobster.Domain
   ) where
 
 import Control.Monad(liftM,foldM)
-import Control.Parallel.Strategies -- contributes NFData?
+import Control.DeepSeq
 
 --import qualified Data.Char as Char
 import qualified Data.List as List
