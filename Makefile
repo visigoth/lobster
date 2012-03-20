@@ -1,6 +1,6 @@
 
 .PHONY: lobster lobster-selinux lobster-xsm lobster-validate genLobster
-.PHONY: scd shrimp
+.PHONY: scd shrimp lviz
 
 all : nolviz lviz
 
