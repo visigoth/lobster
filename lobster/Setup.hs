@@ -10,6 +10,9 @@ import System.Directory ( getCurrentDirectory, setCurrentDirectory,
                           removeFile )
 import System.Cmd       ( rawSystem )
 
+import Prelude hiding (catch)
+
+import Control.Exception (catch, SomeException)
 
 main = do
   defaultMainWithHooks simpleUserHooks
@@ -56,6 +59,7 @@ removeBnfcFiles verbosity = do
   mapM_ (removeFileIfExists verbosity) bnfcFiles
 
 removeFileIfExists :: Verbosity -> FilePath -> IO ()
-removeFileIfExists v file = removeFile file `catch`
-                            \e -> debug v ("Could not remove file "++file++
-                                          " due to exception: "++show e)
+removeFileIfExists v file = removeFile file `catch` handler
+    where handler :: SomeException -> IO ()
+          handler e = debug v ("Could not remove file "++file++
+                               " due to exception: "++show e)

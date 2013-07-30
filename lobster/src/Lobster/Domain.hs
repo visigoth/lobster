@@ -387,6 +387,9 @@ data Domain a b = Domain
   , assertions :: [Assertion]
   }
 
+instance (NFData k, NFData v) => NFData (Map.Map k v) where
+  rnf theMap = rnf (Map.toList theMap)
+
 instance (NFData a, NFData b) => NFData (Domain a b) where
   rnf (Domain a b c d e f) = rnf a `seq` rnf b `seq` rnf c `seq` rnf d `seq` rnf e `seq` rnf f
 

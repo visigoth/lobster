@@ -12,7 +12,7 @@ import qualified SCD.M4.Test.QuickLobster as QuickLobster
 import System.FilePath((</>),takeExtension)
 import System.Environment(getArgs)
 import Control.Monad(when)
-import Directory(getDirectoryContents)
+import System.Directory(getDirectoryContents)
 import Control.Monad(liftM)
 
 import Test.Framework (Test, defaultMain, testGroup)

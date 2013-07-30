@@ -1,7 +1,7 @@
 module Policy where
 
 import System.FilePath((<.>))
-import Directory(getDirectoryContents)
+import System.Directory(getDirectoryContents)
 import System.FilePath((</>))
 
 import Prelude hiding (catch)

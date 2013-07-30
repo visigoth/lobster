@@ -1,36 +1,14 @@
-
-.PHONY: lobster lobster-selinux lobster-xsm lobster-validate genLobster
-.PHONY: scd shrimp lviz
-
-all : nolviz lviz
-
-lobster-all: lobster lobster-selinux lobster-xsm lobster-validate genLobster
-
-nolviz : lobster-all scd shrimp
-
-lobster:
-	(cd lobster && cabal-dev --sandbox=../cabal-dev install)
-
-scd:
-	(cd SCD && cabal-dev --sandbox=../cabal-dev install)
-
-lobster-selinux:
-	(cd lobster-selinux && cabal-dev --sandbox=../cabal-dev install)
-
-lobster-xsm:
-	(cd lobster-xsm && cabal-dev --sandbox=../cabal-dev install)
-
-lobster-validate:
-	(cd lobster-validate && cabal-dev --sandbox=../cabal-dev install)
-
-shrimp:
-	(cd shrimp && cabal-dev --sandbox=../cabal-dev install)
-
-genLobster:
-	(cd genLobster && cabal-dev --sandbox=../cabal-dev install)
-
-lviz:
+all : nolviz
 	(cd lviz && cabal-dev --sandbox=../cabal-dev install)
+
+nolviz :
+	(cd lobster && cabal-dev --sandbox=../cabal-dev install)
+	(cd SCD && cabal-dev --sandbox=../cabal-dev install)
+	(cd lobster-selinux && cabal-dev --sandbox=../cabal-dev install)
+	(cd lobster-xsm && cabal-dev --sandbox=../cabal-dev install)
+	(cd lobster-validate && cabal-dev --sandbox=../cabal-dev install)
+	(cd shrimp && cabal-dev --sandbox=../cabal-dev install)
+	(cd genLobster && cabal-dev --sandbox=../cabal-dev install)
 
 clean :
 	rm -rf cabal-dev

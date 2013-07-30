@@ -37,13 +37,18 @@ import Data.List(sort)
 import Text.Regex.Posix.Wrap((=~))
 import Text.Regex.Posix.String()
 
+import Prelude hiding (catch)
+import Control.Exception (catch, SomeException)
+
 allDescendantFiles :: FilePath -> IO [FilePath]
 allDescendantFiles f = do
   c <- (sort . map ((f ++ "/") ++) . filter ((/=".") . take 1)) `fmap` 
-       getDirectoryContents f `catch` (const (return []))
+       getDirectoryContents f `catch` handler
   ch <- mapM allDescendantFiles c
   return (c ++ concat ch)
-  
+  where handler :: SomeException -> IO [FilePath]
+        handler = (const (return []))
+
 
 -- | Filename extension for interface files
 interfaceExtension :: String

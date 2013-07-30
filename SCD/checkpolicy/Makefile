@@ -11,7 +11,7 @@ TARGETS = checkpolicy checkmodule
 
 YACC = bison -y
 
-CFLAGS ?= -g -Wall -Werror -Wshadow -O2 -pipe -fno-strict-aliasing
+CFLAGS ?= -g -Wall -Wshadow -O2 -pipe -fno-strict-aliasing
 
 override CFLAGS += -I. -I${INCLUDEDIR} -I../libsepol-2.0.41/include
 
