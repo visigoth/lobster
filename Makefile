@@ -1,14 +1,19 @@
+
+CABAL := cabal-dev --sandbox=../cabal-dev --force-reinstalls
+
 all : nolviz
-	(cd lviz && cabal-dev --sandbox=../cabal-dev install)
 
 nolviz :
-	(cd lobster && cabal-dev --sandbox=../cabal-dev install)
-	(cd SCD && cabal-dev --sandbox=../cabal-dev install)
-	(cd lobster-selinux && cabal-dev --sandbox=../cabal-dev install)
-	(cd lobster-xsm && cabal-dev --sandbox=../cabal-dev install)
-	(cd lobster-validate && cabal-dev --sandbox=../cabal-dev install)
-	(cd shrimp && cabal-dev --sandbox=../cabal-dev install)
-	(cd genLobster && cabal-dev --sandbox=../cabal-dev install)
+	(cd lobster && $(CABAL) install)
+	(cd SCD && $(CABAL) install)
+	(cd lobster-selinux && $(CABAL) install)
+	(cd lobster-xsm && $(CABAL) install)
+	(cd lobster-validate && $(CABAL) install)
+	(cd shrimp && $(CABAL) install)
+	(cd genLobster && $(CABAL) install)
+
+lviz : nolviz
+	(cd lviz && $(CABAL) install)
 
 clean :
 	rm -rf cabal-dev

@@ -19,7 +19,8 @@ Library
     deepseq >= 1.1
 
   Build-tools:
-    bnfc >= 2.4.2.0
+    bnfc
+    -- bnfc >= 2.4.2.0
 
   Exposed-modules:
 -- Lobster abstract syntax, parsing, and compilation into native policy
@@ -39,7 +40,7 @@ Library
 
 -- This is a sledgehammer: not all modules use CPP, but this appears to be
 -- necessary to get any module CPP:ed before shipping it to haddock.
-  extensions: CPP, Generics
+  extensions: CPP
   hs-source-dirs: src
 -- We can't run -Werror on the auto-generated source
 --  ghc-options: -Werror -Wall

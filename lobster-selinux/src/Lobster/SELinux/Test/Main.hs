@@ -3,7 +3,7 @@
 import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
-import Directory(getDirectoryContents)
+import System.Directory(getDirectoryContents)
 import System.FilePath((</>))
 
 import qualified Lobster.SELinux.Test.SELinux as SELinux

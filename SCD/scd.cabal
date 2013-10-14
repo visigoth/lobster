@@ -59,7 +59,7 @@ Library
                      Text.PrettyPrint.Pp
                      Text.ParserCombinators.PolyReadP
                      Data.HeadTail
-                     Data.Memo
+                     --Data.Memo
                      Data.MapSet
                      Data.Strict
                      Data.NonEmptyList
@@ -120,39 +120,39 @@ Library
 
   -- This is a sledgehammer: not all modules use CPP, but this appears to be
   -- necessary to get any module CPP:ed before shipping it to haddock.
-  extensions:        CPP, Generics
+  extensions:        CPP
   hs-source-dirs:    src
   ghc-options:       -auto-all
 
 
-Executable tests
-  Main-is:           SCD/Test/All.hs
-  hs-source-dirs:    testsrc
-  ghc-options:       -Wall -auto-all
-  extensions:        CPP, Generics
+-- Executable tests
+--   Main-is:           SCD/Test/All.hs
+--   hs-source-dirs:    testsrc
+--   ghc-options:       -Wall -auto-all
+--   extensions:        CPP
 --  ghc-options:       -Wall -auto-all -prof -osuf p_o
-  Build-depends:     array >= 0.1.0.0,
-                     base >= 4.0,
-                     containers >= 0.1.0.0,
-                     directory >= 1.0.0.0,
-                     filepath >= 1.1.0.0,
-                     mtl >= 1.0.1,
-                     pretty >= 1.0.0.0,
-                     process >= 1.0.1.1,
-                     QuickCheck >= 2.2,
-                     random >= 1.0.0.0,
-                     regex-compat >= 0.71.0.1,
-                     regex-posix >= 0.71,
-                     syb >= 0.1.0.0,
-                     xml >= 1.3.2,
-
-                     test-framework,
-                     test-framework-hunit,
-                     test-framework-quickcheck2,
-                     HUnit >= 1.2.2.1,
-
-                     scd >= 0.1,
-                     lobster >= 0.1
+--   Build-depends:     array >= 0.1.0.0,
+--                      base >= 4.0,
+--                      containers >= 0.1.0.0,
+--                      directory >= 1.0.0.0,
+--                      filepath >= 1.1.0.0,
+--                      mtl >= 1.0.1,
+--                      pretty >= 1.0.0.0,
+--                      process >= 1.0.1.1,
+--                      QuickCheck >= 2.2,
+--                      random >= 1.0.0.0,
+--                      regex-compat >= 0.71.0.1,
+--                      regex-posix >= 0.71,
+--                      syb >= 0.1.0.0,
+--                      xml >= 1.3.2,
+-- 
+--                     test-framework,
+--                     test-framework-hunit,
+--                     test-framework-quickcheck2,
+--                     HUnit >= 1.2.2.1,
+--
+--                     scd >= 0.1,
+--                     lobster >= 0.1
 
 -- Executable  qlobster {
 -- extensions: CPP
