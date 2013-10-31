@@ -23,7 +23,7 @@ module Lobster.Domain
   , unifyPortType
   , directionPortType
   , prettyPrintPortType
-  , DomainId
+  , DomainId(..)
   , domainDomainPort
   , portDomainPort
   , externalDomainPort
@@ -44,6 +44,7 @@ module Lobster.Domain
   , addSubDomain
   , foldSubDomain
   , foldMSubDomain
+  , foldConnectionsDomain
   , addConnections
   , addPortConnections
   , foldMConnections

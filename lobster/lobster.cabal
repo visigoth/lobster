@@ -11,12 +11,14 @@ Maintainer: joe@galois.com, bletner@contractor.galois.com, magnus@galois.com
 Library
   Build-depends:
     containers >= 0.1.0.0,
+    text >= 0.11,
     array >= 0.1.0.0,
     base >= 4,
     filepath >= 1.2,
     fgl >= 5.4.1,
     mtl >= 1.0.1,
-    deepseq >= 1.1
+    deepseq >= 1.1,
+    aeson >= 0.6.2
 
   Build-tools:
     bnfc
@@ -37,6 +39,7 @@ Library
     Lobster.Syntax
     Lobster.Version
     Lobster.Common
+    Lobster.JSON
 
 -- This is a sledgehammer: not all modules use CPP, but this appears to be
 -- necessary to get any module CPP:ed before shipping it to haddock.
@@ -62,4 +65,15 @@ Executable lobster-test
                   test-framework,
                   test-framework-hunit,
                   HUnit >= 1.2.2.1,
+                  lobster
+
+Executable lobster-json
+  Main-is:        lobster-json.hs
+  hs-source-dirs: testsrc
+  Build-Depends:  base >= 4,
+                  bytestring >= 0.10,
+                  text >= 0.11,
+                  containers >= 0.5,
+                  aeson >= 0.6.2,
+                  aeson-pretty >= 0.7,
                   lobster
