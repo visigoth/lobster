@@ -1,27 +1,23 @@
 
-CABAL := cabal-dev --sandbox=../cabal-dev --force-reinstalls
+# Libraries to add with "cabal sandbox add-source".
+SUBPROJECTS :=                 \
+  lobster                      \
+  SCD                          \
+  lobster-selinux
 
-all : nolviz
+.PHONY: all
+all: proj-lobster-selinux
 
-nolviz :
-	(cd lobster && $(CABAL) install)
-	(cd SCD && $(CABAL) install)
-	(cd lobster-selinux && $(CABAL) install)
-	(cd lobster-xsm && $(CABAL) install)
-	(cd lobster-validate && $(CABAL) install)
-	(cd shrimp && $(CABAL) install)
-	(cd genLobster && $(CABAL) install)
+.PHONY: clean
+clean:
+	rm -rf cabal.sandbox.config .cabal-sandbox
 
-lviz : nolviz
-	(cd lviz && $(CABAL) install)
+# Create the Cabal sandbox if it doesn't exist or
+# the Makefile changes (to update the source links).
+.cabal-sandbox: $(MAKEFILE_LIST)
+	@cabal sandbox init
+	@cabal sandbox add-source $(SUBPROJECTS)
 
-clean :
-	rm -rf cabal-dev
-	(cd lobster && cabal clean)
-	(cd SCD && cabal clean)
-	(cd lobster-selinux && cabal clean)
-	(cd lobster-xsm && cabal clean)
-	(cd lobster-validate && cabal clean)
-	(cd shrimp && cabal clean)
-	(cd lviz && cabal clean)
-	(cd genLobster && cabal clean)
+proj-%: .cabal-sandbox
+	@cabal install $*
+
