@@ -513,7 +513,9 @@ warn :: Monad m => String -> m ()
 warn s = trace ("warning:" ++ s) $ return ()
 
 ins :: (Eq a) => a -> [a] -> [a]
-ins x xs = nub $ xs ++ [x]
+ins x xs
+  | x `elem` xs = xs
+  | otherwise   = xs ++ [x]
 
 capitalize :: String -> String
 capitalize "" = ""
