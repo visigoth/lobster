@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 --
 -- JSON.hs --- Exporting Lobster domains in JSON format.
 --
