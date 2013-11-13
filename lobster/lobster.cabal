@@ -18,7 +18,9 @@ Library
     fgl >= 5.4.1,
     mtl >= 1.0.1,
     deepseq >= 1.1,
-    aeson >= 0.6.2
+    aeson >= 0.6.2,
+    dotgen >= 0.4.1,
+    process >= 1.1.0.2
 
   Build-tools:
     bnfc
@@ -40,6 +42,7 @@ Library
     Lobster.Version
     Lobster.Common
     Lobster.JSON
+    Lobster.Dot
 
 -- This is a sledgehammer: not all modules use CPP, but this appears to be
 -- necessary to get any module CPP:ed before shipping it to haddock.
