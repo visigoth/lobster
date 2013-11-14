@@ -80,3 +80,9 @@ Executable lobster-json
                   aeson >= 0.6.2,
                   aeson-pretty >= 0.7,
                   lobster
+
+Executable lobster-dot
+  Main-is:        lobster-dot.hs
+  hs-source-dirs: testsrc
+  Build-Depends:  base >= 4,
+                  lobster
