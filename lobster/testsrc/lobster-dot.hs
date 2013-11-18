@@ -21,8 +21,8 @@ parseArgs :: IO FilePath
 parseArgs = do
   args <- getArgs
   case args of
-    []     -> die "usage: lobster-dot FILENAME"
     (x:[]) -> return x
+    _      -> die "usage: lobster-dot FILENAME"
 
 main :: IO ()
 main = do
