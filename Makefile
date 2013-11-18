@@ -21,3 +21,7 @@ clean:
 proj-%: .cabal-sandbox
 	@cabal install $*
 
+release: all
+	@sh release.sh
+
+# vim: set noet:
