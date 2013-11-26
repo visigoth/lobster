@@ -4,10 +4,12 @@ SUBPROJECTS :=                 \
   lobster                      \
   SCD                          \
   lobster-selinux              \
+  genLobster                   \
   v3spa-server
 
 .PHONY: all
-all: proj-lobster-selinux
+all: .cabal-sandbox
+	@cabal install genLobster lobster-selinux v3spa-server
 
 .PHONY: clean
 clean:
@@ -18,9 +20,6 @@ clean:
 .cabal-sandbox: $(MAKEFILE_LIST)
 	@cabal sandbox init
 	@cabal sandbox add-source $(SUBPROJECTS)
-
-proj-%: .cabal-sandbox
-	@cabal install $*
 
 release: all
 	@sh release.sh

@@ -9,7 +9,7 @@
 set -x
 set -e
 
-PROGS="genLobster lobster-dot lobster-json lobster-selinux"
+PROGS="genLobster lobster-dot lobster-json lobster-selinux v3spa-server"
 
 d=`date +"%Y%m%d"`
 dir="lobster-tools-$d"
