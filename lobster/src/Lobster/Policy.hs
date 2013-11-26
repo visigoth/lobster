@@ -45,6 +45,7 @@ module Lobster.Policy
   , append
   , toDomain
   , interpretPolicy
+  , parsePolicy
   , parsePolicyFile
   , PortTypeValue(..)
   , PortType(..)
@@ -822,6 +823,12 @@ interpretPolicy policy =
       Left err ->
           error ("ERROR: couldn't interpret the Lobster policy file:\n" ++ err)
       Right x -> x
+
+parsePolicy :: String -> Either String Policy
+parsePolicy s =
+  case Par.pPolicy (Lex.tokens s) of
+    ErrM.Bad e     -> Left $ "ERROR: Unable to parse\n:" ++ e
+    ErrM.Ok policy -> Right policy
 
 parsePolicyFile :: FilePath -> IO Policy
 parsePolicyFile filename =

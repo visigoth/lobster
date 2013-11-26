@@ -3,7 +3,8 @@
 SUBPROJECTS :=                 \
   lobster                      \
   SCD                          \
-  lobster-selinux
+  lobster-selinux              \
+  v3spa-server
 
 .PHONY: all
 all: proj-lobster-selinux
