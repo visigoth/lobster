@@ -35,6 +35,7 @@ data St = St
   { actors         :: !(Set TypeOrAttributeId)
   , all_types      :: !(Set TypeOrAttributeId)
   , object_classes :: !(Map TypeOrAttributeId (Set ClassId))
+  , object_perms   :: !(Map TypeOrAttributeId (Set PermissionId))
   , class_perms    :: !(Map ClassId (Set PermissionId))
   , allow_rules    :: [(TypeOrAttributeId, TypeOrAttributeId, PermissionId)]
   }
@@ -44,6 +45,7 @@ initSt = St
   { actors         = Set.empty
   , all_types      = Set.empty
   , object_classes = Map.empty
+  , object_perms   = Map.empty
   , class_perms    = Map.empty
   , allow_rules    = []
   }
@@ -72,6 +74,7 @@ addAllow subject object classId perms = modify f
       { actors = Set.insert subject (actors st)
       , all_types = Set.insert subject (Set.insert object (all_types st))
       , object_classes = insertMapSet object classId (object_classes st)
+      , object_perms = Map.insertWith (flip Set.union) object perms (object_perms st)
       , class_perms = Map.insertWith (flip Set.union) classId perms (class_perms st)
       , allow_rules = [ (subject, object, perm) | perm <- Set.toList perms ] ++ allow_rules st
       }
@@ -171,7 +174,7 @@ processPolicy policy = L.Policy (preDecls ++ classDecls ++ classDecls' ++ domain
             active :: [L.Statement]
             active = if isActive then [mkPortDecl activePort] else []
             perms :: [PermissionId]
-            perms = Set.toList $ Set.fromList [ p | (_, t, p) <- allow_rules finalSt, t == typeId ]
+            perms = Set.toList $ fromMaybe Set.empty $ Map.lookup typeId (object_perms finalSt)
             stmts :: [L.Statement]
             stmts = map (mkPortDecl . toPortId) perms
     domainDecls :: [L.Statement]
