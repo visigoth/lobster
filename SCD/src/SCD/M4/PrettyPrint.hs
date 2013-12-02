@@ -16,7 +16,9 @@ import SCD.M4.Syntax(Interface(..) , ModuleDoc(..),
   GenContext(..), M4Var(..), M4Id(..), IfdefId(..), LayerId(..), ModuleId(..),
   MlsRange(..), LevelId(..), XMLDoc(..), RefPolicyWarnLine(..),
   Implementation(..), Version(..), FileContexts(..), FileContext(..),
-  HomePath(..), RegexpPath(..), BoolType(..))
+  HomePath(..), RegexpPath(..), ClassPermissionDef(..), SupportDef(..),
+  BoolType(..), GlobalBoolean(..), ModuleConf(..), ModuleConfSetting(..),
+  IfdefDecl(..))
 
 import SCD.SELinux.Syntax(idString)
 
@@ -205,6 +207,30 @@ instance Pp HomePath where
 instance Pp RegexpPath where
   pp (PlainPath fp) = pp fp
   pp (RegexpPath s) = text s
+
+instance Pp ClassPermissionDef where
+  pp (ClassPermissionDef i perms Nothing) = ppM4Call "define" [pp i, pp perms]
+  pp (ClassPermissionDef i perms (Just (RefPolicyWarnLine s))) =
+    ppM4Call "define" [pp i, pp perms <+> ppM4Call "refpolicywarn" [text s]]
+
+instance Pp SupportDef where
+  pp (SupportDef i stmts) = ppM4Call "define" [pp i, above stmts]
+
+instance Pp GlobalBoolean where
+  pp (GlobalBoolean bt Nothing i b) = pp bt <> parens (sepWithCommas [pp i, pp b])
+  pp (GlobalBoolean bt (Just xml) i b) = pp xml <> pp bt <> parens (sepWithCommas [pp i, pp b])
+
+instance Pp ModuleConf where
+  pp (ModuleConf moduleid moduleconfsetting) = pp moduleid <> slash <> pp moduleconfsetting
+
+instance Pp ModuleConfSetting where
+  pp Base   = text "base"
+  pp Module = text "module"
+  pp Off    = text "off"
+
+instance Pp IfdefDecl where
+  pp (IfdefDecl i Nothing) = pp i
+  pp (IfdefDecl i (Just b)) = pp i <> slash <> pp b
 
 instance Pp (LayerId,ModuleId) where
   pp (l,m) = pp l <> slash <> pp m
