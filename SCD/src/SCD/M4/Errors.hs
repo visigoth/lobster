@@ -32,7 +32,7 @@ import Data.Foldable(toList)
 import Data.List           (intersperse, nub)
 import Data.List.GroupSort (groupSort)
 
-import Data.Generics(Data, Typeable, toConstr, constrIndex, ConIndex)
+import Data.Data(Data, Typeable, toConstr, constrIndex, ConIndex)
 
 import Prelude hiding(FilePath)
 import qualified Prelude

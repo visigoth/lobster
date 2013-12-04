@@ -98,7 +98,7 @@ Library
                      SCD.M4.Errors
                      SCD.M4.ErrorsXml
       -- Quick and dirty Lobster generation from Shrimp
-                     SCD.M4.QuickLobster
+                     -- SCD.M4.QuickLobster
                      SCD.M4.Util
                      SCD.M4.XML
       -- Printing of identifiers with positions

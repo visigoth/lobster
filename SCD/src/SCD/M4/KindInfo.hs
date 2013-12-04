@@ -1,5 +1,6 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans -XCPP #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans #-}
 {- |
 Module      : $Header$
 Description : Representing kind information for SELinux policies.
@@ -29,8 +30,6 @@ module SCD.M4.KindInfo
        , findSuperKinds
        , superKinds
 
-       , portRefs
-
        , normalizeId
        , Fragments
        , fragments
@@ -44,9 +43,6 @@ import SCD.M4.Util
 import SCD.M4.Syntax(M4Id, ModuleId,
   LayerModule, PolicyModule(..), Interface(..),
   InterfaceElement(..))
-
-import qualified Lobster.Abs as L
-import SCD.Lobster.Util()
 
 import SCD.SELinux.Syntax(Identifier, IsIdentifier(..),
   withIdString)
@@ -204,34 +200,6 @@ superKinds = MapSet.transitive $ fromList
 -- between ports that are used to access something defined inside a
 -- domain from ports that are used to let the domain access something
 -- in another domain.
-
-portRefs :: KindInfo -> KindMaps -> Map L.PortId L.Identifier
-portRefs ki kms =
-   foldr (\ f acc -> pref (f kms) `Map.union` acc)
-         Map.empty
-	 [ outputMap
-	 , iOutputMap
-	 , inputMap
-	 , iInputMap
-	 , localMap
-	 ]
-
-  where pref km = fromList [(layerModule2Identifier lm,
-                             layerModule2Identifier lm) | lm <- concat is]
-          where is = [ findOrigin i
-                     | (i,ks) <- assocs (Set.map getKind `fmap` km)
-                     , not (Set.null (ks `Set.intersection` typekinds)) ]
-
-        findOrigin i = take 1 [ lm | (_,lm, True, _,Nothing) <- toList xs ]
-          where xs = MapSet.lookup (normalizeId i) (xrefs ki)
-
-        typekinds = Set.fromList [TypeKind, AttributeKind,
-                                  TypeOrAttributeKind, DomainKind]
-
-
-
----
-
 
 -- NOTE: normalizeId doesn't account for nonlinear parameter use.
 -- | Replace all parameters by $1, $2, $3, ...

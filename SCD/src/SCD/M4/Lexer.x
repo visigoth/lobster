@@ -13,7 +13,7 @@ module SCD.M4.Lexer(
  , TokenConstructor(..)
  , scan
  ) where
-import Data.Generics(Typeable,Data)
+import Data.Data(Data, Typeable)
 import Data.List(isInfixOf)
 import Text.Happy.ParserMonad(Pos(..))
 import Text.Regex(matchRegex, mkRegex)

@@ -17,7 +17,7 @@ module SCD.SELinux.Lexer(
  , TokenConstructor(..)
  , scan
  ) where
-import Data.Generics(Typeable,Data)
+import Data.Data(Data, Typeable)
 import Data.List(isInfixOf)
 import System.FilePath(FilePath)
 import Text.Happy.ParserMonad(Pos(..))
@@ -46,11 +46,14 @@ types				{ ctoken TYPES }
 typealias			{ ctoken TYPEALIAS }
 typeattribute			{ ctoken TYPEATTRIBUTE }
 type				{ ctoken TYPE }
+policycap			{ ctoken POLICYCAP }
 bool                            { ctoken BOOL }
 if				{ ctoken IF }
 else				{ ctoken ELSE }
 alias				{ ctoken ALIAS }
 attribute			{ ctoken ATTRIBUTE }
+attribute_role			{ ctoken ATTRIBUTE_ROLE }
+roleattribute			{ ctoken ROLEATTRIBUTE }
 type_transition			{ ctoken TYPE_TRANSITION }
 type_member			{ ctoken TYPE_MEMBER }
 type_change			{ ctoken TYPE_CHANGE }
@@ -113,6 +116,7 @@ $digit$digit*                 { atoken (NUMBER . read) }
 $hexval{0,4}":"$hexval{0,4}":"($hexval|":"|".")* { atoken IPV6_ADDR }
 $digit+("."$digit+){3}          { atoken IPV4_ADDR }
 @version/[\ \t\f]*";"           { atoken VERSION_IDENTIFIER }
+\" ($letter|$digit|_|"."|"-"|"+"|"~")+ \" { atoken FILENAME }
 "#" [^\n]*                      ;
 [\ \t\f]+			;
 "==" 				{ ctoken EQUALS }
@@ -153,11 +157,14 @@ data TokenConstructor =
  | TYPEALIAS
  | TYPEATTRIBUTE
  | TYPE
+ | POLICYCAP
  | BOOL
  | IF
  | ELSE
  | ALIAS
  | ATTRIBUTE
+ | ATTRIBUTE_ROLE
+ | ROLEATTRIBUTE
  | TYPE_TRANSITION
  | TYPE_MEMBER
  | TYPE_CHANGE
@@ -220,6 +227,7 @@ data TokenConstructor =
  | IPV4_ADDR String
  | IPV6_ADDR String
  | VERSION_IDENTIFIER String
+ | FILENAME String
  | NOTEQUAL
  | COMMA
  | COLON

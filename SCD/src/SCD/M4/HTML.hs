@@ -46,7 +46,7 @@ import qualified Data.Map as Map
 import Data.Set(Set)
 import qualified Data.Set as Set
 import qualified Data.MapSet as MapSet
-import Prelude hiding(lookup,catch)
+import Prelude hiding(lookup)
 
 import Data.List.GroupSort(sortProj)
 import qualified Data.List as List
@@ -54,9 +54,8 @@ import System.Directory(removeDirectoryRecursive, createDirectoryIfMissing)
 import System.FilePath((</>))
 import System.IO.Error(isDoesNotExistError)
 import Control.Arrow(second)
-
-import Control.Exception (catch)
-import GHC.IO.Exception (IOException)
+import Control.Exception (catch, throwIO)
+import System.IO.Error (isDoesNotExistError)
 
 data Hs = Hs FilePath Element
   deriving Show
@@ -69,9 +68,8 @@ defaultHTMLOptions = HTMLOptions{ sort = True }
 
 tryRemoveDirectoryRecursive :: FilePath -> IO ()
 tryRemoveDirectoryRecursive d =
-  removeDirectoryRecursive d `catch` handler
-  where handler :: IOException -> IO ()
-        handler e = if isDoesNotExistError e then return () else ioError e
+  removeDirectoryRecursive d `catch` \e ->
+  if isDoesNotExistError e then return () else throwIO e
 
 -- | Wipe a directory recursively and recreate it.
 

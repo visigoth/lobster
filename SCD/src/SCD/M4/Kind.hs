@@ -59,7 +59,7 @@ import qualified Data.Map as Map
 import Data.Set(Set)
 import Data.Map(Map)
 import Data.Maybe(isJust)
-import Data.Generics(Data, Typeable)
+import Data.Data(Data, Typeable)
 import Data.Foldable(toList)
 
 import Text.PrettyPrint.HughesPJ(text, (<>), empty, punctuate,

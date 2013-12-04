@@ -16,7 +16,7 @@ import Data.List ( intercalate )
 elementId :: InterfaceElement -> M4Id
 elementId (InterfaceElement _ _ i _) = i
 
-implementationId :: Implementation -> ModuleId
+implementationId :: Implementation -> M4.ModuleId
 implementationId (Implementation m _ _) = m
 
 layerModule2Identifier :: IsIdentifier i => LayerModule -> i

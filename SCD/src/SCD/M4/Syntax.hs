@@ -68,7 +68,7 @@ import Data.NonEmptyList(NonEmptyList)
 import Text.XML.Light ( Content(..), Element(..), CData(..),
                       CDataKind(..) , QName(..)  , Attr(..), Line )
 
-import Data.Generics(Typeable, Data)
+import Data.Data(Data, Typeable)
 
 #ifndef __HADDOCK__
 deriving instance Read Content

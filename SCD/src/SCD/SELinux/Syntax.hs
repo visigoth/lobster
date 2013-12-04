@@ -70,6 +70,9 @@ module SCD.SELinux.Syntax(
   , FileSystemId(..)
   , Sid(..)
   , BoolId(..)
+  , ModuleId(..)
+  , ModuleDef(..)
+  , Module(..)
   ) where
 
 import Data.Tree(Tree)
@@ -77,7 +80,7 @@ import Data.Word(Word8, Word16)
 import Data.Array.IArray(listArray, elems)
 import Data.Array.Unboxed(UArray)
 import Data.NonEmptyList(NonEmptyList)
-import Data.Generics(Typeable, Data(..))
+import Data.Data (Data(..), Typeable)
 import Prelude hiding (FilePath)
 import Text.Happy.ParserMonad(Pos, noPos)
 
@@ -135,6 +138,9 @@ newtype PermissionId = PermissionId Identifier
 newtype TypeId = TypeId Identifier
   deriving (Typeable, Data, Eq, Read, Show, Ord, IsIdentifier)
 
+newtype ModuleId = ModuleId Identifier
+  deriving (Typeable, Data, Eq, Read, Show, Ord, IsIdentifier)
+
 newtype AttributeId = AttributeId Identifier
   deriving (Typeable, Data, Eq, Read, Show, Ord, IsIdentifier)
 
@@ -175,6 +181,13 @@ data Policy = Policy{ classes :: NonEmptyList ClassId
                     }
   deriving (Typeable, Data, Eq, Read, Show)
 
+data Module = Module { moduleDef     :: ModuleDef
+                     , moduleAvRules :: AvRuleBlock }
+  deriving (Typeable, Data, Eq, Read, Show)
+
+data ModuleDef = ModuleDef ModuleId String
+  deriving (Typeable, Data, Eq, Read, Show)
+
 data CommonPerm = CommonPerm CommonId (NonEmptyList PermissionId)
   deriving (Typeable, Data, Eq, Read, Show)
 
@@ -186,12 +199,15 @@ data TeRbac =
  | Type TypeId [TypeId] [AttributeId]
  | TypeAlias TypeId (NonEmptyList TypeId)
  | TypeAttribute TypeId (NonEmptyList AttributeId)
+ | PolicyCap TypeId
  | BoolDef BoolId Bool
 -- -- | RangeTrans SourceTarget MlsRange
  | TeNeverAllow (SourceTarget (NeverAllow TypeOrAttributeId) 
                               (NeverAllow Self))
                 Permissions
  | Role RoleId [SignedId TypeOrAttributeId]
+ | AttributeRole AttributeId
+ | RoleAttribute RoleId (NonEmptyList AttributeId)
  | Dominance (NonEmptyList (Tree RoleId))
  | RoleTransition (NonEmptyList RoleId) (NonEmptyList (SignedId TypeOrAttributeId)) RoleId
  | RoleAllow (NonEmptyList RoleId) (NonEmptyList RoleId)
@@ -228,6 +244,7 @@ data Require =
  | RequireRole (NonEmptyList RoleId)
  | RequireType (NonEmptyList TypeId)
  | RequireAttribute (NonEmptyList AttributeId)
+ | RequireAttributeRole (NonEmptyList AttributeId)
  | RequireUser (NonEmptyList UserId)
  | RequireBool (NonEmptyList BoolId)
   deriving (Typeable, Data, Eq, Read, Show)

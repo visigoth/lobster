@@ -95,6 +95,7 @@ ppPermissions = ppPermissions' . toList where
 instance Pp TeRbac where
   pp (Attribute i) = text "attribute" <+> pp i <> semi
   pp (Type t als ats) = text "type" <+> pp t <+> ppAlias als <> ppOptAttrs ats <> semi
+  pp (PolicyCap t) = text "policycap" <+> pp t <> semi
   pp (TypeAlias t a) = text "typealias" <+> pp t <+> ppAlias a <> semi
   pp (TypeAttribute t l) = text "typeattribute" <+> pp t <+> sepWithCommas l <> semi
   pp (BoolDef i b) = text "bool" <+> pp i
@@ -102,6 +103,8 @@ instance Pp TeRbac where
   pp (TeNeverAllow st ps) = text "neverallow" <+> pp st <+> pp ps <> semi
   pp (Role r []) = text "role" <+> pp r <> semi
   pp (Role r ts) = text "role" <+> pp r <+> text "types" <+> pp ts <> semi
+  pp (AttributeRole r) = text "attribute_role" <+> pp r <> semi
+  pp (RoleAttribute r as) = text "roleattribute" <+> pp r <+> sepWithCommas (toList as) <> semi
   pp (Dominance d) = text "dominance" <+> ppDominance (toList d)
   pp (RoleTransition rs ts r) = text "role_transition" <+> pp rs
                             <+> pp ts <+> pp r <> semi
@@ -134,6 +137,7 @@ instance Pp Require where
   pp (RequireRole      l) = text "role"      <+> sepWithCommas l <> semi
   pp (RequireType      l) = text "type"      <+> sepWithCommas l <> semi
   pp (RequireAttribute l) = text "attribute" <+> sepWithCommas l <> semi
+  pp (RequireAttributeRole l) = text "attribute_role" <+> sepWithCommas l <> semi
   pp (RequireUser      l) = text "user"      <+> sepWithCommas l <> semi
   pp (RequireBool      l) = text "bool"      <+> sepWithCommas l <> semi
 

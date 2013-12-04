@@ -1,5 +1,7 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances #-}
-{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans -XCPP #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE CPP #-}
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans #-}
 {- |
 Module      : $Header$
 Description : SELinux kind-checking implementation

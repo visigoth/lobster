@@ -13,7 +13,7 @@ Portability :  portable
 Parser for SELinux policies
 -}
 
-module SCD.SELinux.Parser(AccessVectors, parsePolicy, parseAccessVectors,
+module SCD.SELinux.Parser(AccessVectors, parsePolicy, parseModule, parseAccessVectors,
   parseClasses, parseInitialSids, fromIds, projectSignedIds,
   projectSelf, memoMkId, mkSourceTarget, checkProtocol,
   mkPortNumber, checkFileType, mkOctet, mkIPV4Address, mkIPV6Address, check)
@@ -49,13 +49,14 @@ import SCD.SELinux.Syntax( Policy(..), CommonPerm(..), AvPerm(..),
       User(..), Permissions(..), StarTilde(..), Identifier,
       IsIdentifier(..), ClassId, PermissionId, TypeId, AttributeId,
       TypeOrAttributeId, Sid, BoolId, UserId, RoleId, NetInterfaceId,
-      FileSystemId)
+      FileSystemId, ModuleId, ModuleDef(..), Module(..))
 
 import SCD.SELinux.Lexer(Token(..), TokenConstructor(..), scan)
 
 }
 
 %name pPolicy policy
+%name pModule module_policy
 %name pInitialSids initial_sids
 %name pAccessVectors access_vectors
 %name pClasses opt_classes
@@ -80,11 +81,14 @@ import SCD.SELinux.Lexer(Token(..), TokenConstructor(..), scan)
 'typealias'                     { T _ TYPEALIAS }
 'typeattribute'                 { T _ TYPEATTRIBUTE }
 'type'                          { T _ TYPE }
+'policycap'                     { T _ POLICYCAP }
 'bool'                          { T _ BOOL }
 'if'                            { T _ IF }
 'else'                          { T _ ELSE }
 'alias'                         { T _ ALIAS }
 'attribute'                     { T _ ATTRIBUTE }
+'attribute_role'                { T _ ATTRIBUTE_ROLE }
+'roleattribute'                 { T _ ROLEATTRIBUTE }
 'type_transition'               { T _ TYPE_TRANSITION }
 'type_member'                   { T _ TYPE_MEMBER }
 'type_change'                   { T _ TYPE_CHANGE }
@@ -144,6 +148,7 @@ import SCD.SELinux.Lexer(Token(..), TokenConstructor(..), scan)
 Path                            { T _ (PATH $$) }
 Identifier                      { T _ (IDENTIFIER _) }
 Number                          { T _ (NUMBER $$) }
+Filename                        { T _ (FILENAME $$) }
 Ipv4addr                        { T _ (IPV4_ADDR $$) }
 Ipv6addr                        { T _ (IPV6_ADDR $$) }
 Version                         { T _ (VERSION_IDENTIFIER $$) }
@@ -170,10 +175,6 @@ Version                         { T _ (VERSION_IDENTIFIER $$) }
 %%
 
 policy                  :: { Policy }
-                        : base_policy { $1 }
-                        {- | module_policy -}
-
-base_policy             :: { Policy }
                         : classes initial_sids access_vectors
                           {- opt_mls -} te_rbac users opt_constraints
                           initial_sid_contexts {-opt_fs_contexts-} opt_fs_uses opt_genfs_contexts net_contexts
@@ -303,10 +304,16 @@ te_rbac_decl            :: { TeRbac }
                         | rbac_decl       { $1 }
                         | cond_stmt_def   { $1 }
                         | optional_block  { $1 }
+                        | policycap_def   { $1 }
+
+policycap_def           :: { TeRbac }
+                        : 'policycap' identifier { PolicyCap (fromId $2) }
 
 rbac_decl               :: { TeRbac }
                         : 'role' identifier 'types' nested_signed ';'               { Role (fromId $2) (toList $4) }
                         | 'role' identifier ';'                                     { Role (fromId $2) [] }
+                        | 'attribute_role' identifier ';'                           { AttributeRole (fromId $2) }
+                        | 'roleattribute' identifier id_comma_list ';'                           { RoleAttribute (fromId $2) (NE.reverse (fromIds $3)) }
                         | 'dominance' '{' roles '}'                                 { Dominance (NE.reverse $3) }
                         | 'role_transition' nested_ids nested_signed identifier ';' { RoleTransition (fromIds $2) $3 (fromId $4) }
 -- this would introduce reduce/reduce conflicts with the TeAvTab Allow case:
@@ -328,6 +335,7 @@ te_decl                 :: { TeRbac }
 
 stmt                    :: { Stmt }
                         : 'type_transition' source_types source_types ':' nested_ids identifier ';'    { Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
+                        | 'type_transition' source_types source_types ':' nested_ids identifier Filename ';'    { Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
                         | 'type_member'     source_types source_types ':' nested_ids identifier ';'    { Transition TypeMember     (mkSourceTarget $2 $3 $5) (fromId $6) }
                         | 'type_change'     source_types source_types ':' nested_ids identifier ';'    { Transition TypeChange     (mkSourceTarget $2 $3 $5) (fromId $6) }
                         | 'allow'      source_types target_types ':' nested_ids permissions  ';'       { TeAvTab Allow (mkSourceTarget $2 $3 $5) $6 }
@@ -692,6 +700,7 @@ require_decl            :: { Require }
                         | 'role'        id_comma_list ';' { RequireRole (fromIds (NE.reverse $2)) }
                         | 'type'        id_comma_list ';' { RequireType (fromIds (NE.reverse $2)) }
                         | 'attribute'   id_comma_list ';' { RequireAttribute (fromIds (NE.reverse $2)) }
+                        | 'attribute_role' id_comma_list ';' { RequireAttributeRole (fromIds (NE.reverse $2)) }
                         | 'user'        id_comma_list ';' { RequireUser (fromIds (NE.reverse $2)) }
                         | 'bool'        id_comma_list ';' { RequireBool (fromIds (NE.reverse $2)) }
 --                        | 'sensitivity' id_comma_list ';' { RequireSensitivity (fromIds (NE.reverse $2)) }
@@ -709,11 +718,26 @@ avrule_user_defs        :: { [User] }
                         : avrule_user_defs user_def { $2 : $1 }
                         |                           { [] }
 
+
+module_policy           :: { Module }
+                        : module_def avrules_block { Module $1 $2 }
+
+module_def              :: { ModuleDef }
+                        : 'module' identifier version_identifier ';' { ModuleDef (fromId $2) $3 }
+
+version_identifier      :: { String }
+                        : Version { $1 }
+                        | Ipv4addr { $1 }
+                        | Number { show $1 }
+
 {
 type AccessVectors = ([CommonPerm],NonEmptyList AvPerm)
 
 parsePolicy :: FilePath.FilePath -> String -> Either String Policy
 parsePolicy f = mkParser (pPolicy . scan f)
+
+parseModule :: FilePath.FilePath -> String -> Either String Module
+parseModule f = mkParser (pModule . scan f)
 
 parseInitialSids :: FilePath.FilePath -> String -> Either String (NonEmptyList Sid)
 parseInitialSids f = mkParser (pInitialSids . scan f)

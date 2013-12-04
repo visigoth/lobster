@@ -18,3 +18,14 @@ Executable genLobster
                      containers >= 0.1.0.0,
                      lobster >= 0.1,
                      scd >= 0.1
+
+Executable selinux-lobster
+  Main-is:           selinux-lobster.hs
+  Build-Depends:
+                     base >= 4,
+                     pretty >= 1,
+                     directory >= 1,
+                     mtl >= 1,
+                     containers >= 0.1.0.0,
+                     lobster >= 0.1,
+                     scd >= 0.1

@@ -1,5 +1,7 @@
-{-# LANGUAGE FlexibleInstances, GeneralizedNewtypeDeriving #-}
-{-# OPTIONS_GHC -Wall -Werror -XCPP #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE CPP #-}
+{-# OPTIONS_GHC -Wall -Werror #-}
 
 {- |
 Module      : $Header$
