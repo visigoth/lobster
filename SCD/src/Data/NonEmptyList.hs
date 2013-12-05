@@ -1,6 +1,8 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, DeriveDataTypeable #-}
 module Data.NonEmptyList where
 
+import Control.Applicative (Applicative(..))
+import Control.Monad (ap)
 import Data.Foldable(Foldable(foldr), toList)
 import Data.Traversable(Traversable(traverse))
 import Data.Generics(Typeable, Data)
@@ -24,6 +26,14 @@ instance Foldable NonEmptyList where
 
 instance Traversable NonEmptyList where
   traverse f = fmap fromList . traverse f . toList
+
+instance Applicative NonEmptyList where
+  pure = return
+  (<*>) = ap
+
+instance Monad NonEmptyList where
+  return x = NE (x, [])
+  xs >>= k = fromList (toList xs >>= toList . k)
 
 class FromList l where
   fromList :: [a] -> l a 
