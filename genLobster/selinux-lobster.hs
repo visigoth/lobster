@@ -35,9 +35,9 @@ data St = St
   { actors         :: !(Set TypeOrAttributeId)
   , all_types      :: !(Set TypeOrAttributeId)
   , object_classes :: !(Map TypeOrAttributeId (Set ClassId))
-  , object_perms   :: !(Map TypeOrAttributeId (Set PermissionId))
+  , object_perms   :: !(Map TypeOrAttributeId (Set (ClassId, PermissionId)))
   , class_perms    :: !(Map ClassId (Set PermissionId))
-  , allow_rules    :: [(TypeOrAttributeId, TypeOrAttributeId, PermissionId)]
+  , allow_rules    :: [(TypeOrAttributeId, TypeOrAttributeId, ClassId, PermissionId)]
   }
 
 initSt :: St
@@ -68,15 +68,16 @@ insertMapSet k x = Map.insertWith (flip Set.union) k (Set.singleton x)
 
 addAllow :: TypeOrAttributeId -> TypeOrAttributeId
          -> ClassId -> Set PermissionId -> M ()
-addAllow subject object classId perms = modify f
+addAllow subject object cls perms = modify f
   where
+    perms' = Set.fromList [ (cls, p) | p <- Set.toList perms ]
     f st = St
       { actors = Set.insert subject (actors st)
       , all_types = Set.insert subject (Set.insert object (all_types st))
-      , object_classes = insertMapSet object classId (object_classes st)
-      , object_perms = Map.insertWith (flip Set.union) object perms (object_perms st)
-      , class_perms = Map.insertWith (flip Set.union) classId perms (class_perms st)
-      , allow_rules = [ (subject, object, perm) | perm <- Set.toList perms ] ++ allow_rules st
+      , object_classes = insertMapSet object cls (object_classes st)
+      , object_perms = Map.insertWith (flip Set.union) object perms' (object_perms st)
+      , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
+      , allow_rules = [ (subject, object, cls, perm) | perm <- Set.toList perms ] ++ allow_rules st
       }
 
 processStmt :: Stmt -> M ()
@@ -121,8 +122,8 @@ processPolicy policy = preDecls ++ classDecls ++ classDecls' ++ domainDecls ++ c
       Set.unions $
         [ fromMaybe Set.empty (Map.lookup x (object_classes finalSt))
         | x <- Set.toList (actors finalSt) ]
-    toPortId :: PermissionId -> L.Name
-    toPortId = L.Name . idString
+    toPortId :: (ClassId, PermissionId) -> L.Name
+    toPortId (cls, perm) = L.Name (idString cls ++ "_" ++ idString perm)
     toClassId :: ClassId -> L.Name
     toClassId = L.Name . capitalize . idString
     toIdentifier :: TypeOrAttributeId -> L.Name
@@ -158,7 +159,7 @@ processPolicy policy = preDecls ++ classDecls ++ classDecls' ++ domainDecls ++ c
                   Left ps -> toList ps
                   Right (commonId, ps) -> fromMaybe [] (Map.lookup commonId commonMap) ++ ps
         stmts :: [L.Decl]
-        stmts = map (mkPortDecl . toPortId) perms
+        stmts = [ mkPortDecl (toPortId (classId, p)) | p <- perms ]
     classDecls' :: [L.Decl]
     classDecls' = concatMap classDecl' (Set.toList (all_types finalSt))
     classDecl' :: TypeOrAttributeId -> [L.Decl]
@@ -173,7 +174,7 @@ processPolicy policy = preDecls ++ classDecls ++ classDecls' ++ domainDecls ++ c
             isActive = Set.member typeId (actors finalSt)
             active :: [L.Decl]
             active = if isActive then [mkPortDecl activePort] else []
-            perms :: [PermissionId]
+            perms :: [(ClassId, PermissionId)]
             perms = Set.toList $ fromMaybe Set.empty $ Map.lookup typeId (object_perms finalSt)
             stmts :: [L.Decl]
             stmts = map (mkPortDecl . toPortId) perms
@@ -191,11 +192,11 @@ processPolicy policy = preDecls ++ classDecls ++ classDecls' ++ domainDecls ++ c
                         _ -> L.Name . ("TE_" ++) . idString $ typeId
     connectionDecls :: [L.Decl]
     connectionDecls = map connectionDecl (reverse (allow_rules finalSt))
-    connectionDecl :: (TypeOrAttributeId, TypeOrAttributeId, PermissionId) -> L.Decl
-    connectionDecl (subject, object, perm) =
+    connectionDecl :: (TypeOrAttributeId, TypeOrAttributeId, ClassId, PermissionId) -> L.Decl
+    connectionDecl (subject, object, cls, perm) =
         L.neutral
           (L.domPort (toIdentifier subject) activePort)
-          (L.domPort (toIdentifier object) (toPortId perm))
+          (L.domPort (toIdentifier object) (toPortId (cls, perm)))
 
 processPolicyFile :: Prelude.FilePath -> IO String
 processPolicyFile path = do
