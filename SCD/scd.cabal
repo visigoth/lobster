@@ -69,6 +69,18 @@ Library
                      SCD.Lobster.Utilities
                      SCD.Lobster.Util
 
+      -- SCD.Lobster.Gen: core representation of Lobster for easy generation and manipulation
+                     SCD.Lobster.Gen.CoreSyn
+                     --SCD.Lobster.Gen.CoreSyn.Convert
+                     --SCD.Lobster.Gen.CoreSyn.Mangle
+                     SCD.Lobster.Gen.CoreSyn.Output
+                     SCD.Lobster.Gen.CoreSyn.Util
+                     SCD.Lobster.Gen.Perm
+                     SCD.Lobster.Gen.PermFlow
+                     SCD.Lobster.Gen.Monad
+                     --SCD.Lobster.Gen.Match
+                     SCD.Lobster.Gen.Util
+
       -- SCD.M4: syntax, parsing, prettyprinting of the Reference Policy language
                      SCD.M4.Lexer
                      SCD.M4.Syntax
