@@ -116,13 +116,14 @@ ppIfdef i t e = ppM4Call "ifdef" ([pp i,above t]++
                                   if null e then [] else [above e])
 
 instance Pp Require where
-  pp (RequireClass i ps)  = text "class" <+> pp i <+> pp ps <> semi
-  pp (RequireRole      l) = text "role"      <+> sepWithCommas l <> semi
-  pp (RequireType      l) = text "type"      <+> sepWithCommas l <> semi
-  pp (RequireAttribute l) = text "attribute" <+> sepWithCommas l <> semi
-  pp (RequireBool      l) = text "bool"      <+> sepWithCommas l <> semi
-  pp (RequireIfdef i t e) = ppIfdef i t e
-  pp (RequireIfndef i t)  = ppM4Call "ifndef" ([pp i,above t])
+  pp (RequireClass i ps)      = text "class" <+> pp i <+> pp ps <> semi
+  pp (RequireRole          l) = text "role"           <+> sepWithCommas l <> semi
+  pp (RequireType          l) = text "type"           <+> sepWithCommas l <> semi
+  pp (RequireAttribute     l) = text "attribute"      <+> sepWithCommas l <> semi
+  pp (RequireAttributeRole l) = text "attribute_role" <+> sepWithCommas l <> semi
+  pp (RequireBool          l) = text "bool"           <+> sepWithCommas l <> semi
+  pp (RequireIfdef i t e)     = ppIfdef i t e
+  pp (RequireIfndef i t)      = ppM4Call "ifndef" ([pp i,above t])
 
 emptyStmts :: Stmts -> Bool
 emptyStmts ss = null ss
@@ -143,6 +144,9 @@ instance Pp Stmt where
   pp (RoleTransition rs ts r) = text "role_transition" <+> 
                                 pp rs <+> pp ts <+> pp r <> semi
   pp (RoleAllow r1 r2) = text "allow" <+> pp r1 <+> pp r2 <> semi
+  pp (AttributeRole r) = text "attribute_role" <+> pp r <> semi
+  pp (RoleAttribute r l) = text "roleattribute" <+> pp r <+>
+                           sepWithCommas l <> semi
   pp (Attribute i) = text "attribute" <+> pp i <> semi
   pp (Type t als ats) = text "type" <+> pp t <+> ppAlias als <> 
                         ppOptAttrs ats <> semi

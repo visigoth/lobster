@@ -97,6 +97,8 @@ import qualified Text.ParserCombinators.PolyReadP as PR
 'else'                          { T _ ELSE }
 'alias'                         { T _ ALIAS }
 'attribute'                     { T _ ATTRIBUTE }
+'attribute_role'                { T _ ATTRIBUTE_ROLE }
+'roleattribute'                 { T _ ROLEATTRIBUTE }
 'type_transition'               { T _ TYPE_TRANSITION }
 'type_member'                   { T _ TYPE_MEMBER }
 'type_change'                   { T _ TYPE_CHANGE }
@@ -156,6 +158,7 @@ Path                            { T _ (PATH $$) }
 RegexpPath                      { T _ (REGEXP_PATH $$) }
 Identifier                      { T _ (IDENTIFIER _) }
 Number                          { T _ (NUMBER $$) }
+Filename                        { T _ (FILENAME $$) }
 Ipv4addr                        { T _ (IPV4_ADDR $$) }
 Ipv6addr                        { T _ (IPV6_ADDR $$) }
 Version                         { T _ (VERSION_IDENTIFIER $$) }
@@ -247,6 +250,7 @@ require_decl            :: { Require }
                         | 'role'        id_comma_list ';'                                              { RequireRole (fromIds (NE.reverse $2)) }
                         | 'type'        id_comma_list ';'                                              { RequireType (fromIds (NE.reverse $2)) }
                         | 'attribute'   id_comma_list ';'                                              { RequireAttribute (fromIds (NE.reverse $2)) }
+                        | 'attribute_role' id_comma_list ';'                                           { RequireAttributeRole (fromIds (NE.reverse $2)) }
                         | 'bool'        id_comma_list ';'                                              { RequireBool (fromIds (NE.reverse $2)) }         
                         | 'ifdef' '(' "`" identifier "'" ',' "`" requires "'" ')'                      { RequireIfdef (fromId $4) (NE.reverse $8) [] }
                         | 'ifdef' '(' "`" identifier "'" ',' "`" requires "'" ',' "`" requires "'" ')' { RequireIfdef (fromId $4) (NE.reverse $8) (toList (NE.reverse $12)) }
@@ -283,9 +287,15 @@ interface_call          :: { Stmt }
                         : identifier '(' set_comma_list ')' { Call (fromId $1) (reverse $3) }
 
 set_comma_list          :: { [NonEmptyList (SignedId Identifier)] }
-set_comma_list          : nested_signed_list                    { [$1] }
-                        | set_comma_list ',' nested_signed_list { $3 : $1 }
-                        |                                       { [] }
+set_comma_list          : macro_argument                    { [$1] }
+                        | set_comma_list ',' macro_argument { $3 : $1 }
+                        |                                   { [] }
+
+-- TODO: Should we change this type to a new MacroArgument type with
+-- separate constructors for Identifier/List/Filename?
+macro_argument          :: { NonEmptyList (SignedId Identifier) }
+macro_argument          : nested_signed_list { $1 }
+                        | Filename           { singleton (SignedId Positive (mkId $1)) }
 
 policy                  :: { [Stmt] }
 policy                  : policy policy_stmt { $2 : $1 }
@@ -310,6 +320,8 @@ te_rbac_decl            :: { Stmt }
 rbac_decl               :: { Stmt }
                         : 'role' identifier 'types' nested_signed_ts ';'               { Role (fromId $2) (toList $4) }
                         | 'role' identifier ';'                                        { Role (fromId $2) [] }
+                        | 'attribute_role' identifier ';'                              { AttributeRole (fromId $2) }
+                        | 'roleattribute' identifier id_comma_list ';'                 { RoleAttribute (fromId $2) (NE.reverse (fromIds $3)) }
                         | 'role_transition' nested_ids nested_signed_ts identifier ';' { RoleTransition (fromIds $2) $3 (fromId $4) }
 -- this would introduce reduce/reduce conflicts with the TeAvTab Allow case:
 --                      | 'allow' nested_ids nested_ids ';'                         { RoleAllow (fromIds $2) (fromIds $3) }
@@ -337,8 +349,16 @@ mls_level_def           : identifier { fromId $1 }
 alias_def               :: { NonEmptyList TypeId }
                         : 'alias' nested_ids { fromIds $2 }
 
+-- FIXME: Recent refpolicy versions (e.g. 2.20130424) support an
+-- extra quoted string argument on the 'type_transition' statement.
+-- We need to decide what to do with it.
+tt_extra                :: { () }
+tt_extra                : Filename   { () }
+                        | identifier { () }
+
 stmt                    :: { Stmt }
                         : 'type_transition' source_types source_types ':' nested_ids identifier ';'    { Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
+                        | 'type_transition' source_types source_types ':' nested_ids identifier tt_extra ';' { Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
                         | 'type_member'     source_types source_types ':' nested_ids identifier ';'    { Transition TypeMember     (mkSourceTarget $2 $3 $5) (fromId $6) }
                         | 'type_change'     source_types source_types ':' nested_ids identifier ';'    { Transition TypeChange     (mkSourceTarget $2 $3 $5) (fromId $6) }
                         | 'allow'      source_types target_types ':' nested_ids permissions  ';'       { TeAvTab Allow (mkSourceTarget $2 $3 $5) $6 }

@@ -47,6 +47,8 @@ if				{ ctoken IF }
 else				{ ctoken ELSE }
 alias				{ ctoken ALIAS }
 attribute			{ ctoken ATTRIBUTE }
+attribute_role			{ ctoken ATTRIBUTE_ROLE }
+roleattribute                   { ctoken ROLEATTRIBUTE }
 type_transition			{ ctoken TYPE_TRANSITION }
 type_member			{ ctoken TYPE_MEMBER }
 type_change			{ ctoken TYPE_CHANGE }
@@ -124,8 +126,9 @@ refpolicywarn[\ \t]*"("[\ \t]*`[^']*'[\ \t]*")" { atoken (REFPOLICYWARN . maybe 
 "`"                             { ctoken SQUOTE }
 "##"([\ \t][^\n]*\n|\n)("##"([\ \t][^\n]*\n|\n))* { atoken XMLDOC }
 --
-"/"($letter|$digit|_|"."|"-"|"/"|":")* { atoken PATH }
-"/"($letter|$digit|_|"."|"-"|"/"|":"|[\,\|\*\+\?\{\}\(\)\[\]\\\^\`\'])* { atoken REGEXP_PATH }
+-- Allowing "$" in paths is a hack to get some macros with genfscon statements to work
+"/"($letter|$digit|_|"."|"-"|"/"|":"|"$")* { atoken PATH }
+"/"($letter|$digit|_|"."|"-"|"/"|":"|"~"|[\,\|\*\+\?\{\}\(\)\[\]\\\^\`\'])* { atoken REGEXP_PATH }
 -- scan concatenated strings and M4 variables as one token to avoid mixed-in whitespace
 ($letter|"$"([0-9]|"*"))($letter|"$"([0-9]|"*")|$digit|_|".")* { atoken identifier }
 
@@ -137,6 +140,7 @@ $digit$digit*                   { atoken (NUMBER . read) }
 $hexval{0,4}":"$hexval{0,4}":"($hexval|":"|".")* { atoken IPV6_ADDR }
 $digit+("."$digit+){3}          { atoken IPV4_ADDR }
 ($letter|$digit)+("."($letter|$digit)+){1,2} { atoken VERSION_IDENTIFIER }
+\" ($letter|$digit|_|"."|"-"|"+"|"~")+ \" { atoken FILENAME }
 "#"[^\n]*                       ;
 [\ \t\f]+			;
 "==" 				{ ctoken EQUALS }
@@ -183,6 +187,8 @@ data TokenConstructor =
  | ELSE
  | ALIAS
  | ATTRIBUTE
+ | ATTRIBUTE_ROLE
+ | ROLEATTRIBUTE
  | TYPE_TRANSITION
  | TYPE_MEMBER
  | TYPE_CHANGE
@@ -245,6 +251,7 @@ data TokenConstructor =
  | IPV4_ADDR String
  | IPV6_ADDR String
  | VERSION_IDENTIFIER String
+ | FILENAME String
  | NOTEQUAL
  | COMMA
  | COLON

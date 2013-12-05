@@ -203,6 +203,7 @@ data Require =
  | RequireRole (NonEmptyList RoleId)
  | RequireType (NonEmptyList TypeId)
  | RequireAttribute (NonEmptyList AttributeId)
+ | RequireAttributeRole (NonEmptyList AttributeId)
  | RequireBool (NonEmptyList BoolId)
  | RequireIfdef IfdefId (NonEmptyList Require) [Require]
  | RequireIfndef IfdefId (NonEmptyList Require)
@@ -216,6 +217,8 @@ data Stmt =
  | RefPolicyWarn RefPolicyWarnLine
  | Call M4Id [NonEmptyList (SignedId Identifier)]
  | Role RoleId [SignedId TypeOrAttributeId]
+ | AttributeRole AttributeId
+ | RoleAttribute RoleId (NonEmptyList AttributeId)
  | RoleTransition (NonEmptyList RoleId) (NonEmptyList (SignedId TypeOrAttributeId)) RoleId
  | RoleAllow (NonEmptyList RoleId) (NonEmptyList RoleId)
  | Attribute AttributeId

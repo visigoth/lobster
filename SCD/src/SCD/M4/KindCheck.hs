@@ -621,6 +621,8 @@ instance KC Stmt where
                                          where RefPolicyWarnLine w = wl
   kc (Call i al)                       = kcCall i al
   kc (Role r tas)                      = kcAddOrigin r >> kcSource tas
+  kc (AttributeRole a)                 = kcAddOrigin a
+  kc (RoleAttribute r as)              = kc r >> kc as
   kc (RoleTransition rs tas r)         = kc rs >> kcSource tas >> kc r
   kc (RoleAllow rs1 rs2)               = kc rs1 >> kc rs2
   kc (Attribute a)                     = kcAddOrigin a
@@ -1018,16 +1020,17 @@ kcCondExpr t (Op c1 _ c2) = kcCondExpr t c1 >> kcCondExpr t c2
 kcCondExpr t (Var b) = if t then kcAddLocal b else kcAddInput b
 
 instance KC Require where
-  kc (RequireClass c ps)   = do kcAddLocal c
-                                let k = iKind (head (toList ps))
-                                expandSets (Just k) ps >>= mapM_ kcAddLocal
+  kc (RequireClass c ps)       = do kcAddLocal c
+                                    let k = iKind (head (toList ps))
+                                    expandSets (Just k) ps >>= mapM_ kcAddLocal
 
-  kc (RequireRole rs)      = mapM_ kcAddLocal rs
-  kc (RequireType ts)      = mapM_ kcAddLocal ts
-  kc (RequireAttribute as) = mapM_ kcAddLocal as
-  kc (RequireBool bs)      = mapM_ kcAddLocal bs
-  kc (RequireIfdef i t e)  = kcIfdef i (kc t) (kc e)
-  kc (RequireIfndef i e)   = kcIfdef i (return ()) (kc e)
+  kc (RequireRole rs)          = mapM_ kcAddLocal rs
+  kc (RequireType ts)          = mapM_ kcAddLocal ts
+  kc (RequireAttribute as)     = mapM_ kcAddLocal as
+  kc (RequireAttributeRole as) = mapM_ kcAddLocal as
+  kc (RequireBool bs)          = mapM_ kcAddLocal bs
+  kc (RequireIfdef i t e)      = kcIfdef i (kc t) (kc e)
+  kc (RequireIfndef i e)       = kcIfdef i (return ()) (kc e)
 
 instance KC ClassId           where kc = kcAddInput
 instance KC PermissionId      where kc = kcAddInput
