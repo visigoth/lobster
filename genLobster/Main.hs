@@ -68,14 +68,121 @@ main = do
   args <- getArgs
   (opts, iDir) <- checkOpt_ args
 --  let shrimpOpts = O.defaultOptions{ O.ifdefDeclFile = ifdefDeclFile opts}
-  policy <- readPolicy (ifdefDeclFile opts) iDir
+  policy0 <- readPolicy (ifdefDeclFile opts) iDir
 --   let
 --     kcOpts = if kindErrors opts then defaultKindCheckOptions else ignoreErrorsKindCheckOptions
 --     (ki, errs) = kcPolicy shrimpOpts kcOpts policy []
 --   when ((not $ null errs) && kindErrors opts) $ do
 --     let (d,_) = errorDoc shrimpOpts errs
 --     reportErrors [render d]
+  let patterns = Map.fromList [ (i, stmts) | SupportDef i stmts <- supportDefs policy0 ]
+  let policy = policy0 { policyModules = map (expandPolicyModule patterns) (policyModules policy0) }
   processPolicy opts policy
+
+type Macros = Map M4Id [Stmt]
+
+expandPolicyModule :: Macros -> PolicyModule -> PolicyModule
+expandPolicyModule s pm =
+  pm { interface = expandInterface s (interface pm)
+     , implementation = expandImplementation s (implementation pm)
+     }
+
+expandImplementation :: Macros -> Implementation -> Implementation
+expandImplementation s (Implementation i v stmts) = Implementation i v (expandStmts s stmts)
+
+expandInterface :: Macros -> Interface -> Interface
+expandInterface s (InterfaceModule doc es) = InterfaceModule doc (map (expandInterfaceElement s) es)
+
+expandInterfaceElement :: Macros -> InterfaceElement -> InterfaceElement
+expandInterfaceElement s (InterfaceElement ty doc i stmts) =
+  InterfaceElement ty doc i (expandStmts s stmts)
+
+expandStmts :: Macros -> Stmts -> Stmts
+expandStmts s stmts = concatMap (expandStmt s) stmts
+
+expandStmt :: Macros -> Stmt -> [Stmt]
+expandStmt s stmt =
+  case stmt of
+    Tunable cond stmts1 stmts2  -> [Tunable cond (expandStmts s stmts1) (expandStmts s stmts2)]
+    Optional stmts1 stmts2      -> [Optional (expandStmts s stmts1) (expandStmts s stmts2)]
+    Ifdef i stmts1 stmts2       -> [Ifdef i (expandStmts s stmts1) (expandStmts s stmts2)]
+    Ifndef i stmts              -> [Ifndef i (expandStmts s stmts)]
+    CondStmt cond stmts1 stmts2 -> [CondStmt cond (expandStmts s stmts1) (expandStmts s stmts2)]
+    Call i args -> -- args :: [NonEmptyList (SignedId Identifier)]
+      case Map.lookup i s of
+        Nothing -> [stmt]
+        Just stmts -> expandStmts s $ map (substStmt args) (reverse stmts)
+                      -- ^ Policy macros are parsed with statements in reverse order
+    _ -> [stmt]
+
+substStmt :: [NonEmptyList (S.SignedId S.Identifier)] -> Stmt -> Stmt
+substStmt xs stmt =
+  case stmt of
+    Transition t (S.SourceTarget st tt tc) i ->
+        Transition t (S.SourceTarget (substSourceTypes st) (substSourceTypes tt) (substTargetClasses tc)) (fromSingle $ substId' i)
+    TeAvTab a (S.SourceTarget st tt tc) perms ->
+        TeAvTab a (S.SourceTarget (substSourceTypes st) (substTargetTypes tt) (substTargetClasses tc))
+                    (substPermissions perms)
+    -- TeAvTab (allow rules)
+    Call i args -> Call i (map substArg args)
+    _ -> stmt
+  where
+    substSourceTypes :: NonEmptyList (S.SignedId S.TypeOrAttributeId) -> NonEmptyList (S.SignedId S.TypeOrAttributeId)
+    substSourceTypes st = substSignedId =<< st
+
+    substTargetTypes :: NonEmptyList (S.SignedId S.Self) -> NonEmptyList (S.SignedId S.Self)
+    substTargetTypes tt = substSignedIdSelf =<< tt
+
+    substTargetClasses :: NonEmptyList S.ClassId -> NonEmptyList S.ClassId
+    substTargetClasses tc = substId' =<< tc
+
+    substArg :: NonEmptyList (S.SignedId S.Identifier) -> NonEmptyList (S.SignedId S.Identifier)
+    substArg arg = substSignedId =<< arg
+
+    substSignedId :: S.IsIdentifier i => S.SignedId i -> NonEmptyList (S.SignedId i)
+    substSignedId (S.SignedId S.Positive i) = substId i
+    substSignedId (S.SignedId S.Negative i) = fmap negateSignedId (substId i)
+
+    substSignedIdSelf :: S.SignedId S.Self -> NonEmptyList (S.SignedId S.Self)
+    substSignedIdSelf (S.SignedId S.Positive self) = substSelf self
+    substSignedIdSelf (S.SignedId S.Negative self) = fmap negateSignedId (substSelf self)
+
+    substSelf :: S.Self -> NonEmptyList (S.SignedId S.Self)
+    substSelf S.Self = return (S.SignedId S.Positive S.Self)
+    substSelf (S.NotSelf i) = fmap (fmap S.NotSelf) (substId i)
+
+    substId :: S.IsIdentifier i => i -> NonEmptyList (S.SignedId i)
+    substId i =
+      case asDollar (S.idString i) of
+        Nothing -> return (S.SignedId S.Positive i)
+        Just n -> fmap (fmap S.fromId) (xs !! (n - 1))
+
+    asDollar :: String -> Maybe Int
+    asDollar ('$' : s)
+      | all isDigit s = let n = read s in if n <= length xs then Just n else Nothing
+    asDollar _ = Nothing
+
+    substId' :: S.IsIdentifier i => i -> NonEmptyList i
+    substId' i = fmap fromPositive (substId i)
+
+    fromPositive :: S.SignedId a -> a
+    fromPositive (S.SignedId S.Positive x) = x
+    fromPositive (S.SignedId S.Negative _) = error "fromPositive"
+
+    fromSingle :: NonEmptyList a -> a
+    fromSingle ys =
+      case toList ys of
+        [y] -> y
+        _ -> error "fromSingle"
+
+    negateSignedId :: S.SignedId a -> S.SignedId a
+    negateSignedId (S.SignedId S.Positive x) = S.SignedId S.Negative x
+    negateSignedId (S.SignedId S.Negative _) = error "negateSignedId Negative"
+
+    substPermissions :: S.Permissions -> S.Permissions
+    substPermissions (S.Permissions pids) = S.Permissions (substId' =<< pids)
+    substPermissions (S.PStarTilde _) = error "substPermissions PStarTilde"
+
 
 -- option handling
 
@@ -523,8 +630,12 @@ capitalize (x:xs) = toUpper x : xs
 
 stripDollar :: String -> String
 stripDollar ('$':cs) = dropWhile (not . isAlpha) cs
-stripDollar s = s
+--stripDollar s = s
+stripDollar (c : cs) = c : stripDollar cs
+stripDollar [] = []
 
 substDollar :: String -> String -> String
 substDollar a ('$':cs) = a ++ dropWhile ((/=) '_') cs
-substDollar _ s = s
+substDollar a (c : cs) = c : substDollar a cs
+substDollar _ [] = []
+--substDollar _ s = s
