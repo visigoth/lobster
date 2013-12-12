@@ -1,0 +1,130 @@
+//------------------------------------------------------------------------------
+// Example IPTables policy in Lobster
+// Adam Foltzer <acfoltzer@galois.com>
+// 11 Dec 2013
+//------------------------------------------------------------------------------
+
+// This module implements the following example IPTables policy that
+// restricts incoming connections to SSH, HTTP, and HTTPS from a given
+// whitelist of IP addresses/subnets (in /sbin/iptables-save output
+// format):
+//
+// *filter
+// :INPUT ACCEPT [0:0]
+// :FORWARD DROP [0:0]
+// :OUTPUT ACCEPT [0:0]
+// :OKIPS - [0:0]
+// -A INPUT -i lo -j ACCEPT
+// -A INPUT -p icmp --icmp-type any -j ACCEPT
+// -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+// -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j OKIPS
+// -A INPUT -m state --state NEW -m tcp -p tcp --dport 80 -j OKIPS
+// -A INPUT -m state --state NEW -m tcp -p tcp --dport 443 -j OKIPS
+// -A INPUT -j DROP
+// -A OKIPS -s 192.168.0.0/16 -j ACCEPT
+// -A OKIPS -s 198.51.100.0/24 -j ACCEPT
+// -A OKIPS -j REJECT
+// COMMIT
+
+
+// An iptables rule, corresponding to a single rule in a chain. The
+// condition determines how a given packet flows through the rule
+class Rule(condition) {
+  // Incoming packet
+  port input;
+
+  // Outgoing packet when condition is true
+  port match;
+  // Outgoing packet when condition is false
+  port fail;
+}
+
+class UserSpace() {
+  // Packets entering userspace
+  port accept;
+  // Packets leaving userspace
+  port output;
+}
+
+class ExampleHost() {
+  // All incoming interfaces
+  port incoming;
+  // All outgoing interfaces
+  port outgoing;
+  // Packets destined for forwarding
+  port forward;
+
+  // Rejected packets flow here
+  port reject;
+  // Dropped packets flow here
+  port drop;
+
+  domain user = UserSpace();
+
+  //--------------------------
+  // filter table, INPUT chain
+  //--------------------------
+
+  // -A INPUT -i lo -j ACCEPT
+  domain input_0 = Rule("interface = lo");
+  input_0.input <-- incoming;
+  input_0.match --> user.accept;
+
+  // -A INPUT -p icmp --icmp-type any -j ACCEPT
+  domain input_1 = Rule("protocol = icmp");
+  input_1.input <-- input_0.fail;
+  input_1.match --> user.accept;
+
+  // -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+  domain input_2 = Rule("connection_state = ESTABLISHED || connection_state = RELATED");
+  input_2.input <-- input_1.fail;
+  input_2.match --> user.accept;
+
+  // -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j OKIPS
+  domain input_3 = Rule("connection_state = NEW && protocol = tcp && dest_port = 22");
+  input_3.input <-- input_2.fail;
+  input_3.match --> okips_0.input;
+
+  // -A INPUT -m state --state NEW -m tcp -p tcp --dport 80 -j OKIPS
+  domain input_4 = Rule("connection_state = NEW && protocol = tcp && dest_port = 80");
+  input_4.input <-- input_3.fail;
+  input_4.match --> okips_0.input;
+
+  // -A INPUT -m state --state NEW -m tcp -p tcp --dport 443 -j OKIPS
+  domain input_5 = Rule("connection_state = NEW && protocol = tcp && dest_port = 443");
+  input_5.input <-- input_3.fail;
+  input_5.match --> okips_0.input;
+
+  // -A INPUT -j DROP
+  input_5.fail --> drop;
+
+  //--------------------------
+  // filter table, OKIPS chain
+  //--------------------------
+
+  // -A OKIPS -s 192.168.0.0/16 -j ACCEPT
+  domain okips_0 = Rule("source_ip = 192.168.0.0/16");
+  okips_0.match --> user.accept;
+
+  // -A OKIPS -s 198.51.100.0/24 -j ACCEPT
+  domain okips_1 = Rule("source_ip = 198.51.100.0/24");
+  okips_1.input <-- okips_0.fail;
+  okips_1.match --> user.accept;
+
+  // -A OKIPS -j REJECT
+  okips_1.fail --> reject;
+
+  //---------------------------------------------------
+  // filter table, OUTPUT chain (default policy ACCEPT)
+  //---------------------------------------------------
+
+  user.output --> outgoing;
+
+  //--------------------------------------------------
+  // filter table, FORWARD chain (default policy DROP)
+  //--------------------------------------------------
+
+  forward --> drop;
+}
+
+domain host = ExampleHost();
