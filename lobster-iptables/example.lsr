@@ -31,7 +31,7 @@
 // condition determines how a given packet flows through the rule
 class Rule(condition) {
   // Incoming packet
-  port input;
+  port in;
 
   // Outgoing packet when condition is true
   port match;
@@ -43,7 +43,13 @@ class UserSpace() {
   // Packets entering userspace
   port accept;
   // Packets leaving userspace
-  port output;
+  port out;
+}
+
+// Abstract representation of a packet's destination outside of the
+// current policy (eg DROP, REJECT, FORWARD)
+class Destination() {
+  port in;
 }
 
 class ExampleHost() {
@@ -55,9 +61,9 @@ class ExampleHost() {
   port forward;
 
   // Rejected packets flow here
-  port reject;
+  domain reject = Destination();
   // Dropped packets flow here
-  port drop;
+  domain drop = Destination();
 
   domain user = UserSpace();
 
@@ -67,36 +73,33 @@ class ExampleHost() {
 
   // -A INPUT -i lo -j ACCEPT
   domain input_0 = Rule("interface = lo");
-  input_0.input <-- incoming;
+  input_0.in <-- incoming;
   input_0.match --> user.accept;
 
   // -A INPUT -p icmp --icmp-type any -j ACCEPT
   domain input_1 = Rule("protocol = icmp");
-  input_1.input <-- input_0.fail;
+  input_1.in <-- input_0.fail;
   input_1.match --> user.accept;
 
   // -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
   domain input_2 = Rule("connection_state = ESTABLISHED || connection_state = RELATED");
-  input_2.input <-- input_1.fail;
+  input_2.in <-- input_1.fail;
   input_2.match --> user.accept;
 
   // -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j OKIPS
   domain input_3 = Rule("connection_state = NEW && protocol = tcp && dest_port = 22");
-  input_3.input <-- input_2.fail;
-  input_3.match --> okips_0.input;
+  input_3.in <-- input_2.fail;
 
   // -A INPUT -m state --state NEW -m tcp -p tcp --dport 80 -j OKIPS
   domain input_4 = Rule("connection_state = NEW && protocol = tcp && dest_port = 80");
-  input_4.input <-- input_3.fail;
-  input_4.match --> okips_0.input;
+  input_4.in <-- input_3.fail;
 
   // -A INPUT -m state --state NEW -m tcp -p tcp --dport 443 -j OKIPS
   domain input_5 = Rule("connection_state = NEW && protocol = tcp && dest_port = 443");
-  input_5.input <-- input_3.fail;
-  input_5.match --> okips_0.input;
+  input_5.in <-- input_3.fail;
 
   // -A INPUT -j DROP
-  input_5.fail --> drop;
+  input_5.fail --> drop.in;
 
   //--------------------------
   // filter table, OKIPS chain
@@ -105,26 +108,29 @@ class ExampleHost() {
   // -A OKIPS -s 192.168.0.0/16 -j ACCEPT
   domain okips_0 = Rule("source_ip = 192.168.0.0/16");
   okips_0.match --> user.accept;
+  input_3.match --> okips_0.in;
+  input_4.match --> okips_0.in;
+  input_5.match --> okips_0.in;
 
   // -A OKIPS -s 198.51.100.0/24 -j ACCEPT
   domain okips_1 = Rule("source_ip = 198.51.100.0/24");
-  okips_1.input <-- okips_0.fail;
+  okips_1.in <-- okips_0.fail;
   okips_1.match --> user.accept;
 
   // -A OKIPS -j REJECT
-  okips_1.fail --> reject;
+  okips_1.fail --> reject.in;
 
   //---------------------------------------------------
   // filter table, OUTPUT chain (default policy ACCEPT)
   //---------------------------------------------------
 
-  user.output --> outgoing;
+  user.out --> outgoing;
 
   //--------------------------------------------------
   // filter table, FORWARD chain (default policy DROP)
   //--------------------------------------------------
 
-  forward --> drop;
+  forward --> drop.in;
 }
 
 domain host = ExampleHost();
