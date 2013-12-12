@@ -31,13 +31,20 @@ import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 import SCD.SELinux.Syntax
 import SCD.SELinux.Parser (parsePolicy)
 
+data AllowRule = AllowRule
+  { allowSubject    :: TypeOrAttributeId
+  , allowObject     :: TypeOrAttributeId
+  , allowClass      :: ClassId
+  , allowPerm       :: PermissionId
+  } deriving (Eq, Ord, Show)
+
 data St = St
   { actors         :: !(Set TypeOrAttributeId)
   , all_types      :: !(Set TypeOrAttributeId)
   , object_classes :: !(Map TypeOrAttributeId (Set ClassId))
   , object_perms   :: !(Map TypeOrAttributeId (Set (ClassId, PermissionId)))
   , class_perms    :: !(Map ClassId (Set PermissionId))
-  , allow_rules    :: [(TypeOrAttributeId, TypeOrAttributeId, ClassId, PermissionId)]
+  , allow_rules    :: !(Set AllowRule)
   }
 
 initSt :: St
@@ -47,7 +54,7 @@ initSt = St
   , object_classes = Map.empty
   , object_perms   = Map.empty
   , class_perms    = Map.empty
-  , allow_rules    = []
+  , allow_rules    = Set.empty
   }
 
 type M a = State St a
@@ -77,7 +84,8 @@ addAllow subject object cls perms = modify f
       , object_classes = insertMapSet object cls (object_classes st)
       , object_perms = Map.insertWith (flip Set.union) object perms' (object_perms st)
       , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
-      , allow_rules = [ (subject, object, cls, perm) | perm <- Set.toList perms ] ++ allow_rules st
+      , allow_rules = foldr (Set.insert . AllowRule subject object cls)
+                            (allow_rules st) (Set.toList perms)
       }
 
 processStmt :: Stmt -> M ()
@@ -191,12 +199,17 @@ processPolicy policy = preDecls ++ classDecls ++ classDecls' ++ domainDecls ++ c
                         [c] -> toClassId c
                         _ -> L.Name . ("TE_" ++) . idString $ typeId
     connectionDecls :: [L.Decl]
-    connectionDecls = map connectionDecl (reverse (allow_rules finalSt))
-    connectionDecl :: (TypeOrAttributeId, TypeOrAttributeId, ClassId, PermissionId) -> L.Decl
-    connectionDecl (subject, object, cls, perm) =
+    connectionDecls = map connectionDecl (Set.toList (allow_rules finalSt))
+    connectionDecl :: AllowRule -> L.Decl
+    connectionDecl allow =
         L.neutral
           (L.domPort (toIdentifier subject) activePort)
           (L.domPort (toIdentifier object) (toPortId (cls, perm)))
+      where
+        subject = allowSubject allow
+        object  = allowObject allow
+        cls     = allowClass allow
+        perm    = allowPerm allow
 
 processPolicyFile :: Prelude.FilePath -> IO String
 processPolicyFile path = do
