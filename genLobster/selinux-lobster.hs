@@ -43,7 +43,6 @@ data St = St
   , all_types      :: !(Set TypeOrAttributeId)
   , object_classes :: !(Map TypeOrAttributeId (Set ClassId))
   , object_perms   :: !(Map TypeOrAttributeId (Set (ClassId, PermissionId)))
-  , class_perms    :: !(Map ClassId (Set PermissionId))
   , allow_rules    :: !(Set AllowRule)
   }
 
@@ -53,7 +52,6 @@ initSt = St
   , all_types      = Set.empty
   , object_classes = Map.empty
   , object_perms   = Map.empty
-  , class_perms    = Map.empty
   , allow_rules    = Set.empty
   }
 
@@ -83,7 +81,6 @@ addAllow subject object cls perms = modify f
       , all_types = Set.insert subject (Set.insert object (all_types st))
       , object_classes = insertMapSet object cls (object_classes st)
       , object_perms = Map.insertWith (flip Set.union) object perms' (object_perms st)
-      , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
       , allow_rules = foldr (Set.insert . AllowRule subject object cls)
                             (allow_rules st) (Set.toList perms)
       }
