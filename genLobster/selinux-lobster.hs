@@ -39,19 +39,13 @@ data AllowRule = AllowRule
   } deriving (Eq, Ord, Show)
 
 data St = St
-  { actors         :: !(Set TypeOrAttributeId)
-  , all_types      :: !(Set TypeOrAttributeId)
-  , object_classes :: !(Map TypeOrAttributeId (Set ClassId))
-  , object_perms   :: !(Map TypeOrAttributeId (Set (ClassId, PermissionId)))
+  { object_classes :: !(Map TypeOrAttributeId (Set ClassId))
   , allow_rules    :: !(Set AllowRule)
   }
 
 initSt :: St
 initSt = St
-  { actors         = Set.empty
-  , all_types      = Set.empty
-  , object_classes = Map.empty
-  , object_perms   = Map.empty
+  { object_classes = Map.empty
   , allow_rules    = Set.empty
   }
 
@@ -71,16 +65,18 @@ fromSelf _ (NotSelf x) = x
 insertMapSet :: (Ord k, Ord a) => k -> a -> Map k (Set a) -> Map k (Set a)
 insertMapSet k x = Map.insertWith (flip Set.union) k (Set.singleton x)
 
+processClassId :: ClassId
+processClassId = mkId "process"
+
 addAllow :: TypeOrAttributeId -> TypeOrAttributeId
          -> ClassId -> Set PermissionId -> M ()
 addAllow subject object cls perms = modify f
   where
-    perms' = Set.fromList [ (cls, p) | p <- Set.toList perms ]
     f st = St
-      { actors = Set.insert subject (actors st)
-      , all_types = Set.insert subject (Set.insert object (all_types st))
-      , object_classes = insertMapSet object cls (object_classes st)
-      , object_perms = Map.insertWith (flip Set.union) object perms' (object_perms st)
+      { object_classes =
+          insertMapSet subject processClassId $
+          insertMapSet object cls $
+          object_classes st
       , allow_rules = foldr (Set.insert . AllowRule subject object cls)
                             (allow_rules st) (Set.toList perms)
       }
@@ -118,37 +114,22 @@ processTeRbac te =
     _ -> return ()
 
 processPolicy :: Policy -> [L.Decl]
-processPolicy policy = preDecls ++ classDecls ++ classDecls' ++ domainDecls ++ connectionDecls
+processPolicy policy = classDecls ++ domainDecls ++ connectionDecls
   where
     finalSt :: St
     finalSt = execState (mapM_ processTeRbac (teRbacs policy)) initSt
-    activeClasses :: Set ClassId
-    activeClasses =
-      Set.unions $
-        [ fromMaybe Set.empty (Map.lookup x (object_classes finalSt))
-        | x <- Set.toList (actors finalSt) ]
-    toPortId :: (ClassId, PermissionId) -> L.Name
-    toPortId (cls, perm) = L.Name (idString cls ++ "_" ++ idString perm)
+    toPortId :: PermissionId -> L.Name
+    toPortId = L.Name . idString -- FIXME: lowercase?
     toClassId :: ClassId -> L.Name
     toClassId = L.Name . capitalize . idString
     toIdentifier :: TypeOrAttributeId -> L.Name
     toIdentifier = L.Name . lowercase . idString
-    mkPortDecl :: L.Name -> L.Decl
-    mkPortDecl port = L.newPort port
-    mkDomDecl :: L.Name -> L.Name -> L.Decl
-    mkDomDecl dom cls = L.Domain dom cls []
+    toIdentifier' :: TypeOrAttributeId -> ClassId -> L.Name
+    toIdentifier' typeId classId = L.Name (lowercase (idString typeId ++ "__" ++ idString classId))
     commonMap :: Map CommonId [PermissionId]
     commonMap = Map.fromList [ (i, toList ps) | CommonPerm i ps <- commonPerms policy ]
     activePort :: L.Name
     activePort = L.Name "active"
-    subjectClass :: L.Name
-    subjectClass = L.Name "SUBJECT"
-    unknownClass :: L.Name
-    unknownClass = L.Name "UNKNOWN"
-    preDecls :: [L.Decl]
-    preDecls =
-        [ L.Class subjectClass [] [mkPortDecl activePort]
-        , L.Class unknownClass [] [] ]
     classDecls :: [L.Decl]
     classDecls = map classDecl (toList (avPerms policy))
     classDecl :: AvPerm -> L.Decl
@@ -156,52 +137,28 @@ processPolicy policy = preDecls ++ classDecls ++ classDecls' ++ domainDecls ++ c
       L.Class (toClassId classId) [] (active ++ stmts)
       where
         isActive :: Bool
-        isActive = Set.member classId activeClasses
+        isActive = idString classId == "process"
         active :: [L.Decl]
-        active = if isActive then [mkPortDecl activePort] else []
+        active = if isActive then [L.newPort activePort] else []
         perms :: [PermissionId]
         perms = case e of
                   Left ps -> toList ps
                   Right (commonId, ps) -> fromMaybe [] (Map.lookup commonId commonMap) ++ ps
         stmts :: [L.Decl]
-        stmts = [ mkPortDecl (toPortId (classId, p)) | p <- perms ]
-    classDecls' :: [L.Decl]
-    classDecls' = concatMap classDecl' (Set.toList (all_types finalSt))
-    classDecl' :: TypeOrAttributeId -> [L.Decl]
-    classDecl' typeId =
-      case fmap Set.toList $ Map.lookup typeId (object_classes finalSt) of
-        Just [c] -> []
-        _ -> [L.Class classId [] (active ++ stmts)]
-          where
-            classId :: L.Name
-            classId = L.Name . ("TE_" ++) . idString $ typeId
-            isActive :: Bool
-            isActive = Set.member typeId (actors finalSt)
-            active :: [L.Decl]
-            active = if isActive then [mkPortDecl activePort] else []
-            perms :: [(ClassId, PermissionId)]
-            perms = Set.toList $ fromMaybe Set.empty $ Map.lookup typeId (object_perms finalSt)
-            stmts :: [L.Decl]
-            stmts = map (mkPortDecl . toPortId) perms
+        stmts = [ L.newPort (toPortId p) | p <- perms ]
     domainDecls :: [L.Decl]
-    domainDecls = map domainDecl (Set.toList (all_types finalSt))
-    domainDecl :: TypeOrAttributeId -> L.Decl
-    domainDecl typeId = mkDomDecl (toIdentifier typeId) classId
-      where
-        classId =
-          case Map.lookup typeId (object_classes finalSt) of
-            Nothing | Set.member typeId (actors finalSt) -> subjectClass
-                    | otherwise                          -> unknownClass
-            Just s -> case Set.toList s of
-                        [c] -> toClassId c
-                        _ -> L.Name . ("TE_" ++) . idString $ typeId
+    domainDecls =
+      [ L.Domain (toIdentifier' typeId classId) (toClassId classId) []
+      | (typeId, classIds) <- Map.assocs (object_classes finalSt)
+      , classId <- Set.toList classIds
+      ]
     connectionDecls :: [L.Decl]
     connectionDecls = map connectionDecl (Set.toList (allow_rules finalSt))
     connectionDecl :: AllowRule -> L.Decl
     connectionDecl allow =
         L.neutral
-          (L.domPort (toIdentifier subject) activePort)
-          (L.domPort (toIdentifier object) (toPortId (cls, perm)))
+          (L.domPort (toIdentifier' subject processClassId) activePort)
+          (L.domPort (toIdentifier' object cls) (toPortId perm))
       where
         subject = allowSubject allow
         object  = allowObject allow
