@@ -1,0 +1,182 @@
+//------------------------------------------------------------------------------
+// Example IPTables+SELinux policy in Lobster
+// Adam Foltzer <acfoltzer@galois.com>
+// 17 Dec 2013
+//------------------------------------------------------------------------------
+
+// This module implements the following example IPTables + SELinux
+// policy for an FTP server. IPTables marks packets related to FTP
+// connections with an SELinux security context, and SELinux is
+// responsible for policy and enforcement.
+//
+// http://james-morris.livejournal.com/11010.html
+//
+// (Note that the `mangle` table has been changed to `security` in
+// keeping with up-to-date practices)
+//
+// IPTables (in `/sbin/iptables-save` output format):
+//
+// *security
+// :INPUT ACCEPT [0:0]
+// :FORWARD DROP [0:0]
+// :OUTPUT ACCEPT [0:0]
+// :SEL_FTPD - [0:0]
+// -A INPUT -p tcp --dport 21 -m state --state NEW -j SEL_FTPD
+// -A SEL_FTPD -j SECMARK --selctx system_u:object_r:ftp_server_packet_t:s0
+// -A SEL_FTPD -j CONNSECMARK --save
+// -A SEL_FTPD -j ACCEPT
+// -A INPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+// -A OUTPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+// COMMIT
+//
+// SELinux policy excerpt:
+//
+// type ftpd_t;
+// allow ftpd_t ftp_server_packet_t : packet { send recv };
+
+// An iptables rule, corresponding to a single rule in a chain. The
+// condition determines how a given packet flows through the rule
+class Rule(condition) {
+  // Incoming packet
+  port in;
+
+  // Outgoing packet when condition is true
+  port match;
+  // Outgoing packet when condition is false
+  port fail;
+}
+
+// If a packet flows through here, it is marked by the SECMARK module
+// with the given flags.
+class Secmark(flags) {
+  // Incoming packet
+  port in;
+  // Outgoing packet
+  port out;
+}
+
+// If a packet flows through here, it is marked by the CONNSECMARK
+// module with the given flags. It differs from SECMARK by being
+// stateful.
+//
+// In particular, the `--save` and `--restore` flags can associate an
+// ongoing connection with a particular context and restore that
+// context for subsequent packets. We need a better way to model this
+// in Lobster.
+class ConnSecmark(flags) {
+  // Incoming packet
+  port in;
+  // Outgoing packet
+  port out;
+}
+
+// SELinux types
+class Ftpd_t() {
+  port active;
+}
+
+class Ftp_server_packet_t() {
+  port active;
+  port packet_send;
+  port packet_recv;
+}
+
+class UserSpace() {
+  // Packets entering userspace
+  port accept;
+
+  // Packets leaving userspace
+  port out;
+
+  // Application domains within userspace
+  domain ftpd = Ftpd_t();
+  domain ftp_packet = Ftp_server_packet_t();
+  ftpd.active --> ftp_packet.packet_send;
+  ftpd.active <-- ftp_packet.packet_recv;
+
+  // Connections from packet types to outside
+  accept --> ftp_packet.packet_recv;
+  out    <-- ftp_packet.packet_send;
+}
+
+// Abstract representation of a packet's destination outside of the
+// current policy (eg DROP, REJECT, FORWARD)
+class Destination() {
+  port in;
+}
+
+class ExampleHost() {
+  // All incoming interfaces
+  port incoming;
+  // All outgoing interfaces
+  port outgoing;
+  // Packets destined for forwarding
+  port forward;
+
+  // Rejected packets flow here
+  domain reject = Destination();
+  // Dropped packets flow here
+  domain drop = Destination();
+
+  domain user = UserSpace();
+
+  //----------------------------------------------------
+  // security table, INPUT chain (default policy ACCEPT)
+  //----------------------------------------------------
+
+  // -A INPUT -p tcp --dport 21 -m state --state NEW -j SEL_FTPD
+  domain input_0 = Rule("protocol = tcp && dest_port = 21 && connection_state = NEW");
+  input_0.in <-- incoming;
+
+  // -A INPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+  // (matching component)
+  domain input_1 = Rule("connection_state = ESTABLISHED || connection_state = RELATED");
+  input_1.in <-- input_0.fail;
+  input_1.out --> user.accept;
+
+  // -A INPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+  // (marking component)
+  domain input_1_connsecmark = ConnSecmark("--restore");
+  input_1_connsecmark.in <-- input_1.match;
+  input_1_connsecmark.out --> user.accept;
+
+  //-----------------------------------------------------
+  // security table, OUTPUT chain (default policy ACCEPT)
+  //-----------------------------------------------------
+
+  // -A OUTPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+  // (matching component)
+  domain output_0 = Rule("connection_state = ESTABLISHED || connection_state = RELATED");
+  output_0.in <-- user.out;
+
+  // -A OUTPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+  // (marking component)
+  domain output_0_connsecmark = ConnSecmark("--restore");
+  output_0_connsecmark.in <-- output_0.match;
+  output_0_connsecmark.out --> outgoing;
+
+  //-------------------------------
+  // security table, SEL_FTPD chain
+  //-------------------------------
+
+  // -A SEL_FTPD -j SECMARK --selctx system_u:object_r:ftp_server_packet_t:s0
+  // (marking component; no matching predicate here)
+  domain sel_ftpd_0_secmark = Secmark("--selctx system_u:object_r:ftp_server_packet_t:s0");
+  sel_ftpd_0_secmark.in <-- input_0.match;
+
+  // -A SEL_FTPD -j CONNSECMARK --save
+  // (marking component; no matching predicate here either)
+  domain sel_ftpd_1_connsecmark = ConnSecmark("--save");
+  sel_ftpd_1_connsecmark.in <-- sel_ftpd_0_secmark.out;
+
+  // -A SEL_FTPD -j ACCEPT
+  sel_ftpd_1_connsecmark.out --> user.accept;
+
+  //----------------------------------------------------
+  // security table, FORWARD chain (default policy DROP)
+  //----------------------------------------------------
+
+  forward --> drop.in;
+}
+
+domain host = ExampleHost();
