@@ -90,4 +90,5 @@ ppDir asArrow d = text $
       | otherwise -> "bidirectional"
 
 ppDP :: DomPort -> Doc
-ppDP d = ppName (portDomain d) <> char '.' <> ppName (portLabel d)
+ppDP (DomPort (Just d) p) = ppName d <> char '.' <> ppName p
+ppDP (DomPort Nothing p) = ppName p

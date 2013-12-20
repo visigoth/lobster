@@ -90,7 +90,7 @@ dirPort nm d = withConstraint (PortDir d) (newPort nm)
 
 data DomPort
  = DomPort
-     { portDomain :: Name
+     { portDomain :: Maybe Name
      , portLabel  :: Name
      }
 
@@ -107,7 +107,7 @@ newDomain :: Name -> Name -> [Param] -> Decl
 newDomain binder ctor args = Domain binder ctor args
 
 domPort :: Name -> Name -> DomPort
-domPort a b = DomPort{portDomain=a,portLabel=b}
+domPort a b = DomPort { portDomain = Just a, portLabel = b }
 
 left :: DomPort -> DomPort -> Decl
 left = connect L
