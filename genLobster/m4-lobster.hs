@@ -91,7 +91,7 @@ isDefined :: M4.IfdefId -> Bool
 isDefined _ = False
 -- ^ FIXME: make this depend on a parameter
 
-processStmts :: M4.Stmts -> M () 
+processStmts :: M4.Stmts -> M ()
 processStmts = mapM_ processStmt
 
 processStmt :: M4.Stmt -> M ()
@@ -234,121 +234,136 @@ expandStmt s stmt =
         Just stmts -> expandStmts s $ map (substStmt args) stmts
     _ -> [stmt]
 
-substStmt :: [NonEmptyList (S.SignedId S.Identifier)] -> Stmt -> Stmt
-substStmt arguments = goStmt
-  where
-    goStmt :: Stmt -> Stmt
-    goStmt stmt =
-      case stmt of
-        Tunable c stmts1 stmts2 -> Tunable (goCondExpr c) (map goStmt stmts1) (map goStmt stmts2)
-        Optional stmts1 stmts2  -> Optional (map goStmt stmts1) (map goStmt stmts2)
-        Ifdef i stmts1 stmts2   -> Ifdef i (map goStmt stmts1) (map goStmt stmts2)
-        Ifndef i stmts          -> Ifndef i (map goStmt stmts)
-        Call i args             -> Call i (map goSignedIds args)
-        Role i attrs            -> Role (goId i) (goListSignedId attrs)
-        RoleAttribute i attrs   -> RoleAttribute (goId i) (goIds attrs)
-        RoleTransition rs ts i  -> RoleTransition (goIds rs) (goSignedIds ts) (goId i)
-        RoleAllow rs1 rs2       -> RoleAllow (goIds rs1) (goIds rs2)
-        Attribute a             -> Attribute (goId a)
-        Type t ts attrs         -> Type (goId t) (goListId ts) (goListId attrs)
-        TypeAlias t ts          -> TypeAlias (goId t) (goIds ts)
-        TypeAttribute i attrs   -> TypeAttribute (goId i) (goIds attrs)
-        RangeTransition xs ys zs (MlsRange a b)
-                                -> RangeTransition (goSignedIds xs) (goSignedIds ys) (goIds zs)
-                                   (MlsRange (id a) (id b))
-        Transition t (S.SourceTarget st tt tc) i
-                                -> Transition t (S.SourceTarget
-                                                      (goSignedIds st)
-                                                      (goSignedIds tt)
-                                                      (goIds tc))
-                                   (goId i)
-        TeAvTab a (S.SourceTarget st tt tc) perms
-                                -> TeAvTab a (S.SourceTarget
-                                              (goSignedIds st)
-                                              (substTargetTypes tt)
-                                              (goIds tc))
-                                   (goPermissions perms)
-        CondStmt c ss1 ss2      -> CondStmt c (map goStmt ss1) (map goStmt ss2)
-        GenBoolean t i b        -> GenBoolean t (goId i) b
-        _ -> stmt
+----------------------------------------------------------------------
+-- Substitution for $1, $2, $3 ...
 
-    goCondExpr :: S.CondExpr -> S.CondExpr
-    goCondExpr (S.Not c) = S.Not (goCondExpr c)
-    goCondExpr (S.Op c1 o c2) = S.Op (goCondExpr c1) o (goCondExpr c2)
-    goCondExpr (S.Var i) = S.Var (goId i)
+type Substitution = [NonEmptyList (S.SignedId S.Identifier)]
 
-    goSignedIds :: S.IsIdentifier i => NonEmptyList (S.SignedId i) -> NonEmptyList (S.SignedId i)
-    goSignedIds ids = fromList (substSignedId =<< toList ids)
+class Subst a where
+  subst :: Substitution -> a -> a
+  subst s x = fromSingle (substList s x)
 
-    substTargetTypes :: NonEmptyList (S.SignedId S.Self) -> NonEmptyList (S.SignedId S.Self)
-    substTargetTypes tt = fromList (substSignedIdSelf =<< toList tt)
+  substList :: Substitution -> a -> [a]
+  substList s x = map fromPositive (substListSigned s x)
 
-    goId :: S.IsIdentifier i => i -> i
-    goId i = fromSingle (substId' i)
+  substListSigned :: Substitution -> a -> [S.SignedId a]
+  substListSigned s x = [S.SignedId S.Positive (subst s x)]
 
-    goListId :: S.IsIdentifier i => [i] -> [i]
-    goListId ids = substId' =<< ids
+fromSingle :: (Foldable l) => l a -> a
+fromSingle ys =
+  case toList ys of
+    [y] -> y
+    _ -> error "fromSingle"
 
-    goIds :: S.IsIdentifier i => NonEmptyList i -> NonEmptyList i
-    goIds ids = fromList (substId' =<< toList ids)
+fromPositive :: S.SignedId a -> a
+fromPositive (S.SignedId S.Positive x) = x
+fromPositive (S.SignedId S.Negative _) = error "fromPositive"
 
-    goListSignedId :: S.IsIdentifier i => [S.SignedId i] -> [S.SignedId i]
-    goListSignedId ids = substSignedId =<< ids
+instance Subst a => Subst (S.SignedId a) where
+  substList s (S.SignedId S.Positive x) = substListSigned s x
+  substList s (S.SignedId S.Negative x) =
+    fmap (S.SignedId S.Negative . fromPositive) (substListSigned s x)
 
-    substSignedId :: S.IsIdentifier i => S.SignedId i -> [S.SignedId i]
-    substSignedId (S.SignedId S.Positive i) = substId i
-    substSignedId (S.SignedId S.Negative i) = fmap negateSignedId (substId i)
+getArg :: Substitution -> Int -> [S.SignedId S.Identifier]
+getArg s n | n <= length s = toList (s !! (n - 1))
+           | otherwise     = []
 
-    substSignedIdSelf :: S.SignedId S.Self -> [S.SignedId S.Self]
-    substSignedIdSelf (S.SignedId S.Positive self) = substSelf self
-    substSignedIdSelf (S.SignedId S.Negative self) = fmap negateSignedId (substSelf self)
+substString :: Substitution -> String -> String
+substString s ('$':cs) =
+  S.idString (fromPositive (fromSingle (getArg s (read ds)))) ++ substString s cs'
+    where (ds, cs') = span isDigit cs
+substString s (c : cs) = c : substString s cs
+substString _ [] = []
 
-    substSelf :: S.Self -> [S.SignedId S.Self]
-    substSelf S.Self = return (S.SignedId S.Positive S.Self)
-    substSelf (S.NotSelf i) = fmap (fmap S.NotSelf) (substId i)
+asDollar :: String -> Maybe Int
+asDollar ('$' : s) | all isDigit s = Just (read s)
+asDollar _ = Nothing
 
-    getArg :: Int -> [S.SignedId S.Identifier]
-    getArg n | n <= length arguments = toList (arguments !! (n - 1))
-             | otherwise             = []
+substId :: S.IsIdentifier i => Substitution -> i -> [S.SignedId i]
+substId s i =
+  case asDollar (S.idString i) of
+    Nothing -> return (S.SignedId S.Positive (S.mkId (substString s (S.idString i))))
+    Just n -> fmap (fmap S.fromId) (getArg s n)
 
-    substId :: S.IsIdentifier i => i -> [S.SignedId i]
-    substId i =
-      case asDollar (S.idString i) of
-        Nothing -> return (S.SignedId S.Positive (S.mkId (goString (S.idString i))))
-        Just n -> fmap (fmap S.fromId) (getArg n)
+instance Subst S.Identifier        where substListSigned = substId
+instance Subst S.TypeOrAttributeId where substListSigned = substId
+instance Subst S.PermissionId      where substListSigned = substId
+instance Subst S.BoolId            where substListSigned = substId
+instance Subst S.ClassId           where substListSigned = substId
+instance Subst S.TypeId            where substListSigned = substId
+instance Subst S.AttributeId       where substListSigned = substId
+instance Subst S.RoleId            where substListSigned = substId
 
-    goString :: String -> String
-    goString ('$':cs) = S.idString (fromPositive (fromSingle (getArg (read ds)))) ++ goString cs'
-      where (ds, cs') = span isDigit cs
-    goString (c : cs) = c : goString cs
-    goString [] = []
+instance Subst S.Self where
+  substList _ S.Self = [S.Self]
+  substList s (S.NotSelf i) = map S.NotSelf (substList s i)
+  substListSigned _ S.Self = [S.SignedId S.Positive S.Self]
+  substListSigned s (S.NotSelf i) = map (fmap S.NotSelf) (substListSigned s i)
 
-    asDollar :: String -> Maybe Int
-    asDollar ('$' : s)
-      | all isDigit s = Just (read s)
-    asDollar _ = Nothing
+instance Subst a => Subst [a] where
+  subst s xs = concatMap (substList s) xs
 
-    substId' :: S.IsIdentifier i => i -> [i]
-    substId' i = fmap fromPositive (substId i)
+instance Subst a => Subst (NonEmptyList a) where
+  subst s xs = fromList (concatMap (substList s) (toList xs))
 
-    fromPositive :: S.SignedId a -> a
-    fromPositive (S.SignedId S.Positive x) = x
-    fromPositive (S.SignedId S.Negative _) = error "fromPositive"
+instance Subst S.CondExpr where
+  subst s (S.Not c) = S.Not (subst s c)
+  subst s (S.Op c1 o c2) = S.Op (subst s c1) o (subst s c2)
+  subst s (S.Var i) = S.Var (subst s i)
 
-    fromSingle :: (Foldable l, Show a) => l a -> a
-    fromSingle ys =
-      case toList ys of
-        [y] -> y
-        _ -> error $ "fromSingle " ++ show (toList ys)
+instance Subst i => Subst (S.StarTilde i) where
+  subst _ S.Star = S.Star
+  subst s (S.Tilde xs) = S.Tilde (subst s xs)
 
-    negateSignedId :: S.SignedId a -> S.SignedId a
-    negateSignedId (S.SignedId S.Positive x) = S.SignedId S.Negative x
-    negateSignedId (S.SignedId S.Negative _) = error "negateSignedId Negative"
+instance Subst S.Permissions where
+  subst s (S.Permissions pids) = S.Permissions (subst s pids)
+  subst s (S.PStarTilde st) = S.PStarTilde (subst s st)
 
-    goPermissions :: S.Permissions -> S.Permissions
-    goPermissions (S.Permissions pids) = S.Permissions (goIds pids)
-    goPermissions (S.PStarTilde S.Star) = S.PStarTilde S.Star
-    goPermissions (S.PStarTilde (S.Tilde pids)) = S.PStarTilde (S.Tilde (goIds pids))
+instance (Subst st, Subst tt) => Subst (S.SourceTarget st tt) where
+  subst s (S.SourceTarget st tt tc) = S.SourceTarget (subst s st) (subst s tt) (subst s tc)
+
+instance Subst t => Subst (S.NeverAllow t) where
+  subst s (S.NeverAllow xs) = S.NeverAllow (subst s xs)
+  subst s (S.NAStarTilde st) = S.NAStarTilde (subst s st)
+
+instance Subst M4.Stmt where
+  subst s stmt =
+    case stmt of
+      Tunable c stmts1 stmts2 -> Tunable (subst s c) (subst s stmts1) (subst s stmts2)
+      Optional stmts1 stmts2  -> Optional (subst s stmts1) (subst s stmts2)
+      Ifdef i stmts1 stmts2   -> Ifdef i (subst s stmts1) (subst s stmts2)
+      Ifndef i stmts          -> Ifndef i (subst s stmts)
+      RefPolicyWarn _         -> stmt
+      Call i args             -> Call i (subst s args)
+      Role i attrs            -> Role (subst s i) (subst s attrs)
+      AttributeRole attr      -> AttributeRole (subst s attr)
+      RoleAttribute r attrs   -> RoleAttribute (subst s r) (subst s attrs)
+      RoleTransition rs ts r  -> RoleTransition (subst s rs) (subst s ts) (subst s r)
+      RoleAllow rs1 rs2       -> RoleAllow (subst s rs1) (subst s rs2)
+      Attribute attr          -> Attribute (subst s attr)
+      Type t ts attrs         -> Type (subst s t) (subst s ts) (subst s attrs)
+      TypeAlias t ts          -> TypeAlias (subst s t) (subst s ts)
+      TypeAttribute t attrs   -> TypeAttribute (subst s t) (subst s attrs)
+      RangeTransition xs ys zs (MlsRange a b)
+                              -> RangeTransition (subst s xs) (subst s ys) (subst s zs)
+                                 (MlsRange (id a) (id b))
+      TeNeverAllow st perms   -> TeNeverAllow (subst s st) (subst s perms)
+      Transition tr st t      -> Transition tr (subst s st) (subst s t)
+      TeAvTab ad st perms     -> TeAvTab ad (subst s st) (subst s perms)
+      CondStmt c ss1 ss2      -> CondStmt c (subst s ss1) (subst s ss2)
+      XMLDocStmt _            -> stmt
+      SidStmt _               -> stmt --FIXME
+      FileSystemUseStmt _     -> stmt --FIXME
+      GenFileSystemStmt _     -> stmt --FIXME
+      PortStmt _              -> stmt --FIXME
+      NetInterfaceStmt _      -> stmt --FIXME
+      NodeStmt _              -> stmt --FIXME
+      Define _i               -> stmt --FIXME
+      Require _reqs           -> stmt --FIXME
+      GenBoolean t i b        -> GenBoolean t (subst s i) b
+
+substStmt :: Substitution -> Stmt -> Stmt
+substStmt = subst
 
 ----------------------------------------------------------------------
 -- option handling
