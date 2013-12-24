@@ -124,9 +124,20 @@ processPolicy policy = processStmts allStmts
 ----------------------------------------------------------------------
 -- Generation of Lobster code
 
-classDecls :: St -> [L.Decl]
-classDecls st = map classDecl (Map.assocs (class_perms st))
+classPermissions :: Policy -> Map S.ClassId (Set S.PermissionId)
+classPermissions policy =
+  Map.fromList [ (i, perms x) | S.AvPermClass i x <- toList (M4.avPerms policy) ]
   where
+    commonMap = Map.fromList [ (i, toList ps) | S.CommonPerm i ps <- commonPerms policy ]
+    perms (Left ps) = Set.fromList (toList ps)
+    perms (Right (i, ps)) = Set.fromList (Map.findWithDefault [] i commonMap ++ ps)
+
+classDecls :: M4.Policy -> St -> [L.Decl]
+classDecls policy st = map classDecl (Map.assocs permissionMap)
+  where
+    permissionMap :: Map S.ClassId (Set S.PermissionId)
+    permissionMap = Map.unionWith Set.union (class_perms st) (classPermissions policy)
+
     classDecl :: (S.ClassId, Set S.PermissionId) -> L.Decl
     classDecl (classId, perms) = L.Class (toClassId classId) [] stmts
       where stmts = [ L.newPort (toPortId p) | p <- Set.toList perms ]
@@ -152,8 +163,8 @@ outputAllowRule (AllowRule subject object cls perm) =
     toPortId :: S.PermissionId -> L.Name
     toPortId = L.Name . lowercase . S.idString
 
-outputLobster :: St -> [L.Decl]
-outputLobster st = classDecls st ++ domainDecls ++ connectionDecls
+outputLobster :: M4.Policy -> St -> [L.Decl]
+outputLobster policy st = classDecls policy st ++ domainDecls ++ connectionDecls
   where
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
@@ -200,7 +211,7 @@ main = do
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
   let finalSt = execState (processPolicy policy) initSt
-  putStrLn $ showLobster (outputLobster finalSt)
+  putStrLn $ showLobster (outputLobster policy finalSt)
 
 ----------------------------------------------------------------------
 -- Selective macro expansion
