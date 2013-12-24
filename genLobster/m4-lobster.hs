@@ -5,6 +5,7 @@ import Control.Monad.State.Strict
 import Data.Char
 import Data.Either (partitionEithers)
 import Data.Foldable (Foldable, toList)
+import Data.List (isSuffixOf)
 import Data.Map (Map)
 import Data.NonEmptyList (NonEmptyList, FromList(..))
 import Data.Set (Set)
@@ -191,7 +192,12 @@ main = do
           [ (i, stmts)
           | m <- policyModules policy0
           , InterfaceElement TemplateType _doc i stmts <- interfaceElements (interface m) ]
-  let macros = Map.unions [patternMacros, interfaceMacros, templateMacros]
+  let classSetMacros =
+        Map.fromList
+          [ (i, toList ids)
+          | ClassPermissionDef i ids _ <- classPermissionDefs policy0
+          , "_class_set" `isSuffixOf` S.idString i ]
+  let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
   let finalSt = execState (processPolicy policy) initSt
   putStrLn $ showLobster (outputLobster finalSt)
@@ -199,55 +205,122 @@ main = do
 ----------------------------------------------------------------------
 -- Selective macro expansion
 
-type Macros = Map M4Id [Stmt]
+data Macros = Macros
+  { stmtMacros :: Map M4Id [Stmt]
+  , identMacros :: Map M4Id [S.Identifier]
+  }
+
+class Expand a where
+  expand :: Macros -> a -> a
+  expand s x = fromSingle (expandList s x)
+
+  expandList :: Macros -> a -> [a]
+  expandList s x = [expand s x]
+
+instance Expand a => Expand [a] where
+  expand s = concatMap (expandList s)
+
+instance Expand a => Expand (NonEmptyList a) where
+  expand s = fromList . concatMap (expandList s) . toList
+
+expandListId :: S.IsIdentifier i => Macros -> i -> [i]
+expandListId s x =
+  case Map.lookup (S.fromId (S.toId x)) (identMacros s) of
+    Nothing -> [x]
+    Just xs -> map S.fromId xs
+
+instance Expand S.RoleId            where expandList = expandListId
+instance Expand S.AttributeId       where expandList = expandListId
+instance Expand S.TypeOrAttributeId where expandList = expandListId
+instance Expand S.BoolId            where expandList = expandListId
+instance Expand S.ClassId           where expandList = expandListId
+instance Expand S.TypeId            where expandList = expandListId
+instance Expand S.PermissionId      where expandList = expandListId
+
+instance Expand a => Expand (S.SignedId a) where
+  expandList s (S.SignedId sig x) = map (S.SignedId sig) (expandList s x)
+
+instance Expand i => Expand (S.StarTilde i) where
+  expand _ S.Star = S.Star
+  expand s (S.Tilde xs) = S.Tilde (expand s xs)
+
+instance Expand S.Permissions where
+  expand s (S.Permissions pids) = S.Permissions (expand s pids)
+  expand s (S.PStarTilde st) = S.PStarTilde (expand s st)
+
+instance (Expand st, Expand tt) => Expand (S.SourceTarget st tt) where
+  expand s (S.SourceTarget st tt tc) = S.SourceTarget (expand s st) (expand s tt) (expand s tc)
+
+instance Expand t => Expand (S.NeverAllow t) where
+  expand s (S.NeverAllow xs) = S.NeverAllow (expand s xs)
+  expand s (S.NAStarTilde st) = S.NAStarTilde (expand s st)
+
+instance Expand S.Self where
+  expandList _ S.Self = [S.Self]
+  expandList s (S.NotSelf i) = map S.NotSelf (expandList s i)
+
+instance Expand Stmt where
+  expandList s stmt =
+    case stmt of
+      Tunable cond stmts1 stmts2  -> [Tunable cond (expand s stmts1) (expand s stmts2)]
+      Optional stmts1 stmts2      -> [Optional (expand s stmts1) (expand s stmts2)]
+      Ifdef i stmts1 stmts2       -> [Ifdef i (expand s stmts1) (expand s stmts2)]
+      Ifndef i stmts              -> [Ifndef i (expand s stmts)]
+      RefPolicyWarn _             -> [stmt]
+      Call i args                 ->
+        case Map.lookup i (stmtMacros s) of
+          Nothing -> [stmt]
+          Just stmts -> expand s $ map (substStmt args) stmts
+      Role r attrs                -> [Role (expand s r) (expand s attrs)]
+      AttributeRole attr          -> [AttributeRole (expand s attr)]
+      RoleAttribute r attrs       -> [RoleAttribute (expand s r) (expand s attrs)]
+      RoleTransition rs ts r      -> [RoleTransition (expand s rs) (expand s ts) (expand s r)]
+      RoleAllow rs1 rs2           -> [RoleAllow (expand s rs1) (expand s rs2)]
+      Attribute attr              -> [Attribute (expand s attr)]
+      Type t ts attrs             -> [Type (expand s t) (expand s ts) (expand s attrs)]
+      TypeAlias t ts              -> [TypeAlias (expand s t) (expand s ts)]
+      TypeAttribute t attrs       -> [TypeAttribute (expand s t) (expand s attrs)]
+      RangeTransition xs ys zs (MlsRange a b)
+                                  -> [RangeTransition (expand s xs) (expand s ys) (expand s zs)
+                                                          (MlsRange (id a) (id b))]
+      TeNeverAllow st perms       -> [TeNeverAllow (expand s st) (expand s perms)]
+      Transition tr st t          -> [Transition tr (expand s st) (expand s t)]
+      TeAvTab ad st perms         -> [TeAvTab ad (expand s st) (expand s perms)]
+      CondStmt cond stmts1 stmts2 -> [CondStmt cond (expand s stmts1) (expand s stmts2)]
+      XMLDocStmt _                -> [stmt]
+      SidStmt _                   -> [stmt]
+      FileSystemUseStmt _         -> [stmt]
+      GenFileSystemStmt _         -> [stmt]
+      PortStmt _                  -> [stmt]
+      NetInterfaceStmt _          -> [stmt]
+      NodeStmt _                  -> [stmt]
+      Define _i                   -> [stmt]
+      Require _reqs               -> [stmt]
+      GenBoolean t i b            -> [GenBoolean t (expand s i) b]
+
+instance Expand InterfaceElement where
+  expand s (InterfaceElement ty doc i stmts) =
+    InterfaceElement ty doc i (expand s stmts)
+
+instance Expand Interface where
+  expand s (InterfaceModule doc es) = InterfaceModule doc (expand s es)
+
+instance Expand Implementation where
+  expand s (Implementation i v stmts) = Implementation i v (expand s stmts)
+
+instance Expand PolicyModule where
+  expand s pm =
+    pm { interface = expand s (interface pm)
+       , implementation = expand s (implementation pm)
+       }
 
 expandPolicyModule :: Macros -> PolicyModule -> PolicyModule
-expandPolicyModule s pm =
-  pm { interface = expandInterface s (interface pm)
-     , implementation = expandImplementation s (implementation pm)
-     }
-
-expandImplementation :: Macros -> Implementation -> Implementation
-expandImplementation s (Implementation i v stmts) = Implementation i v (expandStmts s stmts)
-
-expandInterface :: Macros -> Interface -> Interface
-expandInterface s (InterfaceModule doc es) = InterfaceModule doc (map (expandInterfaceElement s) es)
-
-expandInterfaceElement :: Macros -> InterfaceElement -> InterfaceElement
-expandInterfaceElement s (InterfaceElement ty doc i stmts) =
-  InterfaceElement ty doc i (expandStmts s stmts)
-
-expandStmts :: Macros -> Stmts -> Stmts
-expandStmts s stmts = concatMap (expandStmt s) stmts
-
-expandStmt :: Macros -> Stmt -> [Stmt]
-expandStmt s stmt =
-  case stmt of
-    Tunable cond stmts1 stmts2  -> [Tunable cond (expandStmts s stmts1) (expandStmts s stmts2)]
-    Optional stmts1 stmts2      -> [Optional (expandStmts s stmts1) (expandStmts s stmts2)]
-    Ifdef i stmts1 stmts2       -> [Ifdef i (expandStmts s stmts1) (expandStmts s stmts2)]
-    Ifndef i stmts              -> [Ifndef i (expandStmts s stmts)]
-    CondStmt cond stmts1 stmts2 -> [CondStmt cond (expandStmts s stmts1) (expandStmts s stmts2)]
-    Call i args -> -- args :: [NonEmptyList (SignedId Identifier)]
-      case Map.lookup i s of
-        Nothing -> [stmt]
-        Just stmts -> expandStmts s $ map (substStmt args) stmts
-    _ -> [stmt]
+expandPolicyModule = expand
 
 ----------------------------------------------------------------------
 -- Substitution for $1, $2, $3 ...
 
 type Substitution = [NonEmptyList (S.SignedId S.Identifier)]
-
-class Subst a where
-  subst :: Substitution -> a -> a
-  subst s x = fromSingle (substList s x)
-
-  substList :: Substitution -> a -> [a]
-  substList s x = map fromPositive (substListSigned s x)
-
-  substListSigned :: Substitution -> a -> [S.SignedId a]
-  substListSigned s x = [S.SignedId S.Positive (subst s x)]
 
 fromSingle :: (Foldable l) => l a -> a
 fromSingle ys =
@@ -258,6 +331,16 @@ fromSingle ys =
 fromPositive :: S.SignedId a -> a
 fromPositive (S.SignedId S.Positive x) = x
 fromPositive (S.SignedId S.Negative _) = error "fromPositive"
+
+class Subst a where
+  subst :: Substitution -> a -> a
+  subst s x = fromSingle (substList s x)
+
+  substList :: Substitution -> a -> [a]
+  substList s x = map fromPositive (substListSigned s x)
+
+  substListSigned :: Substitution -> a -> [S.SignedId a]
+  substListSigned s x = [S.SignedId S.Positive (subst s x)]
 
 instance Subst a => Subst (S.SignedId a) where
   substList s (S.SignedId S.Positive x) = substListSigned s x
@@ -335,7 +418,7 @@ instance Subst M4.Stmt where
       Ifndef i stmts          -> Ifndef i (subst s stmts)
       RefPolicyWarn _         -> stmt
       Call i args             -> Call i (subst s args)
-      Role i attrs            -> Role (subst s i) (subst s attrs)
+      Role r attrs            -> Role (subst s r) (subst s attrs)
       AttributeRole attr      -> AttributeRole (subst s attr)
       RoleAttribute r attrs   -> RoleAttribute (subst s r) (subst s attrs)
       RoleTransition rs ts r  -> RoleTransition (subst s rs) (subst s ts) (subst s r)
