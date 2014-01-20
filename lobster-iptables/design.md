@@ -58,7 +58,116 @@ example cases. The matching arguments to rules will be left
 uninterpreted, but the targets of rules will be interpreted in order
 to produce correct port relationships.
 
+#### SECMARK and SELinux
+
 Should a rule target include a SECMARK directive, we will produce an
 edge to a stub domain corresponding to the target's SELinux security
 context. This will likely then be grafted to a graph produced from
 SELinux policy in order to produce a cohesive whole.
+
+### Phase Two
+
+#### Predicate Language
+
+The focus of this phase is on the definition and implementation of a
+predicate language for the semantics of `iptables` matching rules. For
+example, a typical `iptables` rule might look like:
+
+    -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT
+
+Ignoring the chain name (`-A INPUT`) and the target (`-j ACCEPT`), we
+are left with only the conditions that must be matched for this rule
+to fire. In this phase, we will design a translation for these
+predicates, for example:
+
+    connection_state = NEW && protocol = tcp && dest_port = 22
+
+This language should be amenable to human inspection and modification,
+as well as machine consumption for proof tools and other
+manipulations.
+
+In order to check assertions about flows through `iptables` systems,
+we need to be able to reason about the conditions which are being
+matched, so this encoding must allow us to, for example, check or
+refute the feasibility of a conjunction of these matching predicates.
+
+### Open Questions
+
+#### Stateful Features
+
+`iptables` is distinguished from the earlier `ipchains` tool by its
+statefulness. This allows rules to match based on previous traffic,
+for example a rule might match only if the system sees more than 50
+packets per second from the same source. One of the most commonly used
+`iptables` extensions, that of connection tracking, relies on this
+statefulness to identify packets related to existing connections.
+
+For the purposes of this project, statefulness presents a problem for
+precision of the assertion checker. It is straightforward to write a
+checker that decides whether a packet's port number or protocol
+matches a certain rule. It is far less clear how to write a checker
+that handles predicates like "was involved in a previous
+connection".
+
+The conservative choice is to assume that *any* packet could be
+involved in *any* previous connection, but in practice this would
+yield a tremendous number of false positives. Consider this example:
+
+    -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+    -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j ACCEPT
+    -A INPUT -j DROP
+
+The intent of these rules is to accept any attempt to establish a new
+connection on port 22, and then accept all subsequent traffic for that
+connection. All other traffic is meant to be dropped. Should we make
+the conservative approximation that any packet could be involved in
+any previous connection, the first rule would match all traffic, and
+so all traffic would be accepted. This approximation is too
+conservative to be useful.
+
+A similar situation arises with the CONNSECMARK module, which allows
+saving and restoring security marks across packets of a
+connection. The open question then is how best to encode the semantics
+of stateful filters so that we might meaningfully include them in
+assertion checking, because they play an essential role in determining
+flows.
+
+#### Module Semantics
+
+The previous example also subtly illustrates a second problem. The
+first rule matches packets within both established and related
+connections. A related connection is one which, while not necessarily
+on the same port or protocol as the established connection, can
+nonetheless be thought of as part of the same connection.
+
+The canonical example is an FTP server which has separate ports for
+control and data transfer. The control port is a fixed well-known
+value, but the data transfer ports are dynamically assigned, so they
+cannot be statically written into the `iptables` rules.
+
+The `iptables` solution to this uses special-purpose kernel modules
+aware of the details of particular protocols. These modules contain
+the logic that determines whether a packet is related to an
+established connection, and crucially this logic does not appear in
+the `iptables` rules themselves. Worse, it is not even clear from the
+text of the rules *which* module is relevant for a particular
+connection.
+
+This out-of-band logic presents a problem for our assertion
+checker. We might encode the semantics of each module in our predicate
+language, essentially expanding the `--state ESTABLISHED,RELATED` rule
+into a large formula that matches any of the possible known connection
+ports. This seems extremely error-prone, as the translation would have
+to be done manually, probably through source code inspection of the
+modules, and furthermore we might have to vastly expand our predicate
+language to encode the types of checks that might be done by arbitrary
+module code. For example, deep inspection might be used on an FTP
+control packet to learn where an FTP data transfer connection will be
+opened.
+
+Another option is to treat these modules as uninterpreted function
+symbols within the predicate language. In this scenario, rather than
+returning a definite proof or refutation of a particular assertion, a
+checker might prove it relative to an assumption about module
+semantics. For example, "this port can be reached only by a packet
+that is related to an FTP connection".
