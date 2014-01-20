@@ -132,7 +132,7 @@ class ExampleHost() {
   // (matching component)
   domain input_1 = Rule("connection_state = ESTABLISHED || connection_state = RELATED");
   input_1.in <-- input_0.fail;
-  input_1.out --> user.accept;
+  input_1.fail --> user.accept;
 
   // -A INPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
   // (marking component)
@@ -148,6 +148,7 @@ class ExampleHost() {
   // (matching component)
   domain output_0 = Rule("connection_state = ESTABLISHED || connection_state = RELATED");
   output_0.in <-- user.out;
+  output_0.fail --> outgoing;
 
   // -A OUTPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
   // (marking component)
