@@ -22,6 +22,8 @@ import qualified Data.Aeson.Encode.Pretty as AP
 
 import qualified Lobster.Policy           as P
 
+import V3SPAObject
+
 conf :: AP.Config
 conf = AP.defConfig
   { AP.confIndent  = 2
@@ -41,27 +43,26 @@ errorHandler (ErrorCall s) = return (Left s)
 interpret :: P.Policy -> IO (Either String P.Domain)
 interpret p = catch (return . Right . snd $ P.interpretPolicy p) errorHandler
 
+sendVO :: V3SPAObject -> Snap ()
+sendVO vo = do
+  writeLBS (AP.encodePretty' conf vo)
+  writeLBS "\r\n"
+
 handleParse :: Snap ()
 handleParse = method POST $ do
   body <- (T.unpack . E.decodeUtf8) <$> readRequestBody 10000000
   let policy = P.parsePolicy body
+  modifyResponse $ setContentType "application/json"
   case policy of
-    -- TODO: Better error reporting!
-    Left err -> do
-      modifyResponse $ setContentType "text/plain"
-      modifyResponse $ setResponseCode 500
-      writeLazyText (T.pack err)
+    Left err -> sendVO $ emptyVO { errors = [err] }
     Right p  -> do
       let result = runP (P.toDomain p)
       case result of
-        Left err -> do
-          modifyResponse $ setContentType "text/plain"
-          modifyResponse $ setResponseCode 500
-          writeLazyText (T.pack err)
-        Right domain -> do
-          modifyResponse $ setContentType "application/json"
-          writeLBS (AP.encodePretty' conf domain)
-          writeLBS "\r\n"
+        Left err -> sendVO $ emptyVO { errors = [err] }
+        Right (checks, dom) ->
+          sendVO $ emptyVO { checkResults = checks
+                           , domain = Just dom
+                           }
 
 site :: Snap ()
 site = route [("/parse", handleParse)]
