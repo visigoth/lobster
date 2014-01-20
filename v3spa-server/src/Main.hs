@@ -34,15 +34,6 @@ conf = AP.defConfig
                        ]
   }
 
-errorHandler :: ErrorCall -> IO (Either String a)
-errorHandler (ErrorCall s) = return (Left s)
-
--- | Interpret a policy, returning the domain or an error
--- string.  We have to go to some trouble here because the
--- interpreter just bombs with "error" if there is an error.
-interpret :: P.Policy -> IO (Either String P.Domain)
-interpret p = catch (return . Right . snd $ P.interpretPolicy p) errorHandler
-
 sendVO :: V3SPAObject -> Snap ()
 sendVO vo = do
   writeLBS (AP.encodePretty' conf vo)
@@ -56,8 +47,7 @@ handleParse = method POST $ do
   case policy of
     Left err -> sendVO $ emptyVO { errors = [err] }
     Right p  -> do
-      let result = runP (P.toDomain p)
-      case result of
+      case runP (P.toDomain p) of
         Left err -> sendVO $ emptyVO { errors = [err] }
         Right (checks, dom) ->
           sendVO $ emptyVO { checkResults = checks
