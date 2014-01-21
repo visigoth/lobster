@@ -65,6 +65,22 @@ edge to a stub domain corresponding to the target's SELinux security
 context. This will likely then be grafted to a graph produced from
 SELinux policy in order to produce a cohesive whole.
 
+#### Parsing
+
+Since we do not need to interpret each of the rules, this phase will
+use a very simple parser, probably just using `words` and friends
+rather than something more sophisticated like Parsec.
+
+Alternately, we can use the `iptables-helpers` package from Hackage
+which, while not perfect, should be able to get us off the ground
+quickly.
+
+#### Graph Creation
+
+`iptables` rules can be interpreted as basic blocks in a control flow
+graph, so we can apply standard techniques for basic block discovery
+as we create the Lobster graph.
+
 ### Phase Two
 
 #### Predicate Language
