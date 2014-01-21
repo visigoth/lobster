@@ -12,7 +12,7 @@ module SCD.M4.Parser(parseInterface, parseImplementation,
   parseFileContexts, parseClassPermissionDefs, parseSupportDefs,
   parseGlobalBooleans, parseModulesConf, parseIfdefDecls) where
 
-import Text.Happy.ParserMonad(P, parseError, mkParser)
+import Text.Happy.ParserMonad(P, parseError, mkParser, at)
 import Control.Monad(ap)
 import Control.Monad.Error(throwError)
 import Data.Tree(Forest, Tree(..))
@@ -257,17 +257,17 @@ require_decl            :: { Require }
                         | 'ifndef' '(' "`" identifier "'" ',' "`" requires "'" ')'                     { RequireIfndef (fromId $4) (NE.reverse $8) }
 
 optional_policy         :: { Stmt }
-                        : 'opt_policy' '(' "`" interface_stmts "'" ')'                             { Optional $4 [] }
-                        | 'opt_policy' '(' "`" interface_stmts "'" ',' "`" interface_stmts "'" ')' { Optional $4 $8 }
+                        : 'opt_policy' '(' "`" interface_stmts "'" ')'                             { at $1 $ Optional $4 [] }
+                        | 'opt_policy' '(' "`" interface_stmts "'" ',' "`" interface_stmts "'" ')' { at $1 $ Optional $4 $8 }
 
 tunable_policy          :: { Stmt }
-                        : 'tunable_policy' '(' "`" cond_expr "'" ',' "`" interface_stmts "'"  ')'                            { Tunable $4 $8 [] }
-                        | 'tunable_policy' '(' "`" cond_expr "'" ',' "`" interface_stmts "'" ',' "`" interface_stmts "'" ')' { Tunable $4 $8 $12 }
+                        : 'tunable_policy' '(' "`" cond_expr "'" ',' "`" interface_stmts "'"  ')'                            { at $1 $ Tunable $4 $8 [] }
+                        | 'tunable_policy' '(' "`" cond_expr "'" ',' "`" interface_stmts "'" ',' "`" interface_stmts "'" ')' { at $1 $ Tunable $4 $8 $12 }
 
 ifdef_stms              :: { Stmt }
-                        : 'ifdef' '(' "`" identifier "'" ',' "`" interface_stmts "'" ')'                             { Ifdef (fromId $4) $8 [] }
-                        | 'ifdef' '(' "`" identifier "'" ',' "`" interface_stmts "'" ',' "`" interface_stmts "'" ')' { Ifdef (fromId $4) $8 $12 }
-                        | 'ifndef' '(' "`" identifier "'" ',' "`" interface_stmts "'" ')'                            { Ifndef (fromId $4) $8 }
+                        : 'ifdef' '(' "`" identifier "'" ',' "`" interface_stmts "'" ')'                             { at $1 $ Ifdef (fromId $4) $8 [] }
+                        | 'ifdef' '(' "`" identifier "'" ',' "`" interface_stmts "'" ',' "`" interface_stmts "'" ')' { at $1 $ Ifdef (fromId $4) $8 $12 }
+                        | 'ifndef' '(' "`" identifier "'" ',' "`" interface_stmts "'" ')'                            { at $1 $ Ifndef (fromId $4) $8 }
 {-
 refpolicywarn_stmts     :: { [[String]] }
                         : refpolicywarn_stmts refpolicywarn_stmt { $2 : $1 }
@@ -284,7 +284,7 @@ refpolicywarn           :: { Stmt }
 
 
 interface_call          :: { Stmt }
-                        : identifier '(' set_comma_list ')' { Call (fromId $1) (reverse $3) }
+                        : identifier '(' set_comma_list ')' { at $2 $ Call (fromId $1) (reverse $3) }
 
 set_comma_list          :: { [NonEmptyList (SignedId Identifier)] }
 set_comma_list          : macro_argument                    { [$1] }
@@ -318,25 +318,25 @@ te_rbac_decl            :: { Stmt }
                         | rbac_decl       { $1 }
 
 rbac_decl               :: { Stmt }
-                        : 'role' identifier 'types' nested_signed_ts ';'               { Role (fromId $2) (toList $4) }
-                        | 'role' identifier ';'                                        { Role (fromId $2) [] }
-                        | 'attribute_role' identifier ';'                              { AttributeRole (fromId $2) }
-                        | 'roleattribute' identifier id_comma_list ';'                 { RoleAttribute (fromId $2) (NE.reverse (fromIds $3)) }
-                        | 'role_transition' nested_ids nested_signed_ts identifier ';' { RoleTransition (fromIds $2) $3 (fromId $4) }
+                        : 'role' identifier 'types' nested_signed_ts ';'               { at $1 $ Role (fromId $2) (toList $4) }
+                        | 'role' identifier ';'                                        { at $1 $ Role (fromId $2) [] }
+                        | 'attribute_role' identifier ';'                              { at $1 $ AttributeRole (fromId $2) }
+                        | 'roleattribute' identifier id_comma_list ';'                 { at $1 $ RoleAttribute (fromId $2) (NE.reverse (fromIds $3)) }
+                        | 'role_transition' nested_ids nested_signed_ts identifier ';' { at $1 $ RoleTransition (fromIds $2) $3 (fromId $4) }
 -- this would introduce reduce/reduce conflicts with the TeAvTab Allow case:
 --                      | 'allow' nested_ids nested_ids ';'                         { RoleAllow (fromIds $2) (fromIds $3) }
                         | 'allow' source_types target_types ';'                     {% return RoleAllow `ap` projectSignedIds (return . fromId . toId) $2
                                                                                                         `ap` projectSignedIds projectSelf $3 }
 
 te_decl                 :: { Stmt }
-                        : 'attribute' identifier ';'                                                       { Attribute (fromId $2) }
-                        | 'type' identifier alias_def opt_attr_list ';'                                    { Type (fromId $2) (toList $3) $4 }
-                        | 'type' identifier opt_attr_list ';'                                              { Type (fromId $2) [] $3 }
-                        | 'typealias' identifier alias_def ';'                                             { TypeAlias (fromId $2) $3 }
-                        | 'typeattribute' identifier id_comma_list ';'                                     { TypeAttribute (fromId $2) (fromIds (NE.reverse $3)) }
-                        | 'range_transition' nested_signed nested_signed mls_range_def ';'                 { RangeTransition (fmap fromIds $2) (fmap fromIds $3) (singleton (mkId "process")) $4 }
-                        | 'range_transition' nested_signed nested_signed ':' nested_ids mls_range_def ';'  { RangeTransition (fmap fromIds $2) (fmap fromIds $3) (fromIds $5) $6 }
-                        | 'neverallow' na_source_types na_target_types ':' nested_ids permissions  ';'     { TeNeverAllow (mkSourceTarget $2 $3 $5) $6 }
+                        : 'attribute' identifier ';'                                                       { at $1 $ Attribute (fromId $2) }
+                        | 'type' identifier alias_def opt_attr_list ';'                                    { at $1 $ Type (fromId $2) (toList $3) $4 }
+                        | 'type' identifier opt_attr_list ';'                                              { at $1 $ Type (fromId $2) [] $3 }
+                        | 'typealias' identifier alias_def ';'                                             { at $1 $ TypeAlias (fromId $2) $3 }
+                        | 'typeattribute' identifier id_comma_list ';'                                     { at $1 $ TypeAttribute (fromId $2) (fromIds (NE.reverse $3)) }
+                        | 'range_transition' nested_signed nested_signed mls_range_def ';'                 { at $1 $ RangeTransition (fmap fromIds $2) (fmap fromIds $3) (singleton (mkId "process")) $4 }
+                        | 'range_transition' nested_signed nested_signed ':' nested_ids mls_range_def ';'  { at $1 $ RangeTransition (fmap fromIds $2) (fmap fromIds $3) (fromIds $5) $6 }
+                        | 'neverallow' na_source_types na_target_types ':' nested_ids permissions  ';'     { at $1 $ TeNeverAllow (mkSourceTarget $2 $3 $5) $6 }
                         | stmt                                                                             { $1 }
 
 mls_range_def           :: { MlsRange }
@@ -357,21 +357,21 @@ tt_extra                : Filename   { () }
                         | identifier { () }
 
 stmt                    :: { Stmt }
-                        : 'type_transition' source_types source_types ':' nested_ids identifier ';'    { Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
-                        | 'type_transition' source_types source_types ':' nested_ids identifier tt_extra ';' { Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
-                        | 'type_member'     source_types source_types ':' nested_ids identifier ';'    { Transition TypeMember     (mkSourceTarget $2 $3 $5) (fromId $6) }
-                        | 'type_change'     source_types source_types ':' nested_ids identifier ';'    { Transition TypeChange     (mkSourceTarget $2 $3 $5) (fromId $6) }
-                        | 'allow'      source_types target_types ':' nested_ids permissions  ';'       { TeAvTab Allow (mkSourceTarget $2 $3 $5) $6 }
-                        | 'auditallow' source_types target_types ':' nested_ids permissions ';'        { TeAvTab AuditAllow (mkSourceTarget $2 $3 $5) $6 }
-                        | 'auditdeny'  source_types target_types ':' nested_ids permissions ';'        { TeAvTab AuditDeny (mkSourceTarget $2 $3 $5) $6 }
-                        | 'dontaudit'  source_types target_types ':' nested_ids permissions ';'        { TeAvTab DontAudit (mkSourceTarget $2 $3 $5) $6 }
+                        : 'type_transition' source_types source_types ':' nested_ids identifier ';'    { at $1 $ Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
+                        | 'type_transition' source_types source_types ':' nested_ids identifier tt_extra ';' { at $1 $ Transition TypeTransition (mkSourceTarget $2 $3 $5) (fromId $6) }
+                        | 'type_member'     source_types source_types ':' nested_ids identifier ';'    { at $1 $ Transition TypeMember     (mkSourceTarget $2 $3 $5) (fromId $6) }
+                        | 'type_change'     source_types source_types ':' nested_ids identifier ';'    { at $1 $ Transition TypeChange     (mkSourceTarget $2 $3 $5) (fromId $6) }
+                        | 'allow'      source_types target_types ':' nested_ids permissions  ';'       { at $1 $ TeAvTab Allow (mkSourceTarget $2 $3 $5) $6 }
+                        | 'auditallow' source_types target_types ':' nested_ids permissions ';'        { at $1 $ TeAvTab AuditAllow (mkSourceTarget $2 $3 $5) $6 }
+                        | 'auditdeny'  source_types target_types ':' nested_ids permissions ';'        { at $1 $ TeAvTab AuditDeny (mkSourceTarget $2 $3 $5) $6 }
+                        | 'dontaudit'  source_types target_types ':' nested_ids permissions ';'        { at $1 $ TeAvTab DontAudit (mkSourceTarget $2 $3 $5) $6 }
                         | initial_sid_context_def                                                      { SidStmt $1 }
                         | fs_use_def                                                                   { FileSystemUseStmt $1 }
                         | genfs_context_def                                                            { GenFileSystemStmt $1 }
                         | port_context_def                                                             { PortStmt $1 }
                         | netif_context_def                                                            { NetInterfaceStmt $1 }
                         | node_context_def                                                             { NodeStmt $1 }
-                        | 'define' '(' "`" identifier "'" ')'                                          { Define (fromId $4) }
+                        | 'define' '(' "`" identifier "'" ')'                                          { at $1 $ Define (fromId $4) }
                         | gen_require                                                                  { Require $1 }
                         | gen_boolean                                                                  { let (t,i,b) = $1 in GenBoolean t i b }
 
@@ -385,7 +385,7 @@ bool_val                :: { Bool }
                         | 'false' { False }
 
 conditional             :: { Stmt }
-                        : 'if' cond_expr '{' interface_stmts '}' cond_else { CondStmt $2 $4 $6 }
+                        : 'if' cond_expr '{' interface_stmts '}' cond_else { at $1 $ CondStmt $2 $4 $6 }
 
 cond_else               :: { Stmts }
                         : 'else' '{' interface_stmts '}' { $3 }

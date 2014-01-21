@@ -644,6 +644,7 @@ instance KC Stmt where
   kc (Define i)                        = addM4Env (toId i) (M4Ifdef (Just True))
   kc (Require r)                       = kc r
   kc (GenBoolean _ i _)                = kcAddOrigin i
+  kc (StmtPosition c _)                = kc c
 
 kcCall :: M4Id -> [NonEmptyList (SignedId Identifier)] -> T ()
 kcCall i al = do

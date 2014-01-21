@@ -172,6 +172,7 @@ callGraphStmt (NodeStmt _)              = Set.empty
 callGraphStmt (Define _)                = Set.empty
 callGraphStmt (Require _)               = Set.empty
 callGraphStmt (GenBoolean _ _ _)        = Set.empty
+callGraphStmt (StmtPosition s _)        = callGraphStmt s
 
 callGraph2Dot :: Map Origin (Set Origin) -> String
 callGraph2Dot m = render $ text "digraph" <+> pbraces (fmap ppNode nodes ++

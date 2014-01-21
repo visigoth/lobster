@@ -1,6 +1,7 @@
 {-# OPTIONS -Wall #-}
 module Main (main) where
 
+import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Char
 import Data.Either (partitionEithers)
@@ -22,6 +23,7 @@ import SCD.M4.Syntax hiding (avPerms)
 import qualified SCD.M4.Syntax as M4
 
 import qualified SCD.SELinux.Syntax as S
+import qualified Text.Happy.ParserMonad as P
 
 import qualified SCD.Lobster.Gen.CoreSyn as L
 import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
@@ -39,7 +41,7 @@ data AllowRule = AllowRule
 data St = St
   { object_classes :: !(Map S.TypeOrAttributeId (Set S.ClassId))
   , class_perms    :: !(Map S.ClassId (Set S.PermissionId))
-  , allow_rules    :: !(Set AllowRule)
+  , allow_rules    :: !(Map AllowRule [P.Pos])
   }
 
 processClassId :: S.ClassId
@@ -52,10 +54,10 @@ initSt :: St
 initSt = St
   { object_classes = Map.empty
   , class_perms    = Map.singleton processClassId (Set.singleton activePermissionId)
-  , allow_rules    = Set.empty
+  , allow_rules    = Map.empty
   }
 
-type M a = State St a
+type M a = ReaderT [P.Pos] (State St) a
 
 ----------------------------------------------------------------------
 -- Processing of M4 policy
@@ -76,16 +78,18 @@ insertMapSet k x = Map.insertWith (flip Set.union) k (Set.singleton x)
 
 addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
-addAllow subject object cls perms = modify f
+addAllow subject object cls perms = do
+  ps <- ask
+  modify (f ps)
   where
-    f st = St
+    rules = [ AllowRule subject object cls perm | perm <- Set.toList perms ]
+    f ps st = St
       { object_classes =
           insertMapSet subject processClassId $
           insertMapSet object cls $
           object_classes st
       , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
-      , allow_rules = foldr (Set.insert . AllowRule subject object cls)
-                            (allow_rules st) (Set.toList perms)
+      , allow_rules = foldr (\r -> Map.insertWith (++) r ps) (allow_rules st) rules
       }
 
 isDefined :: M4.IfdefId -> Bool
@@ -109,6 +113,7 @@ processStmt stmt =
         , classId <- toList cl
         , let perms = Set.fromList $ toList dl
         ]
+    StmtPosition stmt1 pos -> local (pos :) $ processStmt stmt1
     _ -> return ()
 
 processPolicy :: M4.Policy -> M ()
@@ -180,7 +185,7 @@ outputLobster policy st = classDecls policy st ++ domainDecls ++ connectionDecls
       ]
 
     connectionDecls :: [L.Decl]
-    connectionDecls = map outputAllowRule (Set.toList (allow_rules st))
+    connectionDecls = map outputAllowRule (Map.keys (allow_rules st))
 
 ----------------------------------------------------------------------
 
@@ -210,7 +215,7 @@ main = do
           , "_class_set" `isSuffixOf` S.idString i ]
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
-  let finalSt = execState (processPolicy policy) initSt
+  let finalSt = execState (runReaderT (processPolicy policy) []) initSt
   putStrLn $ showLobster (outputLobster policy finalSt)
 
 ----------------------------------------------------------------------
@@ -308,6 +313,7 @@ instance Expand Stmt where
       Define _i                   -> [stmt]
       Require _reqs               -> [stmt]
       GenBoolean t i b            -> [GenBoolean t (expand s i) b]
+      StmtPosition stmt1 pos      -> [StmtPosition stmt' pos | stmt' <- expandList s stmt1]
 
 instance Expand InterfaceElement where
   expand s (InterfaceElement ty doc i stmts) =
@@ -455,6 +461,7 @@ instance Subst M4.Stmt where
       Define _i               -> stmt --FIXME
       Require _reqs           -> stmt --FIXME
       GenBoolean t i b        -> GenBoolean t (subst s i) b
+      StmtPosition stmt1 pos  -> StmtPosition (subst s stmt1) pos
 
 substStmt :: Substitution -> Stmt -> Stmt
 substStmt = subst
