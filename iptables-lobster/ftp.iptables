@@ -1,0 +1,12 @@
+*security
+:INPUT ACCEPT [0:0]
+:FORWARD DROP [0:0]
+:OUTPUT ACCEPT [0:0]
+:SEL_FTPD - [0:0]
+-A INPUT -p tcp --dport 21 -m state --state NEW -j SEL_FTPD
+-A SEL_FTPD -j SECMARK --selctx system_u:object_r:ftp_server_packet_t:s0
+-A SEL_FTPD -j CONNSECMARK --save
+-A SEL_FTPD -j ACCEPT
+-A INPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+-A OUTPUT -m state --state ESTABLISHED,RELATED -j CONNSECMARK --restore
+COMMIT
