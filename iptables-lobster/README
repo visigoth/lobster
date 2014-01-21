@@ -1,0 +1,4 @@
+Requires unreleased version of iptables-helpers from
+ssh://src.galois.com/srv/git/iptables-helpers.git
+
+See design.md for a discussion of the project overall design.
