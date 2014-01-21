@@ -10,6 +10,7 @@ cabal-version:       >=1.18
 executable iptables-lobster
   main-is:             Main.hs
   build-depends:       base >= 4.6,
-                       iptables-helpers >= 0.6
+                       iptables-helpers >= 0.6,
+                       scd
   hs-source-dirs:      main
   default-language:    Haskell2010
