@@ -10,6 +10,7 @@ import Control.Applicative ((<$>))
 import Control.Exception
 import Data.Monoid ((<>))
 
+import Lobster.Lexer (alexNoPos)
 import Lobster.Monad (runP)
 import Lobster.JSON
 import Snap
@@ -40,7 +41,7 @@ errorHandler (ErrorCall s) = return (Left s)
 -- | Interpret a policy, returning the domain or an error
 -- string.  We have to go to some trouble here because the
 -- interpreter just bombs with "error" if there is an error.
-interpret :: P.Policy -> IO (Either String P.Domain)
+interpret :: P.Policy a -> IO (Either String P.Domain)
 interpret p = catch (return . Right . snd $ P.interpretPolicy p) errorHandler
 
 sendVO :: V3SPAObject -> Snap ()
@@ -58,7 +59,7 @@ handleParse = method POST $ do
     Right p  -> do
       let result = runP (P.toDomain p)
       case result of
-        Left err -> sendVO $ emptyVO { errors = [err] }
+        Left err -> sendVO $ emptyVO { errors = [(alexNoPos, err)] }
         Right (checks, dom) ->
           sendVO $ emptyVO { checkResults = checks
                            , domain = Just dom
