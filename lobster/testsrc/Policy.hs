@@ -16,9 +16,9 @@ import qualified Data.Maybe as Maybe
 import Lobster.Monad
 import Lobster.Policy ( Domain, Policy )
 
-import qualified Lobster.Lex as Lex
-import qualified Lobster.Par as Par
-import qualified Lobster.ErrM as ErrM
+import qualified Lobster.Lexer as Lex
+import qualified Lobster.Parser as Par
+import qualified Lobster.ErrMonad as ErrM
 import qualified Lobster.Policy as P
 
 import Test.Framework.Providers.HUnit

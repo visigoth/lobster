@@ -22,25 +22,15 @@ Library
     dotgen >= 0.4.1,
     process >= 1.1.0.2
 
-  Build-tools:
-    bnfc
-    -- bnfc >= 2.4.2.0
-
   Exposed-modules:
 -- Lobster abstract syntax, parsing, and compilation into native policy
     Lobster.Domain
     Lobster.Monad
-    Lobster.Abs
     Lobster.AST
-    Lobster.ErrM
     Lobster.ErrMonad
-    Lobster.Lex
     Lobster.Lexer
-    Lobster.Par
     Lobster.Parser
     Lobster.PrettyPrint
-    Lobster.Print
-    Lobster.Skel
     Lobster.Policy
     Lobster.Symbion
     Lobster.Syntax

@@ -22,7 +22,7 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 import qualified Data.ByteString.Lazy.Char8 as BS
 
-import qualified Lobster.Abs    as A
+import qualified Lobster.AST    as A
 import qualified Lobster.Policy as P
 import qualified Lobster.Domain as D
 
