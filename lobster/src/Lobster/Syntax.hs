@@ -16,7 +16,7 @@ module Lobster.Syntax where
 import Prelude
 --import qualified Data.List as List
 
-import Lobster.Abs as Abs
+import Lobster.AST as Abs
 
 --------------------------------------------------------------------------------
 -- A class for identifiers. Identifiers can be converted back and forth from
@@ -86,8 +86,8 @@ toConstraintsPortDeclarationType pdt =
 -- Policy production in Parser.y.
 --------------------------------------------------------------------------------
 
-emptyPolicy :: Policy
+emptyPolicy :: Policy a
 emptyPolicy = Policy []
 
-appendPolicy :: Policy -> Policy -> Policy
+appendPolicy :: Policy a -> Policy a -> Policy a
 appendPolicy (Policy s1) (Policy s2) = Policy (s1 ++ s2)

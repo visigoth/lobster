@@ -5,6 +5,7 @@ import System.Environment(getProgName, getArgs)
 import System.Exit(exitFailure)
 
 import Lobster.Policy
+import qualified Lobster.Lexer as Lex
 
 data Options = Options
   { includeFiles :: [String]
@@ -65,7 +66,7 @@ usage =
        putStrLn $ usageInfo header programOptions
        exitFailure
 
-parsePolicyFiles :: [String] -> IO Policy
+parsePolicyFiles :: [String] -> IO (Policy Lex.Posn)
 parsePolicyFiles filenames =
     case filenames of
       [] -> return empty

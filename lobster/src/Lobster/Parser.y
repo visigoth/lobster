@@ -96,8 +96,7 @@ Statement : 'class' ClassId '(' ListIdentifier ')' '{' ListStatement '}' { Class
   | 'port' PortId PortDeclarationType PortDeclarationConnection ';' { PortDeclaration (tokenPosn $1) $2 $3 $4 }
   | 'domain' Identifier '=' ClassInstantiation ';' { DomainDeclaration (tokenPosn $1) $2 $4 }
   | Identifier '=' Expression ';' { Assignment (tokenPosn $2) $1 $3 }
-  -- TODO
-  | ListExpression Connection ListExpression ';' { PortConnection undefined $1 $2 $3 }
+  | ListExpression Connection ListExpression ';' { PortConnection (tokenPosn $4) $1 $2 $3 }
   | 'assert' ConnRE '->' ConnRE '::' FlowPred ';' { Assert (tokenPosn $1) $2 $4 $6 }
 
 

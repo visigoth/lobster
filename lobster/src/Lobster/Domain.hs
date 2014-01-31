@@ -73,7 +73,7 @@ import Data.Maybe
 
 import Lobster.Monad
 --import qualified Lobster.Abs as Abs
-import Lobster.Abs(
+import Lobster.AST(
   Connection(..),
   Direction(..),
   FlowId,

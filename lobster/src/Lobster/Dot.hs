@@ -15,7 +15,7 @@ import System.Process
 
 import qualified Data.Map as Map
 
-import Lobster.Abs
+import Lobster.AST
 import Lobster.Domain
 import Lobster.Monad
 import qualified Lobster.Policy as P
