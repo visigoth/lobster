@@ -42,6 +42,8 @@ module SCD.Lobster.Gen.CoreSyn
        , connect
        ) where
 
+import Data.String
+
 -- | @Module@ associates a name with Lobster declaration
 -- list; the name could then be used to derive a filename/URL
 -- for output..
@@ -61,6 +63,12 @@ data Decl
 
 newtype Name = Name String
   deriving (Eq, Ord)
+
+instance Show Name where
+  show = nameString
+
+instance IsString Name where
+  fromString = Name
 
 nameString :: Name -> String
 nameString (Name s) = s
@@ -93,6 +101,12 @@ data DomPort
      { portDomain :: Maybe Name
      , portLabel  :: Name
      }
+  deriving (Eq, Ord)
+
+instance Show DomPort where
+  show DomPort { portDomain = Nothing, portLabel = l } = show l
+  show DomPort { portDomain = Just d, portLabel = l } = show d ++ "." ++ show l
+
 
 data Dir = L | R | N | B
 
