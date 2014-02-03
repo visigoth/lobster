@@ -1,6 +1,7 @@
 {-# OPTIONS -Wall #-}
 module Main (main) where
 
+import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Char
 import Data.Either (partitionEithers)
@@ -22,6 +23,7 @@ import SCD.M4.Syntax hiding (avPerms)
 import qualified SCD.M4.Syntax as M4
 
 import qualified SCD.SELinux.Syntax as S
+import qualified Text.Happy.ParserMonad as P
 
 import qualified SCD.Lobster.Gen.CoreSyn as L
 import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
@@ -39,7 +41,8 @@ data AllowRule = AllowRule
 data St = St
   { object_classes :: !(Map S.TypeOrAttributeId (Set S.ClassId))
   , class_perms    :: !(Map S.ClassId (Set S.PermissionId))
-  , allow_rules    :: !(Set AllowRule)
+  , attrib_members :: !(Map S.TypeId (Set S.AttributeId))
+  , allow_rules    :: !(Map AllowRule [P.Pos])
   }
 
 processClassId :: S.ClassId
@@ -52,10 +55,11 @@ initSt :: St
 initSt = St
   { object_classes = Map.empty
   , class_perms    = Map.singleton processClassId (Set.singleton activePermissionId)
-  , allow_rules    = Set.empty
+  , attrib_members = Map.empty
+  , allow_rules    = Map.empty
   }
 
-type M a = State St a
+type M a = ReaderT [P.Pos] (State St) a
 
 ----------------------------------------------------------------------
 -- Processing of M4 policy
@@ -76,16 +80,31 @@ insertMapSet k x = Map.insertWith (flip Set.union) k (Set.singleton x)
 
 addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
-addAllow subject object cls perms = modify f
+addAllow subject object cls perms = do
+  ps <- ask
+  modify (f ps)
   where
-    f st = St
+    rules = [ AllowRule subject object cls perm | perm <- Set.toList perms ]
+    f ps st = St
       { object_classes =
           insertMapSet subject processClassId $
           insertMapSet object cls $
           object_classes st
       , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
-      , allow_rules = foldr (Set.insert . AllowRule subject object cls)
-                            (allow_rules st) (Set.toList perms)
+      , attrib_members = attrib_members st
+      , allow_rules = foldr (\r -> Map.insertWith (++) r ps) (allow_rules st) rules
+      }
+
+addAttribs :: S.TypeId -> [S.AttributeId] -> M ()
+addAttribs typeId attrIds = modify f
+  where
+    f st = St
+      { object_classes = object_classes st
+      , class_perms = class_perms st
+      , attrib_members =
+          Map.insertWith (flip Set.union) typeId (Set.fromList attrIds) $
+          attrib_members st
+      , allow_rules = allow_rules st
       }
 
 isDefined :: M4.IfdefId -> Bool
@@ -100,6 +119,8 @@ processStmt stmt =
   case stmt of
     Ifdef i stmts1 stmts2 -> processStmts (if isDefined i then stmts1 else stmts2)
     Ifndef i stmts -> processStmts (if isDefined i then [] else stmts)
+    Type t _aliases attrs -> addAttribs t attrs -- TODO: track aliases
+    TypeAttribute t attrs -> addAttribs t (toList attrs)
     TeAvTab S.Allow (S.SourceTarget al bl cl) (S.Permissions dl) ->
       sequence_ $
         [ addAllow subject object classId perms
@@ -109,17 +130,17 @@ processStmt stmt =
         , classId <- toList cl
         , let perms = Set.fromList $ toList dl
         ]
+    StmtPosition stmt1 pos -> local (pos :) $ processStmt stmt1
     _ -> return ()
 
+processImplementation :: M4.Implementation -> M ()
+processImplementation (M4.Implementation _ _ stmts) = mapM_ processStmt stmts
+
+processPolicyModule :: M4.PolicyModule -> M ()
+processPolicyModule m = processImplementation (M4.implementation m)
+
 processPolicy :: M4.Policy -> M ()
-processPolicy policy = processStmts allStmts
-  where
-    allStmts :: M4.Stmts
-    allStmts =
-        [ stmt
-        | m <- M4.policyModules policy
-        , let M4.Implementation _ _ stmts = M4.implementation m
-        , stmt <- stmts ]
+processPolicy policy = mapM_ processPolicyModule (M4.policyModules policy)
 
 ----------------------------------------------------------------------
 -- Generation of Lobster code
@@ -139,8 +160,17 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     permissionMap = Map.unionWith Set.union (class_perms st) (classPermissions policy)
 
     classDecl :: (S.ClassId, Set S.PermissionId) -> L.Decl
-    classDecl (classId, perms) = L.Class (toClassId classId) [] stmts
-      where stmts = [ L.newPort (toPortId p) | p <- Set.toList perms ]
+    classDecl (classId, perms) = L.Class (toClassId classId) [] (stmt1 : stmt2 : stmts)
+      where
+        stmt1 = L.newPort memberPort
+        stmt2 = L.newPort attributePort
+        stmts = [ L.newPort (toPortId p) | p <- Set.toList perms ]
+
+    memberPort :: L.Name
+    memberPort = L.Name "member"
+
+    attributePort :: L.Name
+    attributePort = L.Name "attribute"
 
     toPortId :: S.PermissionId -> L.Name
     toPortId = L.Name . lowercase . S.idString
@@ -163,8 +193,30 @@ outputAllowRule (AllowRule subject object cls perm) =
     toPortId :: S.PermissionId -> L.Name
     toPortId = L.Name . lowercase . S.idString
 
+outputAttribute :: S.TypeOrAttributeId -> S.TypeOrAttributeId -> S.ClassId -> L.Decl
+outputAttribute ty attr cls =
+  L.neutral
+    (L.domPort (toIdentifier ty cls) memberPort)
+    (L.domPort (toIdentifier attr cls) attributePort)
+  where
+    toIdentifier :: S.TypeOrAttributeId -> S.ClassId -> L.Name
+    toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
+
+    memberPort :: L.Name
+    memberPort = L.Name "member"
+
+    attributePort :: L.Name
+    attributePort = L.Name "attribute"
+
+outputAttributes :: St -> S.TypeOrAttributeId -> S.TypeOrAttributeId -> [L.Decl]
+outputAttributes st ty attr = [ outputAttribute ty attr cls | cls <- classes ]
+  where
+    classesOf t = Map.findWithDefault Set.empty t (object_classes st)
+    classes = Set.toList $ Set.intersection (classesOf ty) (classesOf attr)
+
 outputLobster :: M4.Policy -> St -> [L.Decl]
-outputLobster policy st = classDecls policy st ++ domainDecls ++ connectionDecls
+outputLobster policy st =
+  classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls
   where
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
@@ -180,7 +232,13 @@ outputLobster policy st = classDecls policy st ++ domainDecls ++ connectionDecls
       ]
 
     connectionDecls :: [L.Decl]
-    connectionDecls = map outputAllowRule (Set.toList (allow_rules st))
+    connectionDecls = map outputAllowRule (Map.keys (allow_rules st))
+
+    attributeDecls :: [L.Decl]
+    attributeDecls = do
+      (ty, attrs) <- Map.assocs (attrib_members st)
+      attr <- Set.toList attrs
+      outputAttributes st (S.fromId (S.toId ty)) (S.fromId (S.toId attr))
 
 ----------------------------------------------------------------------
 
@@ -210,7 +268,7 @@ main = do
           , "_class_set" `isSuffixOf` S.idString i ]
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
-  let finalSt = execState (processPolicy policy) initSt
+  let finalSt = execState (runReaderT (processPolicy policy) []) initSt
   putStrLn $ showLobster (outputLobster policy finalSt)
 
 ----------------------------------------------------------------------
@@ -308,6 +366,7 @@ instance Expand Stmt where
       Define _i                   -> [stmt]
       Require _reqs               -> [stmt]
       GenBoolean t i b            -> [GenBoolean t (expand s i) b]
+      StmtPosition stmt1 pos      -> [StmtPosition stmt' pos | stmt' <- expandList s stmt1]
 
 instance Expand InterfaceElement where
   expand s (InterfaceElement ty doc i stmts) =
@@ -455,6 +514,7 @@ instance Subst M4.Stmt where
       Define _i               -> stmt --FIXME
       Require _reqs           -> stmt --FIXME
       GenBoolean t i b        -> GenBoolean t (subst s i) b
+      StmtPosition stmt1 pos  -> StmtPosition (subst s stmt1) pos
 
 substStmt :: Substitution -> Stmt -> Stmt
 substStmt = subst

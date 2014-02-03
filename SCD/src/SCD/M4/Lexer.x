@@ -15,7 +15,7 @@ module SCD.M4.Lexer(
  ) where
 import Data.Data(Data, Typeable)
 import Data.List(isInfixOf)
-import Text.Happy.ParserMonad(Pos(..))
+import Text.Happy.ParserMonad(Pos(..), HasPos(..), AddPos(..))
 import Text.Regex(matchRegex, mkRegex)
 }
 
@@ -309,4 +309,11 @@ identifier s | last s == '.'      = Error "Identifier cannot end with '.'"
 
 scan :: FilePath -> String -> [Token]
 scan f s = [T (Pos f a li co) t | T (Pos _ a li co) t <- alexScanTokens s]
+
+instance HasPos Token where
+  getPos (T p _) = Just p
+
+instance AddPos Token where
+  addPos (T _ x) p = T p x
+  dropPos t = t
 }

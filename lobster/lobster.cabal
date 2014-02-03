@@ -31,9 +31,14 @@ Library
     Lobster.Domain
     Lobster.Monad
     Lobster.Abs
+    Lobster.AST
     Lobster.ErrM
+    Lobster.ErrMonad
     Lobster.Lex
+    Lobster.Lexer
     Lobster.Par
+    Lobster.Parser
+    Lobster.PrettyPrint
     Lobster.Print
     Lobster.Skel
     Lobster.Policy

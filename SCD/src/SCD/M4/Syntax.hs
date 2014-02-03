@@ -68,6 +68,8 @@ import Data.NonEmptyList(NonEmptyList)
 import Text.XML.Light ( Content(..), Element(..), CData(..),
                       CDataKind(..) , QName(..)  , Attr(..), Line )
 
+import Text.Happy.ParserMonad(Pos(..), HasPos(..), AddPos(..))
+
 import Data.Data(Data, Typeable)
 
 #ifndef __HADDOCK__
@@ -248,6 +250,7 @@ data Stmt =
  | Define IfdefId
  | Require (NonEmptyList Require)
  | GenBoolean BoolType BoolId Bool
+ | StmtPosition Stmt Pos -- ^ Source file position annotation
   deriving (Typeable, Data, Eq, Read, Show)
 
 newtype RefPolicyWarnLine = RefPolicyWarnLine String
@@ -314,3 +317,13 @@ data ModuleConfSetting =
 
 data IfdefDecl = IfdefDecl IfdefId (Maybe Bool)
   deriving (Typeable, Data, Eq, Read, Show)
+
+instance HasPos Stmt where
+  getPos (StmtPosition _ p) = Just p
+  getPos _                  = Nothing
+
+instance AddPos Stmt where
+  addPos = StmtPosition
+
+  dropPos (StmtPosition s _) = dropPos s
+  dropPos s                  = s

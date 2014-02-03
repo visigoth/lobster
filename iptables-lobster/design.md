@@ -65,6 +65,55 @@ edge to a stub domain corresponding to the target's SELinux security
 context. This will likely then be grafted to a graph produced from
 SELinux policy in order to produce a cohesive whole.
 
+#### Parsing
+
+Since we do not need to interpret each of the rules, this phase will
+use a very simple parser, probably just using `words` and friends
+rather than something more sophisticated like Parsec.
+
+Alternately, we can use the `iptables-helpers` package from Hackage
+which, while not perfect, should be able to get us off the ground
+quickly.
+
+#### Graph Creation
+
+`iptables` rules can be interpreted as basic blocks in a control flow
+graph, so we can apply standard techniques for basic block discovery
+as we create the Lobster graph.
+
+We first preprocess all of the chains to discover where rules whose
+targets jump to other chains, recording which chains are targeted, and
+which rules in the original chain will be run if and when the target
+chain matches a RETURN rule.
+
+TODO: we can do better than this, and probably need to if we want to
+avoid cycles in the graph. Ideas:
+
+- Make the analysis fully context-sensitive by making a copy of the
+  target chain for every jump from a source chain. That way any RETURN
+  targets in the copied chain will have an edge to exactly one rule in
+  the source chain. This could explode the size of the graph, though.
+
+- Use the context-sensitive approach above, but avoid copying when the
+  target chain has no rules with a RETURN target. This yields an
+  equivalent but smaller graph.
+
+We start by looking backwards from potential packet destinations
+outside the system. For example, packets can eventually reach local
+processes in userspace, so we look at the point within the `iptables`
+packet flow immediately before they reach that point, in this case the
+INPUT chain of the filter table. Finding this point is not always
+easy; references like
+[this](https://commons.wikimedia.org/wiki/File:Diagrama_linux_netfilter_iptables.gif)
+can help tremendously.
+
+Once we've found this point, we work our way backwards through the
+rules in that chain, heading in the reverse direction of the usual
+fall-through semantics of the rules. When we encounter rules with
+targets that alter a packet's flow upon matching, we simply connect
+them to the relevant destination, which is usually well-known
+(ACCEPT, REJECT, DROP, the first rule of a user-defined chain, etc).
+
 ### Phase Two
 
 #### Predicate Language

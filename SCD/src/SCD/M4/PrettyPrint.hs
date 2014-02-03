@@ -172,6 +172,7 @@ instance Pp Stmt where
   pp (Define i) = ppM4Call "define" [i]
   pp (Require rs) = ppM4Call "gen_require" [above rs]
   pp (GenBoolean t i b) = pp t <> parens (sepWithCommas [pp i, pp b])
+  pp (StmtPosition s _) = pp s
 
 instance Pp BoolType where
   pp BoolType    = text "gen_bool"
