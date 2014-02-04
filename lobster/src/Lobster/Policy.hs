@@ -56,7 +56,9 @@ module Lobster.Policy
 
 where
 
-import Control.Monad(foldM)
+import Control.Error (catchE, throwE, hoistEither)
+import Control.Monad (foldM)
+import Control.Monad.Trans (liftIO)
 import Control.DeepSeq
 
 import qualified Data.Char as Char
@@ -64,7 +66,9 @@ import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 import qualified Data.Map as Map
 
-import Lobster.Monad
+-- import Lobster.Monad
+import Lobster.Error
+
 import qualified Lobster.AST as Abs
 import Lobster.AST(
   ClassId,
@@ -84,7 +88,6 @@ import Lobster.AST(
   ClassInstantiation(..))
 import qualified Lobster.Lexer as Lex
 import qualified Lobster.Parser as Par
-import qualified Lobster.ErrMonad as ErrM
 import Lobster.PrettyPrint (printTree)
 import qualified Lobster.Syntax as Syntax
 import qualified Lobster.Domain as Domain
@@ -290,13 +293,13 @@ memberClassSignature sig cl =
       Nothing -> False
 
 addClassSignature ::
-    Signature a -> ClassId -> Signature a -> ClassConstructor a -> P (Signature a)
+    Signature a -> ClassId -> Signature a -> ClassConstructor a -> Err (Signature a)
 addClassSignature sig cl insig clcon =
     if Maybe.isJust (lookupClassSignature sig cl)
-      then throwError ("duplicate class declaration " ++ show cl)
+      then throwE $ DuplicateClass (show cl)
       else return (sig {classes = Map.insert cl (insig,clcon) (classes sig)})
 
-addStatementSignature :: Signature a -> Statement a -> P (Signature a)
+addStatementSignature :: Signature a -> Statement a -> Err (Signature a)
 addStatementSignature sig statement =
     case statement of
       ClassDeclaration _ cl pl sts ->
@@ -305,10 +308,10 @@ addStatementSignature sig statement =
              return sig'
       _ -> return sig
 
-addStatementsSignature :: Signature a -> [Statement a] -> P (Signature a)
+addStatementsSignature :: Signature a -> [Statement a] -> Err (Signature a)
 addStatementsSignature = foldM addStatementSignature
 
-mkSignature :: [Statement a] -> P (Signature a)
+mkSignature :: [Statement a] -> Err (Signature a)
 mkSignature = addStatementsSignature emptySignature
 
 --------------------------------------------------------------------------------
@@ -336,10 +339,10 @@ lookupContextClassContextSignature csig ccl =
 
 getContextClassContextSignature ::
     ContextSignature a -> ContextClass ->
-    P (ContextSignature a,Signature a,ClassConstructor a)
+    Err (ContextSignature a,Signature a,ClassConstructor a)
 getContextClassContextSignature sig cl =
     case lookupContextClassContextSignature sig cl of
-      Nothing -> throwError $ "unknown class: " ++ show cl
+      Nothing -> throwE $ UndefinedClass (show cl)
       Just sig' -> return sig'
 
 lookupClassContextSignature ::
@@ -362,10 +365,10 @@ lookupClassContextSignature csig cl =
 
 getClassContextSignature ::
     ContextSignature a -> ClassId ->
-    P (ContextSignature a,ContextClass,Signature a,ClassConstructor a)
+    Err (ContextSignature a,ContextClass,Signature a,ClassConstructor a)
 getClassContextSignature sig cl =
     case lookupClassContextSignature sig cl of
-      Nothing -> throwError $ "unknown class: " ++ show cl
+      Nothing -> throwE $ UndefinedClass (show cl)
       Just cl_sig_con -> return cl_sig_con
 
 --------------------------------------------------------------------------------
@@ -480,17 +483,17 @@ provenanceDomain (Domain d) = Domain.value d
 portsDomain :: Domain -> Map.Map PortId (Domain.PortType PortTypeValue)
 portsDomain (Domain dom) = Domain.ports dom
 
-getPortTypeDomain :: Domain -> DomainPort -> P PortType
+getPortTypeDomain :: Domain -> DomainPort -> Err PortType
 getPortTypeDomain (Domain dom) dp =
     do pt <- Domain.getPortType dom dp
        return (PortType pt)
 
-addPortDomain :: Domain -> PortId -> PortType -> P Domain
+addPortDomain :: Domain -> PortId -> PortType -> Err Domain
 addPortDomain (Domain dom) pid (PortType pty) =
     do d <- Domain.addPort dom pid pty
        return (Domain d)
 
-getSubDomain :: Domain -> DomainId -> P Domain
+getSubDomain :: Domain -> DomainId -> Err Domain
 getSubDomain (Domain dom) did =
     do s <- Domain.getSubDomain dom did
        return (Domain s)
@@ -506,34 +509,34 @@ foldSubDomain f =
     where
       f' i d x = f i (Domain d) x
 
-foldMSubDomain :: (DomainId -> Domain -> s -> P s) -> s -> Domain -> P s
+foldMSubDomain :: (DomainId -> Domain -> s -> Err s) -> s -> Domain -> Err s
 foldMSubDomain f =
     \x (Domain d) -> Domain.foldMSubDomain f' x d
     where
       f' i d x = f i (Domain d) x
 
 addConnectionsDomain ::
-    Domain -> DomainPort -> Connection -> [DomainPort] -> P Domain
+    Domain -> DomainPort -> Connection -> [DomainPort] -> Err Domain
 addConnectionsDomain (Domain dom) dp conn dps =
     do dom' <- Domain.addConnections dom dp conn dps
        return (Domain dom')
 
 addPortConnectionsDomain ::
-    Domain -> [DomainPort] -> Connection -> [DomainPort] -> P Domain
+    Domain -> [DomainPort] -> Connection -> [DomainPort] -> Err Domain
 addPortConnectionsDomain (Domain dom) dps1 conn dps2 =
     do dom' <- Domain.addPortConnections dom dps1 conn dps2
        return (Domain dom')
 
 foldMConnectionsDomain ::
-    (DomainPort -> Connection -> DomainPort -> s -> P s) -> s -> Domain -> P s
+    (DomainPort -> Connection -> DomainPort -> s -> Err s) -> s -> Domain -> Err s
 foldMConnectionsDomain f x (Domain d) = Domain.foldMConnections f x d
 
-typeCheckDomain :: Domain -> P ()
+typeCheckDomain :: Domain -> Err ()
 typeCheckDomain (Domain dom) =
     Domain.typeCheck unifyPortTypeValue connectablePortTypeValue
       prettyPrintPortTypeValue dom
 
-flattenDomain :: Domain -> P Domain
+flattenDomain :: Domain -> Err Domain
 flattenDomain (Domain dom) =
     do dom' <- Domain.flatten dom
        return (Domain dom')
@@ -605,47 +608,47 @@ toStringValue err val =
       _ -> throwError (err ++ ": " ++ show val)
 -}
 
-toIntValue :: String -> Value -> P Int
-toIntValue err val =
+toIntValue :: Value -> Err Int
+toIntValue val =
     case val of
       IntValue i -> return i
-      _ -> throwError (err ++ ": " ++ show val)
+      _ -> throwE $ TypeMismatch (show val) "integer"
 
-toClassValue :: String -> Value -> P ContextClass
-toClassValue err val =
+toClassValue :: Value -> Err ContextClass
+toClassValue val =
     case val of
       ClassValue ty -> return ty
-      _ -> throwError (err ++ ": " ++ show val)
+      _ -> throwE $ TypeMismatch (show val) "class"
 
-toPortTypeValue :: String -> Value -> P PortType
-toPortTypeValue err val =
+toPortTypeValue :: Value -> Err PortType
+toPortTypeValue val =
     case val of
       PortTypeValue pty -> return pty
-      _ -> throwError (err ++ ": " ++ show val)
+      _ -> throwE $ TypeMismatch (show val) "port type value"
 
-toDomainPortValue :: String -> Value -> P Domain.DomainPort
-toDomainPortValue err val =
+toDomainPortValue :: Value -> Err Domain.DomainPort
+toDomainPortValue val =
     case val of
       DomainPortValue p -> return p
-      _ -> throwError (err ++ ": " ++ show val)
+      _ -> throwE $ TypeMismatch (show val) "domain port value"
 
-toDomainPortsValue :: String -> [Value] -> P [Domain.DomainPort]
-toDomainPortsValue err = mapM (toDomainPortValue err)
+toDomainPortsValue :: [Value] -> Err [Domain.DomainPort]
+toDomainPortsValue = mapM toDomainPortValue
 
 toPortTypeValueValue ::
-    ContextSignature a -> Value -> P (Domain.PortTypeValue PortTypeValue)
+    ContextSignature a -> Value -> Err (Domain.PortTypeValue PortTypeValue)
 toPortTypeValueValue sig v =
     case v of
       DirectionValue d -> return (Domain.Direction d)
       PositionValue p -> return (Domain.Value (PositionPortTypeValue p))
       ClassValue ccl ->
           case lookupContextClassContextSignature sig ccl of
-            Nothing -> throwError ("no such class: " ++ show ccl)
+            Nothing -> throwE $ UndefinedClass (show ccl)
             Just (_,clsig,clcon) ->
                 if nullSignature clsig && nullClassConstructor clcon
                   then return (Domain.Value (TypePortTypeValue ccl))
-                  else throwError ("non-empty class: " ++ show ccl)
-      _ -> throwError ("bad port type value: " ++ show v)
+                  else throwE $ NonEmptyClass (prettyPrintContextClass ccl)
+      _ -> throwE $ TypeMismatch (show v) "port type value"
 
 prettyPrintValue :: Value -> String
 prettyPrintValue v =
@@ -663,14 +666,14 @@ prettyPrintValue v =
 -- Symbion assertions.
 --------------------------------------------------------------------------------
 
-fromConnRE :: ContextSignature a -> Environment -> Domain -> Abs.ConnRE -> P Domain.PortRE
+fromConnRE :: ContextSignature a -> Environment -> Domain -> Abs.ConnRE -> Err Domain.PortRE
 fromConnRE sig env obj conn@(Abs.ConnRE spec re) = case (spec,re) of
   (Abs.ThisDom, Abs.AnyPRE) -> return $ Domain.ThisAnyPortRE
   (Abs.IdentDom a, Abs.AnyPRE) -> do
     v <- evaluateNameExpression sig env (Ident a)
     case v of
       DomainValue i -> return $ Domain.AnyPortRE i
-      _ -> throwError $ "expected domain identifier:" ++ show a
+      _ -> throwE $ TypeMismatch (printTree a) "domain identifier"
   (Abs.ThisDom, Abs.IdPRE b) -> evaluateNameExpression sig env (Ident b) >>= toPortDPRE
   (Abs.IdentDom a, Abs.IdPRE b) -> do
     v <- evaluateQualNameExpression sig env obj (Qual (UnQual (Ident a)) (Ident b))
@@ -678,10 +681,10 @@ fromConnRE sig env obj conn@(Abs.ConnRE spec re) = case (spec,re) of
   where
   toPortDPRE v = case v of
     DomainPortValue p -> return $ Domain.PortRE p
-    _ -> throwError $ "expected port identifier:" ++ show conn
+    _ -> throwE $ TypeMismatch (printTree conn) "port identifier"
 
 fromFlowPred ::
-  ContextSignature a -> Environment -> Domain -> PortRE -> PortRE -> Abs.FlowPred -> P Pred
+  ContextSignature a -> Environment -> Domain -> PortRE -> PortRE -> Abs.FlowPred -> Err Pred
 fromFlowPred sig env obj a b x = do
   prd <- case x of
     Abs.NeverPathFP -> return $ NoPathPred a b
@@ -692,7 +695,7 @@ fromFlowPred sig env obj a b x = do
   return prd
 
 fromFlowRE ::
-  ContextSignature a -> Environment -> Domain -> PortRE -> PortRE -> Abs.FlowRE -> P Pred
+  ContextSignature a -> Environment -> Domain -> PortRE -> PortRE -> Abs.FlowRE -> Err Pred
 fromFlowRE sig env obj a b x = do
   prd <- case x of
     Abs.AnyFRE -> return $ IsPathPred a b
@@ -717,25 +720,25 @@ emptyEnvironment = Environment Map.empty
 lookupEnvironment :: Environment -> Identifier -> Maybe Value
 lookupEnvironment (Environment bindings) i = Map.lookup i bindings
 
-addEnvironment :: Environment -> Identifier -> Value -> P Environment
+addEnvironment :: Environment -> Identifier -> Value -> Err Environment
 addEnvironment env i val =
     case lookupEnvironment env i of
       Nothing ->
           case env of
             Environment bindings ->
                 return (Environment (Map.insert i val bindings))
-      Just _ -> throwError ("duplicate binding " ++ show i)
+      Just _ -> throwE $ DuplicateBinding (show i)
 
-addListEnvironment :: Environment -> [(Identifier,Value)] -> P Environment
+addListEnvironment :: Environment -> [(Identifier,Value)] -> Err Environment
 addListEnvironment =
     foldM add
     where
       add env (i,val) = addEnvironment env i val
 
-mkEnvironment :: [(Identifier,Value)] -> P Environment
+mkEnvironment :: [(Identifier,Value)] -> Err Environment
 mkEnvironment = addListEnvironment emptyEnvironment
 
-fromSubDomainEnvironment :: Domain -> Domain.DomainId -> P Environment
+fromSubDomainEnvironment :: Domain -> Domain.DomainId -> Err Environment
 fromSubDomainEnvironment obj oid =
     do o <- getSubDomain obj oid
        foldM add emptyEnvironment (Map.keys (portsDomain o))
@@ -746,7 +749,7 @@ fromSubDomainEnvironment obj oid =
 
 evaluatePortTypeConstraints ::
     ContextSignature a -> Environment -> Domain -> [PortTypeConstraint] ->
-    P PortType
+    Err PortType
 evaluatePortTypeConstraints sig env dom =
     foldM eval anyPortType
     where
@@ -759,7 +762,7 @@ evaluatePortTypeConstraints sig env dom =
 
 evaluateExpression ::
     ContextSignature a -> Environment -> Domain -> Expression ->
-    P Value
+    Err Value
 evaluateExpression sig env obj expr =
     case expr of
       IntExpression i -> return (IntValue $ toInt i)
@@ -768,11 +771,11 @@ evaluateExpression sig env obj expr =
       PositionExpression p -> return (PositionValue p)
       QualNameExpression qn -> evaluateQualNameExpression sig env obj qn
       ParenExpression expr1 -> evaluateExpression sig env obj expr1
-    `catchError`
-    (\e -> throwError $ "in expression " ++ show expr ++ ":\n" ++ e)
+    -- I don't think this adds much, we'd rather have source position...
+    -- `catchE` (\e -> throwE $ InExpression (show expr) e)
 
 evaluateQualNameExpression ::
-    ContextSignature a -> Environment -> Domain -> QualName -> P Value
+    ContextSignature a -> Environment -> Domain -> QualName -> Err Value
 evaluateQualNameExpression sig env obj qn = case qn of
   UnQual n -> evaluateNameExpression sig env n
   Qual n1 n2 ->
@@ -784,31 +787,35 @@ evaluateQualNameExpression sig env obj qn = case qn of
                       v2 <- evaluateExpression sig' emptyEnvironment obj e2
                       case v2 of
                         ClassValue _ -> return v2
-                        _ -> throwError $ "bad value in a class context: (" ++
+                        -- XXX this seems like a type error, maybe a generic
+                        -- XXX error for these?  punting for now.
+                        _ -> throwE $ MiscError $ "bad value in a class context: (" ++
                                           show v1 ++ ") . (" ++ show v2 ++ ")"
                DomainValue o1 ->
                    do env' <- fromSubDomainEnvironment obj o1
                       v2 <- evaluateExpression sig env' obj e2
                       case v2 of
                         DomainPortValue _ -> return v2
-                        _ -> throwError $ "bad value in an domain context: (" ++
+                        -- XXX this seems like a type error, maybe a generic
+                        -- XXX error for these?  punting for now.
+                        _ -> throwE $ MiscError $ "bad value in an domain context: (" ++
                                           show v1 ++ ") . (" ++ show v2 ++ ")"
-               _ -> throwError $ "bad context value: (" ++
+               _ -> throwE $ MiscError $ "bad context value: (" ++
                                  show v1 ++ ") . _"
 
-evaluateNameExpression :: ContextSignature a -> Environment -> Name -> P Value
+evaluateNameExpression :: ContextSignature a -> Environment -> Name -> Err Value
 evaluateNameExpression sig env n = case n of
       Ident i ->
           case lookupEnvironment env i of
             Just val -> return val
-            Nothing -> throwError $ "no such identifier " ++ show i
+            Nothing -> throwE $ UnboundVar (Syntax.idString i)
       TypeIdent i ->
           case lookupClassContextSignature sig (Syntax.mkId $ Syntax.idString i) of
             Just (_,ccl,_,_) -> return (ClassValue ccl)
-            Nothing -> throwError $ "no such type identifier " ++ show i
+            Nothing -> throwE $ UnboundType (Syntax.idString i)
 
 evaluateExpressions ::
-    ContextSignature a -> Environment -> Domain -> [Expression] -> P [Value]
+    ContextSignature a -> Environment -> Domain -> [Expression] -> Err [Value]
 evaluateExpressions sig env obj exprs =
     case exprs of
       [] -> return []
@@ -817,30 +824,36 @@ evaluateExpressions sig env obj exprs =
              vs <- evaluateExpressions sig env obj exprs'
              return (v : vs)
 
-interpretPolicy :: Policy a -> ([Either String String],Domain)
-interpretPolicy policy =
-    case runP (toDomain policy) of
-      Left err ->
-          error ("ERROR: couldn't interpret the Lobster policy file:\n" ++ err)
-      Right x -> x
+-- this is now the same as "toDomain"
+interpretPolicy :: Policy a -> Err ([Either String String],Domain)
+interpretPolicy = toDomain
 
-parsePolicy :: String -> Either (Lex.Posn, String) (Policy Lex.Posn)
-parsePolicy s =
-  case Par.pPolicy (Lex.tokens s) of
-    ErrM.Bad p e   -> Left (p, "ERROR: Unable to parse\n:" ++ e)
-    ErrM.Ok policy -> Right policy
+parsePolicy :: String -> Err (Policy Lex.Posn)
+parsePolicy s = Par.pPolicy (Lex.tokens s)
 
-parsePolicyFile :: FilePath -> IO (Policy Lex.Posn)
+parsePolicyFile :: FilePath -> ErrT IO (Policy Lex.Posn)
 parsePolicyFile filename =
-    do chars <- readFile filename
-       let toks = Lex.tokens chars
-       case Par.pPolicy toks of
-         ErrM.Bad _ e -> error $ "ERROR: unable to parse\n:" ++ e
-         ErrM.Ok policy -> return policy
+  do chars <- liftIO $ readFile filename
+     hoistEither $ Par.pPolicy (Lex.tokens chars)
+
+-- | Check if a value may be passed to a domain
+-- instantiation.  Because passing domains and ports does 
+-- not work as expected, we disallow passing them as arguments
+-- when creating domains.
+checkValidArg :: Value -> Err ()
+checkValidArg (DomainValue _)     = throwE $ BadArgument "domain"
+checkValidArg (DomainPortValue _) = throwE $ BadArgument "port"
+checkValidArg _                   = return ()
+
+-- | Check that all values may be passed as arguments to a
+-- domain instantiation (or any other statement that creates
+-- a new environment).
+checkValidArgs :: [Value] -> Err ()
+checkValidArgs = mapM_ checkValidArg
 
 interpretStatement ::
     ContextSignature a -> Environment -> Domain -> Statement a ->
-    P (Environment,Domain)
+    Err (Environment,Domain)
 interpretStatement sig env obj statement =
     case statement of
       Assert _ connA connB flowPred -> do
@@ -853,6 +866,7 @@ interpretStatement sig env obj statement =
           do (clsig, ccl, _, ClassConstructor ids sts) <-
                  getClassContextSignature sig cl
              args' <- evaluateExpressions sig env obj el
+             checkValidArgs args'
              clenv <- mkEnvironment (zip ids args')
              let clobj = emptyDomain (Syntax.idString n) (ccl,args')
              (_,clobj') <- interpretStatements clsig clenv clobj sts
@@ -871,28 +885,27 @@ interpretStatement sig env obj statement =
                    Abs.EmptyPDC -> return obj'
                    Abs.Connection conn ps ->
                        do ps' <- evaluateExpressions sig env obj' ps
-                          ps'' <- toDomainPortsValue "bad domain port" ps'
+                          ps'' <- toDomainPortsValue ps'
                           addConnectionsDomain obj' p conn ps''
              env' <- addEnvironment env (Syntax.toId pid) (DomainPortValue p)
              return (env',obj'')
       PortConnection _ ps1 conn ps2 ->
           do ps1' <- evaluateExpressions sig env obj ps1
-             ps1'' <- toDomainPortsValue "bad domain port" ps1'
+             ps1'' <- toDomainPortsValue ps1'
              ps2' <- evaluateExpressions sig env obj ps2
-             ps2'' <- toDomainPortsValue "bad domain port" ps2'
+             ps2'' <- toDomainPortsValue ps2'
              obj' <- addPortConnectionsDomain obj ps1'' conn ps2''
              return (env,obj')
       Assignment _ i expr ->
           do val <- evaluateExpression sig env obj expr
              env' <- addEnvironment env i val
              return (env',obj)
-    `catchError`
-    (\e -> throwError $ "in statement " ++ trim (printTree statement) ++
-           "\n" ++ e)
+    -- I don't think this adds much, we'd rather have source position...
+    -- `catchE` (\e -> throwE $ InStatement (trim $ printTree statement) e)
 
 interpretStatements ::
     ContextSignature a -> Environment -> Domain -> [Statement a] ->
-    P (Environment,Domain)
+    Err (Environment,Domain)
 interpretStatements sig env obj sts =
     case sts of
       [] -> return (env,obj)
@@ -900,7 +913,7 @@ interpretStatements sig env obj sts =
           do (env',obj') <- interpretStatement sig env obj st
              interpretStatements sig env' obj' sts'
 
-toDomain :: Policy a -> P ([Either String String],Domain)
+toDomain :: Policy a -> Err ([Either String String],Domain)
 toDomain (Policy sts) =
     do sig <- mkSignature sts
        let csig = mkContextSignature sig

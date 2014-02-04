@@ -7,14 +7,16 @@
 --
 
 import Control.Applicative
+import Control.Error
 import Control.Monad
+import Control.Monad.Trans (liftIO)
 import Data.Aeson
 import Data.Text (Text)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 
-import Lobster.Monad (runP)
+import Lobster.Error
 import Lobster.JSON
 
 import qualified Data.Aeson.Encode.Pretty as AP
@@ -47,10 +49,17 @@ conf = AP.defConfig
                        ]
   }
 
+handleError :: String -> Error -> IO ()
+handleError filename err = do
+  forM_ (errorMessage err) $ \s ->
+    hPutStrLn stderr $ filename ++ ": " ++ s
+  exitFailure
+
 main :: IO ()
 main = do
   filename <- parseArgs
-  policy   <- P.parsePolicyFile filename
-  let (es, domain) = P.interpretPolicy policy
-  BS.putStrLn (AP.encodePretty' conf domain)
+  eitherT (handleError filename) return $ do
+    policy <- P.parsePolicyFile filename
+    (es, domain) <- hoistEither $ P.interpretPolicy policy
+    liftIO $ BS.putStrLn (AP.encodePretty' conf domain)
 

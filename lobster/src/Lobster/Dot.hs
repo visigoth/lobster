@@ -9,6 +9,7 @@ module Lobster.Dot where
 
 import Data.Traversable
 import Control.Applicative
+import Control.Error (runEitherT, hoistEither)
 import Control.Monad (ap, liftM)
 import System.IO
 import System.Process
@@ -17,7 +18,6 @@ import qualified Data.Map as Map
 
 import Lobster.AST
 import Lobster.Domain
-import Lobster.Monad
 import qualified Lobster.Policy as P
 
 import qualified Text.Dot as Dot -- Andy Gill's "dotgen" package
@@ -70,10 +70,13 @@ dirConnection conn =
 -- | Read domain from .lsr file.
 parseDomainFile :: FilePath -> IO P.Domain
 parseDomainFile filename = do
-  policy <- P.parsePolicyFile filename
-  case runP (P.toDomain policy) of
-    Left e -> error $ "ERROR: unable to process:\n" ++ e
-    Right (_, dom) -> return dom
+  result <- runEitherT $ do
+    policy <- P.parsePolicyFile filename
+    (_, dom) <- hoistEither $ P.toDomain policy
+    return dom
+  case result of
+    Left e    -> error $ "ERROR: Unable to process:\n" ++ show e
+    Right dom -> return dom
 
 -- | Read .lsr input file, return .dot code as a string.
 dotDomainFile :: FilePath -> IO String

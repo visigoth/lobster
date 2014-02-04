@@ -59,6 +59,7 @@ module Lobster.Domain
   , checkAssertions_
   ) where
 
+import Control.Error (catchE, throwE, hoistEither)
 import Control.Monad(liftM,foldM)
 import Control.DeepSeq
 
@@ -71,7 +72,8 @@ import Data.List
 import Data.Maybe
 -- import Debug.Trace
 
-import Lobster.Monad
+import Lobster.Error
+
 --import qualified Lobster.Abs as Abs
 import Lobster.AST(
   Connection(..),
@@ -111,16 +113,15 @@ reverseConnection c = c
 -- The kind of a connection dominates the kind of a neutral connection.
 -- When two connections have the same kind, they can be unified,
 -- otherwise an error has occurred.
-unifyConnection :: Connection -> Connection -> P Connection
+unifyConnection :: Connection -> Connection -> Err Connection
 unifyConnection c1 c2 =
     case (c1,c2) of
       (NeutralConnection,_) -> return c2
       (_,NeutralConnection) -> return c1
       _ -> if c1 == c2 then return c1
-           else throwError ("incompatible connections: " ++ show c1 ++
-                            " and " ++ show c2)
+           else throwE $ BadConnection (show c1) (show c2) "incompatible connection directions"
 
-unifyMaybeConnection :: Maybe Connection -> Connection -> P Connection
+unifyMaybeConnection :: Maybe Connection -> Connection -> Err Connection
 unifyMaybeConnection mc1 c2 =
     case mc1 of
       Nothing -> return c2
@@ -456,32 +457,31 @@ isPrimitiveDomain obj = Map.null (subDomains obj)
 lookupPortDomain :: Domain a b -> PortId -> Maybe (PortType b)
 lookupPortDomain obj pid = Map.lookup pid (ports obj)
 
-getPortDomain :: Domain a b -> PortId -> P (PortType b)
+getPortDomain :: Domain a b -> PortId -> Err (PortType b)
 getPortDomain obj pid =
     case lookupPortDomain obj pid of
       Just p -> return p
-      Nothing -> throwError $ "no such port: " ++ show pid
+      Nothing -> throwE $ UndefinedPort (show pid)
 
-addPort :: Domain a b -> PortId -> PortType b -> P (Domain a b)
+addPort :: Domain a b -> PortId -> PortType b -> Err (Domain a b)
 addPort obj pid pty =
     case lookupPortDomain obj pid of
       Nothing -> return (obj {ports = Map.insert pid pty (ports obj)})
-      Just _ -> throwError $ "duplicate port declaration " ++ show pid
+      Just _ -> throwE $ DuplicatePort (show pid)
 
-updatePortDomain :: Domain a b -> PortId -> PortType b -> P (Domain a b)
+updatePortDomain :: Domain a b -> PortId -> PortType b -> Err (Domain a b)
 updatePortDomain obj pid pty =
     case lookupPortDomain obj pid of
-      Nothing -> throwError $ "duplicate port declaration " ++ show pid
+      Nothing -> throwE $ DuplicatePort (show pid)
       Just _ -> return (obj {ports = Map.insert pid pty (ports obj)})
 
 lookupSubDomain :: Domain a b -> DomainId -> Maybe (Domain a b)
 lookupSubDomain obj oid = Map.lookup oid (subDomains obj)
 
-getSubDomain :: Domain a b -> DomainId -> P (Domain a b)
+getSubDomain :: Domain a b -> DomainId -> Err (Domain a b)
 getSubDomain obj oid =
     case lookupSubDomain obj oid of
-      Nothing -> throwError $ "no such sub-domain '" ++ show oid ++
-                              "' in domain '" ++ name obj++"'"
+      Nothing -> throwE $ UndefinedDomain (show oid)
       Just o -> return o
 
 nextSubDomain :: Domain a b -> DomainId
@@ -499,19 +499,19 @@ addSubDomain obj subObj =
     let obj' = obj {subDomains = Map.insert oid subObj (subDomains obj)} in
     (obj',oid)
 
-deleteSubDomain :: Domain a b -> DomainId -> P (Domain a b)
+deleteSubDomain :: Domain a b -> DomainId -> Err (Domain a b)
 deleteSubDomain obj oid =
     case lookupSubDomain obj oid of
-      Nothing -> throwError $ "no such sub-domain" ++ show oid
+      Nothing -> throwE $ UndefinedDomain (show oid)
       Just _ -> return (obj {subDomains = Map.delete oid (subDomains obj)})
 
-updateSubDomain :: Domain a b -> DomainId -> Domain a b -> P (Domain a b)
+updateSubDomain :: Domain a b -> DomainId -> Domain a b -> Err (Domain a b)
 updateSubDomain obj i si =
     case lookupSubDomain obj i of
-      Nothing -> throwError $ "no such sub-domain" ++ show i
+      Nothing -> throwE $ UndefinedDomain (show i)
       Just _ -> return (obj {subDomains = Map.insert i si (subDomains obj)})
 
-mapMSubDomain :: (Domain a b -> P (Domain a b)) -> Domain a b -> P (Domain a b)
+mapMSubDomain :: (Domain a b -> Err (Domain a b)) -> Domain a b -> Err (Domain a b)
 mapMSubDomain f obj =
     let Domain {subDomains = s} = obj in
     do s' <- Traversable.mapM f s
@@ -520,7 +520,7 @@ mapMSubDomain f obj =
 foldSubDomain :: (DomainId -> Domain a b -> s -> s) -> s -> Domain a b -> s
 foldSubDomain f x obj = Map.foldWithKey f x (subDomains obj)
 
-foldMSubDomain :: (DomainId -> Domain a b -> s -> P s) -> s -> Domain a b -> P s
+foldMSubDomain :: (DomainId -> Domain a b -> s -> Err s) -> s -> Domain a b -> Err s
 foldMSubDomain f =
     \x obj -> foldM f' x (Map.toList (subDomains obj))
     where
@@ -540,15 +540,15 @@ foldConnectionsDomain f =
       f' (p,q) c z = f p c q z
 
 foldMConnections ::
-    (DomainPort -> Connection -> DomainPort -> s -> P s) ->
-    s -> Domain a b -> P s
+    (DomainPort -> Connection -> DomainPort -> s -> Err s) ->
+    s -> Domain a b -> Err s
 foldMConnections f =
     \x obj -> foldM f' x (Map.toList (connections obj))
     where
       f' z ((p,q),c) = f p c q z
 
 appConnections ::
-    (DomainPort -> Connection -> DomainPort -> P ()) -> Domain a b -> P ()
+    (DomainPort -> Connection -> DomainPort -> Err ()) -> Domain a b -> Err ()
 appConnections f =
     foldMConnections f' ()
     where
@@ -563,21 +563,24 @@ lookupConnectionDomain obj p1 p2 =
       GT -> liftM reverseConnection (Map.lookup (p2,p1) (connections obj))
 
 addConnectionDomain ::
-    Domain a b -> DomainPort -> Connection -> DomainPort -> P (Domain a b)
+    Domain a b -> DomainPort -> Connection -> DomainPort -> Err (Domain a b)
 addConnectionDomain obj p1 c p2 =
     do c' <- unifyMaybeConnection (lookupConnectionDomain obj p1 p2) c
        case compare p1 p2 of
          LT -> let m = connections obj
                    m' = Map.insert (p1,p2) c' m in
                return (obj {connections = m'})
-         EQ -> throwError $ "can't connect a port to itself " ++ show p1
+         EQ -> throwE $ MiscError $
+                  " p1: " ++ show p1 ++
+                  " p2: " ++ show p2
+          -- throwE $ SelfConnection (prettyPrintDomainPort obj p1)
          GT -> let m = connections obj
                    m' = Map.insert (p2,p1) (reverseConnection c') m in
                return (obj {connections = m'})
 
 addConnections ::
     Domain a b -> DomainPort -> Connection -> [DomainPort] ->
-    P (Domain a b)
+    Err (Domain a b)
 addConnections =
     \obj p1 conn ps2 -> foldM (add p1 conn) obj ps2
     where
@@ -585,7 +588,7 @@ addConnections =
 
 addDirectedConnectionsDomain ::
     Domain a b -> DomainPort -> Connection ->
-    [(Connection,DomainPort)] -> P (Domain a b)
+    [(Connection,DomainPort)] -> Err (Domain a b)
 addDirectedConnectionsDomain =
     \obj p1 conn ps2 -> foldM (add p1 conn) obj ps2
     where
@@ -595,7 +598,7 @@ addDirectedConnectionsDomain =
 
 addPortConnections ::
     Domain a b -> [DomainPort] -> Connection -> [DomainPort] ->
-    P (Domain a b)
+    Err (Domain a b)
 addPortConnections =
     \obj ps1 conn ps2 -> foldM (add conn ps2) obj ps1
     where
@@ -603,7 +606,7 @@ addPortConnections =
 
 addPortDirectedConnectionsDomain ::
     Domain a b -> [(Connection,DomainPort)] -> Connection ->
-    [(Connection,DomainPort)] -> P (Domain a b)
+    [(Connection,DomainPort)] -> Err (Domain a b)
 addPortDirectedConnectionsDomain =
     \obj ps1 conn ps2 -> foldM (add conn ps2) obj ps1
     where
@@ -612,7 +615,7 @@ addPortDirectedConnectionsDomain =
           do conn' <- unifyConnection conn c1'
              addDirectedConnectionsDomain obj p1 conn' ps2
 
-getPortType :: Domain a b -> DomainPort -> P (PortType b)
+getPortType :: Domain a b -> DomainPort -> Err (PortType b)
 getPortType obj (DomainPort {domain = o, port = p}) =
     case o of
       Just i ->
@@ -620,7 +623,7 @@ getPortType obj (DomainPort {domain = o, port = p}) =
              getPortDomain si p
       Nothing -> getPortDomain obj p
 
-updatePortTypeDomain :: Domain a b -> DomainPort -> PortType b -> P (Domain a b)
+updatePortTypeDomain :: Domain a b -> DomainPort -> PortType b -> Err (Domain a b)
 updatePortTypeDomain obj (DomainPort {domain = o, port = p}) t =
     case o of
       Just i ->
@@ -633,7 +636,7 @@ updatePortTypeDomain obj (DomainPort {domain = o, port = p}) t =
 liftConnectionPortTypeDomain ::
     (b -> b -> Maybe b) -> (b -> b -> Bool) -> (b -> String) ->
     DomainPort -> Connection -> DomainPort ->
-    Domain a b -> P (Domain a b)
+    Domain a b -> Err (Domain a b)
 liftConnectionPortTypeDomain unify connectable pp p1 conn p2 obj =
     case (isExternalDomainPort p1, isExternalDomainPort p2) of
       (False,False) ->
@@ -642,20 +645,17 @@ liftConnectionPortTypeDomain unify connectable pp p1 conn p2 obj =
              let t = unifyPortType unify t1 (originPortType conn)
              if connectablePortType connectable t t2
                then return obj
-               else throwError
-                      ("incompatible connection in domain " ++
-                       show (name obj) ++ ":\n" ++
-                       "in connection " ++ prettyPrintDomainPort obj p1 ++
-                       " " ++ prettyPrintConnection conn ++ " " ++
-                       prettyPrintDomainPort obj p2 ++ "\nwith port types " ++
-                       prettyPrintPortType pp t1 ++ "\nand " ++
-                       prettyPrintPortType pp t2)
-      (True,True) -> throwError
-                       ("internal connection in domain " ++
-                        show (name obj) ++ ": " ++
-                        prettyPrintDomainPort obj p1 ++
-                        " " ++ prettyPrintConnection conn ++ " " ++
-                        prettyPrintDomainPort obj p2)
+               else
+                 -- FIXME: This error message could use some work.
+                 throwE $ BadConnection (prettyPrintDomainPort obj p1)
+                 (prettyPrintDomainPort obj p2)
+                 ("incompatible connection types '" ++
+                  prettyPrintPortType pp t1 ++ "' and '" ++
+                  prettyPrintPortType pp t2 ++ "' for connection type '" ++
+                  prettyPrintConnection conn ++ "'")
+      (True,True) -> throwE $ BadConnection (prettyPrintDomainPort obj p1)
+                                            (prettyPrintDomainPort obj p2)
+                                            "invalid internal connection"
       (True,False) ->
           let conn' = reverseConnection conn in
           liftConnectionPortTypeDomain unify connectable pp p2 conn' p1 obj
@@ -668,7 +668,7 @@ liftConnectionPortTypeDomain unify connectable pp p1 conn p2 obj =
 
 liftPortTypesDomain ::
     (b -> b -> Maybe b) -> (b -> b -> Bool) -> (b -> String) ->
-    Domain a b -> P (Domain a b)
+    Domain a b -> Err (Domain a b)
 liftPortTypesDomain unify connectable pp obj =
     do obj' <- mapMSubDomain (liftPortTypesDomain unify connectable pp) obj
        foldMConnections
@@ -676,12 +676,12 @@ liftPortTypesDomain unify connectable pp obj =
 
 typeCheck ::
     (b -> b -> Maybe b) -> (b -> b -> Bool) -> (b -> String) ->
-    Domain a b -> P ()
+    Domain a b -> Err ()
 typeCheck unify connectable pp obj =
     do _ <- liftPortTypesDomain unify connectable pp obj
        return ()
 
-explodeSubDomain :: Domain a b -> DomainId -> Domain a b -> P (Domain a b)
+explodeSubDomain :: Domain a b -> DomainId -> Domain a b -> Err (Domain a b)
 explodeSubDomain =
     \obj subId subObj ->
     if isPrimitiveDomain subObj
@@ -704,7 +704,7 @@ explodeSubDomain =
 
       getIntObj intObj o =
           case Map.lookup o intObj of
-            Nothing -> throwError "getIntObj"
+            Nothing -> throwE $ MiscError "getIntObj"   -- ???
             Just o' -> return o'
 
       getIntPort intPort p =
@@ -714,7 +714,10 @@ explodeSubDomain =
 
       addSubConn intObj p1 conn p2 (intPort,obj) =
           case (domain p1, domain p2) of
-            (Nothing,Nothing) -> throwError "internal connection"
+            (Nothing,Nothing) ->
+              throwE $ BadConnection (prettyPrintDomainPort obj p1)
+                                     (prettyPrintDomainPort obj p2)
+                                     "invalid internal connection"
             (Just _, Nothing) ->
                 let conn' = reverseConnection conn in
                 addSubConn intObj p2 conn' p1 (intPort,obj)
@@ -743,7 +746,7 @@ explodeSubDomain =
               ps2 = expandPort subId intPort p2 in
           addPortDirectedConnectionsDomain obj ps1 conn ps2
 
-flatten :: Domain a b -> P (Domain a b)
+flatten :: Domain a b -> Err (Domain a b)
 flatten =
     \obj ->
     do obj' <- mapMSubDomain flatten obj
@@ -858,7 +861,7 @@ checkAssertions f g d = nub $ es1 ++ es2
 checkAssertion :: Eq a => (PortRE -> [a]) -> LGraph a -> Assertion -> Either String String
 checkAssertion f g a@(Assertion s _) = case evalGrPred grPred of
   Ok -> Right $ "SUCCESS: assertion passed: " ++ s
-  Err e -> Left $ s ++ ":" ++ ppErr e
+  ResultErr e -> Left $ s ++ ":" ++ ppErr e
   where
   grPred = compileAssertion f g a
 

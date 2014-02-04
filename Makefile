@@ -6,6 +6,7 @@ SUBPROJECTS :=                 \
   lobster-selinux              \
   genLobster                   \
   v3spa-server                 \
+  iptables-helpers             \
   iptables-lobster
 
 .PHONY: all

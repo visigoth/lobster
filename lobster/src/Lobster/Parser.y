@@ -2,9 +2,12 @@
 {
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns -fno-warn-overlapping-patterns #-}
 module Lobster.Parser where
+
+import Control.Error
+
 import Lobster.AST
 import Lobster.Lexer
-import Lobster.ErrMonad
+import Lobster.Error
 
 }
 
@@ -37,7 +40,7 @@ import Lobster.ErrMonad
 %name pListPortTypeConstraint ListPortTypeConstraint
 
 -- no lexer declaration
-%monad { Err } { thenM } { returnM }
+%monad { Err }
 %tokentype { Token }
 
 %token 
@@ -232,18 +235,12 @@ ListPortTypeConstraint : {- empty -} { [] }
 {
 type Annot = Posn
 
-returnM :: a -> Err a
-returnM = return
-
-thenM :: Err a -> (a -> Err b) -> Err b
-thenM = (>>=)
-
 happyError :: [Token] -> Err a
 happyError ts =
   case ts of
-    [] -> Bad alexNoPos "syntax error"
-    [Err p] -> Bad p "syntax due to lexer error"
-    PT p _ : _ -> Bad p $ "syntax error before " ++
+    [] -> throwE $ SyntaxError "syntax error"
+    [Err p] -> throwE $ SyntaxError "syntax due to lexer error"
+    PT p _ : _ -> throwE $ SyntaxError $ "syntax error before " ++
                           unwords (map (id . prToken) (take 4 ts))
 
 myLexer = tokens

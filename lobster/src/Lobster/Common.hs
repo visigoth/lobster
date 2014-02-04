@@ -1,10 +1,15 @@
 module Lobster.Common where
 
+import Control.Monad.Trans (liftIO)
+import Control.Error (hoistEither)
+
 import System.Console.GetOpt(getOpt, usageInfo,ArgOrder(..), OptDescr(..), ArgDescr(..))
 import System.Environment(getProgName, getArgs)
 import System.Exit(exitFailure)
 
+import Lobster.Error
 import Lobster.Policy
+
 import qualified Lobster.Lexer as Lex
 
 data Options = Options
@@ -12,7 +17,8 @@ data Options = Options
   , outputFile :: String
   } deriving (Eq, Read, Show, Ord)
 
-parseAndInterpretPolicyFiles_ :: Options -> [FilePath] -> IO Domain
+-- FIXME: these two functions feel especially bogus right now...
+parseAndInterpretPolicyFiles_ :: Options -> [FilePath] -> ErrT IO Domain
 parseAndInterpretPolicyFiles_ options fns = do
   (errs,d) <- parseAndInterpretPolicyFiles options fns
   if null errs
@@ -20,12 +26,12 @@ parseAndInterpretPolicyFiles_ options fns = do
     else error $ "ERROR: symbion errors in Lobster policy file(s) " ++ ":\n" ++
            unlines errs
 
-parseAndInterpretPolicyFiles :: Options -> [FilePath] -> IO ([String],Domain)
+parseAndInterpretPolicyFiles :: Options -> [FilePath] -> ErrT IO ([String],Domain)
 parseAndInterpretPolicyFiles options fns = do
   let files = includeFiles options ++ fns
   policy <- parsePolicyFiles files
-  let (eexs,dom) = interpretPolicy policy
-  sequence_ [ putStrLn x | Right x <- eexs ]
+  (eexs,dom) <- hoistEither $ interpretPolicy policy
+  sequence_ [ liftIO $ putStrLn x | Right x <- eexs ]
   return ([ e | Left e <- eexs ],dom)
 
 processOptions :: IO (Options,[String])
@@ -66,7 +72,7 @@ usage =
        putStrLn $ usageInfo header programOptions
        exitFailure
 
-parsePolicyFiles :: [String] -> IO (Policy Lex.Posn)
+parsePolicyFiles :: [String] -> ErrT IO (Policy Lex.Posn)
 parsePolicyFiles filenames =
     case filenames of
       [] -> return empty

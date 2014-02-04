@@ -36,35 +36,35 @@ data GrPred a
   | OrP (GrPred a) (GrPred a)
 
 -- Datatype for storing the output of our predicate evaluation.  Slightly nicer than Bool.
-data Ok = Ok | Err Err deriving Show
+data Result = Ok | ResultErr ResultErr deriving Show
 
-data Err
+data ResultErr
   = EPath String String [String]
   | ENoPath String String
-  | EAnd Err Err
-  | EOr Err Err
+  | EAnd ResultErr ResultErr
+  | EOr ResultErr ResultErr
   deriving (Show,Eq)
 
 --------------------------------------------------------------------------------
 -- Predicate evaluation.
 --------------------------------------------------------------------------------
 
-evalGrPred :: (Eq a) => GrPred a -> Ok
+evalGrPred :: (Eq a) => GrPred a -> Result
 evalGrPred x = case x of
   IsPathP a b g -> evalIsPath a b g
   NoPathP a b g -> evalNoPath a b g
   AndP a b -> evalAndOk (evalGrPred a) (evalGrPred b)
   OrP a b -> evalOrOk (evalGrPred a) (evalGrPred b)
 
-evalIsPath :: (Eq a) => a -> a -> LGraph a -> Ok
+evalIsPath :: (Eq a) => a -> a -> LGraph a -> Result
 evalIsPath a b g = case mPath a b g of
-  Nothing -> Err $ ENoPath (ppLabel g a) (ppLabel g b)
+  Nothing -> ResultErr $ ENoPath (ppLabel g a) (ppLabel g b)
   Just _ -> Ok
 
-evalNoPath :: (Eq a) => a -> a -> LGraph a -> Ok
+evalNoPath :: (Eq a) => a -> a -> LGraph a -> Result
 evalNoPath a b g = case mPath a b g of
   Nothing -> Ok
-  Just p -> Err $ EPath (ppLabel g a) (ppLabel g b) (map (ppLabel g) p)
+  Just p -> ResultErr $ EPath (ppLabel g a) (ppLabel g b) (map (ppLabel g) p)
 
 deleteNode :: (Eq a) => a -> LGraph a -> LGraph a
 deleteNode a g = g{ uGr = delNode (toNode g a) (uGr g) }
@@ -72,16 +72,16 @@ deleteNode a g = g{ uGr = delNode (toNode g a) (uGr g) }
 deleteNodes :: (Eq a) => [a] -> LGraph a -> LGraph a
 deleteNodes xs g = foldr deleteNode g xs
 
-evalAndOk :: Ok -> Ok -> Ok
+evalAndOk :: Result -> Result -> Result
 evalAndOk a b = case (a,b) of
-  (Err ea, Err eb) -> Err $ EAnd ea eb
-  (Err _, _) -> a
+  (ResultErr ea, ResultErr eb) -> ResultErr $ EAnd ea eb
+  (ResultErr _, _) -> a
   _ -> b
 
-evalOrOk :: Ok -> Ok -> Ok
+evalOrOk :: Result -> Result -> Result
 evalOrOk a b = case (a,b) of
-  (Err ea, Err eb) -> Err $ EOr ea eb
-  (Err _, _) -> b
+  (ResultErr ea, ResultErr eb) -> ResultErr $ EOr ea eb
+  (ResultErr _, _) -> b
   _ -> a
 
 --------------------------------------------------------------------------------
@@ -121,10 +121,10 @@ toLabel g n0 = case [ l | (n,l) <- nodesGr g, n == n0 ] of
 -- Pretty printers.
 --------------------------------------------------------------------------------
 
-ppErrs :: [Err] -> String
+ppErrs :: [ResultErr] -> String
 ppErrs = unlines . map ppErr
 
-ppErr :: Err -> String
+ppErr :: ResultErr -> String
 ppErr x = case x of
   EPath a b c ->
     "illegal path from " ++ a ++ " to " ++ b ++ " (e.g. " ++ ppPath c ++ ")" ++ "\n"
