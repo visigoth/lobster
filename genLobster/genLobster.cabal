@@ -41,18 +41,3 @@ Executable m4-lobster
                      containers >= 0.1.0.0,
                      lobster >= 0.1,
                      scd >= 0.1
-
-Executable  gen-lobster
-  Main-is:           gen-lobster.hs
-  Build-Depends:     array >= 0.1.0.0,
-                     base >= 4,
-                     containers >= 0.1.0.0,
-                     directory >= 1,
-                     filepath >= 1.1.0.0,
-                     lobster >= 0.1,
-                     mtl >= 1,
-                     pretty >= 1,
-                     regex-posix >= 0.71,
-                     scd >= 0.1,
-                     syb >= 0.1.0.0,
-                     xml >= 1.3.2
