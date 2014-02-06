@@ -1,149 +1,77 @@
-//------------------------------------------------------------------------------
-// Example IPTables policy in Lobster
-// Adam Foltzer <acfoltzer@galois.com>
-// 11 Dec 2013
-//------------------------------------------------------------------------------
-
-// This module implements the following example IPTables policy that
-// restricts incoming connections to SSH, HTTP, and HTTPS from a given
-// whitelist of IP addresses/subnets (in /sbin/iptables-save output
-// format):
-//
-// *filter
-// :INPUT ACCEPT [0:0]
-// :FORWARD DROP [0:0]
-// :OUTPUT ACCEPT [0:0]
-// :OKIPS - [0:0]
-// -A INPUT -i lo -j ACCEPT
-// -A INPUT -p icmp --icmp-type any -j ACCEPT
-// -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-// -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j OKIPS
-// -A INPUT -m state --state NEW -m tcp -p tcp --dport 80 -j OKIPS
-// -A INPUT -m state --state NEW -m tcp -p tcp --dport 443 -j OKIPS
-// -A INPUT -j DROP
-// -A OKIPS -s 192.168.0.0/16 -j ACCEPT
-// -A OKIPS -s 198.51.100.0/24 -j ACCEPT
-// -A OKIPS -j REJECT
-// COMMIT
-
-
-// An iptables rule, corresponding to a single rule in a chain. The
-// condition determines how a given packet flows through the rule
-class Rule(condition) {
-  // Incoming packet
-  port in;
-
-  // Outgoing packet when condition is true
-  port match;
-  // Outgoing packet when condition is false
-  port fail;
+// An iptables rule corresponding to a single rule in a chain
+class Rule (condition) {
+   // Incoming packet
+   port in;
+   // Outgoing packet when condition is true
+   port match;
+   // Outgoing packet when condition is false
+   port fail;
 }
 
-class UserSpace() {
-  // Packets entering userspace
-  port accept;
-  // Packets leaving userspace
-  port out;
+// Abstract representation of userspace
+class UserSpace () {
+   // Packets entering userspace
+   port in;
+   // Packets leaving userspace
+   port out;
 }
 
-// Abstract representation of the routing table on a host (eg tables
-// made with `route` or `iproute2`)
-class RoutingTable() {
-  // Incoming packets from nat table PREROUTING chain
-  port in;
-  // Outgoing packets to mangle table INPUT chain
-  port local;
-  // Outgoing packets to mangle table FORWARD chain
-  port forward;
+// Abstract representation of the routing table
+class RoutingTable () {
+   // Incoming packets from nat PREROUTING
+   port in;
+   // Outgoing packets to mangle INPUT
+   port local;
+   // Outgoing packets to mangle FORWARD
+   port forward;
 }
 
-// Abstract representation of a packet's destination outside of the
-// current policy (eg DROP, REJECT, FORWARD)
-class Destination() {
-  port in;
+// Abstract representation of a packet's destination outside of the current policy (eg DROP, REJECT)
+class Destination () {
+   port in;
 }
 
-class ExampleHost() {
-  // All incoming interfaces
-  port incoming;
-  // All outgoing interfaces
-  port outgoing;
-
-  // Rejected packets flow here
-  domain reject = Destination();
-  // Dropped packets flow here
-  domain drop = Destination();
-
-  domain routing = RoutingTable();
-  // TODO include all other tables
-  incoming --> routing.in;
-
-  domain user = UserSpace();
-
-  //--------------------------
-  // filter table, INPUT chain
-  //--------------------------
-
-  // -A INPUT -i lo -j ACCEPT
-  domain input_0 = Rule("interface = lo");
-  input_0.in <-- routing.local;
-  input_0.match --> user.accept;
-
-  // -A INPUT -p icmp --icmp-type any -j ACCEPT
-  domain input_1 = Rule("protocol = icmp");
-  input_1.in <-- input_0.fail;
-  input_1.match --> user.accept;
-
-  // -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-  domain input_2 = Rule("connection_state = ESTABLISHED || connection_state = RELATED");
-  input_2.in <-- input_1.fail;
-  input_2.match --> user.accept;
-
-  // -A INPUT -m state --state NEW -m tcp -p tcp --dport 22 -j OKIPS
-  domain input_3 = Rule("connection_state = NEW && protocol = tcp && dest_port = 22");
-  input_3.in <-- input_2.fail;
-
-  // -A INPUT -m state --state NEW -m tcp -p tcp --dport 80 -j OKIPS
-  domain input_4 = Rule("connection_state = NEW && protocol = tcp && dest_port = 80");
-  input_4.in <-- input_3.fail;
-
-  // -A INPUT -m state --state NEW -m tcp -p tcp --dport 443 -j OKIPS
-  domain input_5 = Rule("connection_state = NEW && protocol = tcp && dest_port = 443");
-  input_5.in <-- input_3.fail;
-
-  // -A INPUT -j DROP
-  input_5.fail --> drop.in;
-
-  //--------------------------
-  // filter table, OKIPS chain
-  //--------------------------
-
-  // -A OKIPS -s 192.168.0.0/16 -j ACCEPT
-  domain okips_0 = Rule("source_ip = 192.168.0.0/16");
-  okips_0.match --> user.accept;
-  input_3.match --> okips_0.in;
-  input_4.match --> okips_0.in;
-  input_5.match --> okips_0.in;
-
-  // -A OKIPS -s 198.51.100.0/24 -j ACCEPT
-  domain okips_1 = Rule("source_ip = 198.51.100.0/24");
-  okips_1.in <-- okips_0.fail;
-  okips_1.match --> user.accept;
-
-  // -A OKIPS -j REJECT
-  okips_1.fail --> reject.in;
-
-  //---------------------------------------------------
-  // filter table, OUTPUT chain (default policy ACCEPT)
-  //---------------------------------------------------
-
-  user.out --> outgoing;
-
-  //--------------------------------------------------
-  // filter table, FORWARD chain (default policy DROP)
-  //--------------------------------------------------
-
-  routing.forward --> drop.in;
+class Host () {
+   // All incoming interfaces
+   port in;
+   // All outgoing interfaces
+   port out;
+   // Rejected packets flow here
+   domain reject = Destination();
+   // Dropped packets flow here
+   domain drop = Destination();
+   // This host's routing table
+   domain routing = RoutingTable();
+   // This host's userspace
+   domain userspace = UserSpace();
+   domain filter_INPUT_0 = Rule("-i lo");
+   domain filter_INPUT_1 = Rule("-p icmp --icmp-type any");
+   domain filter_INPUT_2 = Rule("-m state --state ESTABLISHED,RELATED");
+   domain filter_INPUT_3 = Rule("-m state --state NEW -m tcp -p tcp --dport 22");
+   domain filter_INPUT_4 = Rule("-m state --state NEW -m tcp -p tcp --dport 80");
+   domain filter_INPUT_5 = Rule("-m state --state NEW -m tcp -p tcp --dport 443");
+   domain filter_OKIPS_0 = Rule("-s 192.168.0.0/16");
+   domain filter_OKIPS_1 = Rule("-s 198.51.100.0/24");
+   in --> routing.in;
+   filter_INPUT_0.fail --> filter_INPUT_1.in;
+   filter_INPUT_0.match --> userspace.in;
+   filter_INPUT_1.fail --> filter_INPUT_2.in;
+   filter_INPUT_1.match --> userspace.in;
+   filter_INPUT_2.fail --> filter_INPUT_3.in;
+   filter_INPUT_2.match --> userspace.in;
+   filter_INPUT_3.fail --> filter_INPUT_4.in;
+   filter_INPUT_3.match --> filter_OKIPS_0.in;
+   filter_INPUT_4.fail --> filter_INPUT_5.in;
+   filter_INPUT_4.match --> filter_OKIPS_0.in;
+   filter_INPUT_5.fail --> drop.in;
+   filter_INPUT_5.match --> filter_OKIPS_0.in;
+   filter_OKIPS_0.fail --> filter_OKIPS_1.in;
+   filter_OKIPS_0.match --> userspace.in;
+   filter_OKIPS_1.fail --> reject.in;
+   filter_OKIPS_1.match --> userspace.in;
+   routing.forward --> drop.in;
+   routing.local --> filter_INPUT_0.in;
+   userspace.out --> out;
 }
 
-domain host = ExampleHost();
+domain host = Host();
