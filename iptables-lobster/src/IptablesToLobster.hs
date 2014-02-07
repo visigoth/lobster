@@ -38,10 +38,14 @@ toLobster ipts = preamble ++ [mkHost "Host" (stateToLobster final)] ++ [host]
           addEdge (outPort userspace, e3)
 
 stateToLobster :: S -> [L.Decl]
-stateToLobster S { sRules, sEdges } = ruleDecls ++ edgeDecls
+stateToLobster S { sRules, sActions, sEdges } =
+    ruleDecls ++ actionDecls ++ edgeDecls
   where ruleDecls = [ L.newDomain name "Rule" [fromString $ ppRuleOpts rule]
                     | (name, rule) <- Map.toList sRules
                     ]
+        actionDecls = [ L.newDomain name "Action" [fromString action]
+                      | (name, action) <- Map.toList sActions
+                      ]
         ppRuleOpts rule =
           "\"" ++ (unwords . map printOption . rOptions $ rule) ++ "\""
         edgeDecls = [ l `L.right` r | (l, r) <- Set.toList sEdges ]
@@ -52,6 +56,12 @@ stateToLobster S { sRules, sEdges } = ruleDecls ++ edgeDecls
 -- in the chain. For example, the first rule of the INPUT chain in the
 -- filter table is called "filter_INPUT_0".
 
+-- | A representation of things that aren't quite rules, but have some
+-- effect, for example marking or logging a packet. These are named
+-- based off of the matching portion of the rule that led to them
+-- firing (see [Rule Names]).
+type Action = String
+
 -- | A left to right connection between domain ports
 type Edge = (L.DomPort, L.DomPort)
 
@@ -60,6 +70,8 @@ type Edge = (L.DomPort, L.DomPort)
 -- metadata corresponding to it
 data S = S { sRules       :: Map L.Name Rule
            -- ^ The rules we've encountered so far (see [Rule Names])
+           , sActions     :: Map L.Name Action
+           -- ^ The actions we've encountered so far
            , sEdges       :: Set Edge
            -- ^ The left-to-right edges we've encountered so far
            , sReturnPorts :: Map (String, String) (Set L.DomPort)
@@ -89,7 +101,7 @@ newtype M a = M { unM :: RWS R () S a }
 
 -- | Build an empty state.
 initialS :: S
-initialS = S Map.empty Set.empty Map.empty Map.empty
+initialS = S Map.empty Map.empty Set.empty Map.empty Map.empty
 
 runM :: Iptables -> String -> String -> L.DomPort -> M a -> (a, S)
 runM ipts table chain accept m = (a, s)
@@ -97,6 +109,11 @@ runM ipts table chain accept m = (a, s)
 
 addRule :: L.Name -> Rule -> M ()
 addRule name rule = modify $ \s -> s { sRules = Map.insert name rule (sRules s)}
+
+-- | Add an 'Action' to the translation state
+addAction :: L.Name -> Action -> M ()
+addAction name action =
+  modify $ \s -> s { sActions = Map.insert name (show action) (sActions s)}
 
 addEdge :: Edge -> M ()
 addEdge edge = modify $ \s -> s { sEdges = Set.insert edge (sEdges s)}
@@ -127,11 +144,11 @@ addSeenCall table (caller, callee) = modify $ \s ->
 -- include the @match@ port. It may also be any return edges from
 -- user-defined chains.
 translateRule :: [L.DomPort] -> Integer -> Rule -> M [L.DomPort]
-translateRule incs _num rule | null (rOptions rule) = do
-  -- if there are no conditions on this rule, just wire incs up to the
+translateRule incs _num rule | uncondRule rule = do
+  -- if this rule is unconditional, just wire incs up to the
   -- target, no fail edges since it can't fail
-  _ <- forM_ incs $ \inc -> connectToTarget inc (rTarget rule)
-  return []
+  outs <- forM incs $ \inc -> connectToTarget inc (rTarget rule)
+  return (concat outs)
 translateRule incs num rule = do
   R { rTable, rChain } <- ask
   let name = mkRuleName rTable rChain num
@@ -153,6 +170,30 @@ connectToTarget this target = do
     TAccept -> addEdge (this, rAccept) >> return []
     TDrop -> addEdge (this, drop) >> return []
     TReject _ -> addEdge (this, reject) >> return []
+    TSecmark ctx -> do
+      -- create an action to represent setting the security mark
+      let baseName = fromMaybe "UNKNOWN" (L.portDomain this)
+          name = baseName <> "_SECMARK"
+      addAction name ("--selctx " ++ ctx)
+      addEdge (this, inPort name)
+      -- control flow continues
+      return [outPort name]
+    TConnsecmarkRestore -> do
+      -- create an action to represent restoring the security mark
+      let baseName = fromMaybe "UNKNOWN" (L.portDomain this)
+          name = baseName <> "_CONNSECMARK"
+      addAction name "--restore"
+      addEdge (this, inPort name)
+      -- control flow continues
+      return [outPort name]
+    TConnsecmarkSave -> do
+      -- create an action to represent saving the security mark
+      let baseName = fromMaybe "UNKNOWN" (L.portDomain this)
+          name = baseName <> "_CONNSECMARK"
+      addAction name "--save"
+      addEdge (this, inPort name)
+      -- control flow continues
+      return [outPort name]
     TReturn -> do
       -- add the match port of this rule to the set of return ports
       -- for this chain
@@ -183,7 +224,8 @@ callChain table chain = do
   R { rTable, rChain } <- ask
   if (rTable /= table)
      -- this case should probably not happen, since this is only used
-     -- for calling user-defined chains
+     -- for calling user-defined chains which by definition must be
+     -- within the same table as the caller
      then Just <$> translateChain table chain
      else do
        S { sSeenCalls } <- get
@@ -192,7 +234,7 @@ callChain table chain = do
            -- already seen, so just return the entrypoint
            mchain <- lookupChain table chain
            case mchain of
-             Nothing -> error "shoudln't get here"
+             Nothing -> error "shouldn't get here"
              Just chain' | null (cRules chain') -> return Nothing
              _ -> return . Just . inPort $ mkRuleName rTable chain initialRuleNum
          _ -> do
@@ -245,7 +287,8 @@ translateChain table chain = do
         let exit = case cPolicy targetChain of
                      ACCEPT     -> accept
                      DROP       -> drop
-                     -- user chain, so not applicable
+                     -- user chain, so not applicable as we stop
+                     -- before processing empty user chains
                      PUNDEFINED -> error "shouldn't be here"
             entry  = mkRuleName table chain initialRuleNum
             loop [] incs _ | cPolicy targetChain == PUNDEFINED = do
@@ -259,9 +302,29 @@ translateChain table chain = do
             loop (rule:rules) incs num = do
               incs' <- translateRule incs num rule
               loop rules incs' (num+1)
-        if null (cRules targetChain)
-           then return exit
-           else loop (cRules targetChain) [] initialRuleNum
+        case cRules targetChain of
+          [] -> return exit
+          rules | all uncondRule rules -> do
+            -- if we only have unconditional rules, we introduce a
+            -- dummy rule as the entrypoint so that callers of this
+            -- chain have something to jump to
+            addRule entry (Rule (Counters 0 0) [] (TUnknown "synthetic entry rule" []))
+            loop rules [(matchPort entry)] (initialRuleNum+1)
+          rules -> loop rules [] initialRuleNum
+
+-- | Returns @True@ if all of the options in this rule will
+-- unconditionally succeed.
+uncondRule :: Rule -> Bool
+uncondRule rule = all uncondRuleOption (rOptions rule)
+
+-- | Returns @True@ if this option unconditionally succeeds when
+-- matching a packet (e.g., @--comment@).
+uncondRuleOption :: RuleOption -> Bool
+uncondRuleOption rOpt =
+  case rOpt of
+    OModule _  -> True
+    OComment _ -> True
+    _          -> False
 
 -- | Encodes the destination for ACCEPT targets that lead to non-chain
 -- destinations like network interfaces or userspace.
@@ -348,7 +411,7 @@ outgoing = L.DomPort Nothing "out"
 
 preamble :: [L.Decl]
 preamble = [
-    L.newComment "An iptables rule corresponding to a single rule in a chain"
+    L.newComment "An rule corresponding to a single rule in an iptables chain"
   , L.newClass "Rule" ["condition"]
       [ L.newComment "Incoming packet"
       , L.newPort "in"
@@ -356,6 +419,13 @@ preamble = [
       , L.newPort "match"
       , L.newComment "Outgoing packet when condition is false"
       , L.newPort "fail"
+      ]
+  , L.newComment "An action corresponding to an effectful target like LOG or MARK"
+  , L.newClass "Action" ["action"]
+      [ L.newComment "Incoming packet"
+      , L.newPort "in"
+      , L.newComment "Outgoing packet"
+      , L.newPort "out"
       ]
   , L.newComment "Abstract representation of userspace"
   , L.newClass "UserSpace" []
