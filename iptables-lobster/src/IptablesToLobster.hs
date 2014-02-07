@@ -2,11 +2,13 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module IptablesToLobster (toLobster, parseIptables) where
+module IptablesToLobster (toLobster, toLobsterIO, parseIptables) where
 
 import Prelude hiding (drop)
 
 import Control.Applicative
+import Control.DeepSeq
+import Control.Exception
 import Control.Monad.RWS
 
 import Data.Map (Map)
@@ -22,7 +24,24 @@ import Iptables.Print
 import Iptables.Types
 
 import qualified SCD.Lobster.Gen.CoreSyn as L
+import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 
+-- | Translate 'Iptables' into Lobster, returning any errors as a
+-- @Left@ value. Forces full evaluation of the translation. TODO:
+-- refactor other code into an error monad so we don't have to be in
+-- IO.
+toLobsterIO :: Iptables -> IO (Either String [L.Decl])
+toLobsterIO ipts = go `catch` h
+  where go = do
+          lobs <- evaluate $ toLobster ipts
+          let str = showLobster lobs
+          return $! str `deepseq` Right lobs
+        -- catch any exceptions raised by 'error'
+        h :: ErrorCall -> IO (Either String [L.Decl])
+        h = return . Left . show
+
+-- | Translate 'Iptables' into Lobster, throwing any errors as
+-- exceptions.
 toLobster :: Iptables -> [L.Decl]
 toLobster ipts = preamble ++ [mkHost "Host" (stateToLobster final)] ++ [host]
   where host = L.newDomain "host" "Host" []
