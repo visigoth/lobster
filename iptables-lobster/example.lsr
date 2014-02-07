@@ -1,4 +1,4 @@
-// An iptables rule corresponding to a single rule in a chain
+// An rule corresponding to a single rule in an iptables chain
 class Rule (condition) {
    // Incoming packet
    port in;
@@ -6,6 +6,14 @@ class Rule (condition) {
    port match;
    // Outgoing packet when condition is false
    port fail;
+}
+
+// An action corresponding to an effectful target like LOG or MARK
+class Action (action) {
+   // Incoming packet
+   port in;
+   // Outgoing packet
+   port out;
 }
 
 // Abstract representation of userspace
