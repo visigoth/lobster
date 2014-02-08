@@ -6,7 +6,9 @@ import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 
 main = do
   s <- getContents
-  putStrLn . showLobster . toLobster $ unsafeParseIptables s
+  case toLobster $ unsafeParseIptables s of
+    Left e -> putStrLn "ERROR" >> print e
+    Right lsr -> putStrLn (showLobster lsr)
 
 unsafeParseIptables s = either (error . show) id (parseIptables s)
 

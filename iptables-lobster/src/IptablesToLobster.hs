@@ -2,18 +2,16 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module IptablesToLobster (toLobster, toLobsterIO, parseIptables) where
+module IptablesToLobster (toLobster, parseIptables) where
 
 import Prelude hiding (drop)
 
 import Control.Applicative
-import Control.DeepSeq
-import Control.Exception
+import Control.Error
 import Control.Monad.RWS
 
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.String
@@ -24,28 +22,24 @@ import Iptables.Print
 import Iptables.Types
 
 import qualified SCD.Lobster.Gen.CoreSyn as L
-import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 
--- | Translate 'Iptables' into Lobster, returning any errors as a
--- @Left@ value. Forces full evaluation of the translation. TODO:
--- refactor other code into an error monad so we don't have to be in
--- IO.
-toLobsterIO :: Iptables -> IO (Either String [L.Decl])
-toLobsterIO ipts = go `catch` h
-  where go = do
-          lobs <- evaluate $ toLobster ipts
-          let str = showLobster lobs
-          return $! str `deepseq` Right lobs
-        -- catch any exceptions raised by 'error'
-        h :: ErrorCall -> IO (Either String [L.Decl])
-        h = return . Left . show
-
--- | Translate 'Iptables' into Lobster, throwing any errors as
--- exceptions.
-toLobster :: Iptables -> [L.Decl]
-toLobster ipts = preamble ++ [mkHost "Host" (stateToLobster final)] ++ [host]
+-- | Translate 'Iptables' into Lobster. If we encounter an error along
+-- the way, discard the translation and return the error.
+--
+-- TODO: Return multiple errors if we can find them
+toLobster :: Iptables -> Either Error [L.Decl]
+toLobster ipts =
+    case runM ipts table0 chain0 accept0 translateAll of
+      (Left e, _)      -> Left e
+      (Right _, final) ->
+        return $ preamble ++ [mkHost "Host" (stateToLobster final)] ++ [host]
   where host = L.newDomain "host" "Host" []
-        (_, final) = runM ipts undefined undefined undefined translateAll
+        -- separate these out so we have the correct initial values;
+        -- undefined is okay for now on these because it gets reset
+        -- immediately by translateChain
+        table0 = undefined
+        chain0 = undefined
+        accept0 = undefined
         translateAll = do
           e0 <- translateChain "raw" "PREROUTING"
           addEdge (incoming, e0)
@@ -115,16 +109,42 @@ data R = R { rIptables :: Iptables
            }
   deriving (Show)
 
-newtype M a = M { unM :: RWS R () S a }
+data Error
+  -- | An unexpected error, probably indicating a bug in this
+  -- translator
+  = EUnexpected String
+  -- | An error encountered while parsing the iptables rules
+  | EIptablesParser ParseError
+  -- | @EChainNotFound table chain@: a chain was not found that was
+  -- either referred to explicitly by a jump or implicitly by the
+  -- structure of the iptables system
+  | EChainNotFound String String
+  -- | A matching clause of a rule was not recognized (string is the
+  -- iptables syntax for the clause)
+  | EUnknownRule String
+  -- | A target of a rule was not recognized (string is the iptables
+  -- syntax for the target)
+  | EUnknownTarget String
+    deriving (Show)
+
+newtype M a = M { unM :: EitherT Error (RWS R () S) a }
   deriving (Functor, Applicative, Monad, MonadReader R, MonadState S)
 
 -- | Build an empty state.
 initialS :: S
 initialS = S Map.empty Map.empty Set.empty Map.empty Map.empty
 
-runM :: Iptables -> String -> String -> L.DomPort -> M a -> (a, S)
-runM ipts table chain accept m = (a, s)
-  where (a, s, _) = runRWS (unM m) (R ipts table chain accept) initialS
+runM :: Iptables -> String -> String -> L.DomPort -> M a -> (Either Error a, S)
+runM ipts table chain accept m = (ea, s)
+  where (ea, s, _) = runRWS (runEitherT $ unM m)
+                            (R ipts table chain accept)
+                            initialS
+
+throwM :: Error -> M a
+throwM = M . throwT
+
+panic :: String -> M a
+panic = throwM . EUnexpected
 
 addRule :: L.Name -> Rule -> M ()
 addRule name rule = modify $ \s -> s { sRules = Map.insert name rule (sRules s)}
@@ -224,8 +244,8 @@ connectToTarget this target = do
       -- called chain.
       mentry <- callChain rTable chain
       case mentry of
-        -- call to empty chain: move to next rule
-        Nothing -> return []
+        -- call to empty chain: move to next rule and continue control flow
+        Nothing -> return [this]
         Just entry -> do
           -- make the edge between this jump and the entry of the user chain
           addEdge (this, entry)
@@ -233,7 +253,7 @@ connectToTarget this target = do
           let returns = fromMaybe Set.empty $ Map.lookup (rTable, chain) returnPorts
           -- return all of the return ports for the next rule
           return (Set.toList returns)
-    _ -> error ("unhandled target: " ++ show target)
+    _ -> throwM . EUnknownTarget $ printTarget target
 
 -- | Like 'translateChain', but first checks whether we have already
 -- translated this chain from this context. Used only for user-defined
@@ -241,30 +261,37 @@ connectToTarget this target = do
 callChain :: String -> String -> M (Maybe L.DomPort)
 callChain table chain = do
   R { rTable, rChain } <- ask
-  if (rTable /= table)
+  chain' <- lookupChain' table chain
+  -- don't process empty user chains; they're a noop
+  if null (cRules chain')
+    then return Nothing
+    else do
      -- this case should probably not happen, since this is only used
      -- for calling user-defined chains which by definition must be
      -- within the same table as the caller
-     then Just <$> translateChain table chain
-     else do
-       S { sSeenCalls } <- get
-       case Map.lookup rTable sSeenCalls of
-         Just calls | Set.member (rChain, chain) calls -> do
-           -- already seen, so just return the entrypoint
-           mchain <- lookupChain table chain
-           case mchain of
-             Nothing -> error "shouldn't get here"
-             Just chain' | null (cRules chain') -> return Nothing
-             _ -> return . Just . inPort $ mkRuleName rTable chain initialRuleNum
-         _ -> do
-           addSeenCall table (rChain, chain)
-           Just <$> translateChain table chain
+     when (rTable /= table) $ panic "called user chain from wrong table"
+     S { sSeenCalls } <- get
+     case Map.lookup rTable sSeenCalls of
+       Just calls | Set.member (rChain, chain) calls ->
+         -- already seen, so just return the entrypoint
+         return . Just . inPort $ mkRuleName rTable chain initialRuleNum
+       _ -> do
+         addSeenCall table (rChain, chain)
+         Just <$> translateChain table chain
 
 lookupChain :: String -> String -> M (Maybe Chain)
 lookupChain table chain = do
   R { rIptables } <- ask
-  let chains = lookupTable rIptables table
+  chains <- lookupTable rIptables table
   return $ getChainByName chain chains
+
+-- | Like 'lookupChain', but throws 'EChainNotFound' on failure.
+lookupChain' :: String -> String -> M Chain
+lookupChain' table chain = do
+  mchain <- lookupChain table chain
+  case mchain of
+    Nothing -> throwM $ EChainNotFound table chain
+    Just chain' -> return chain'
 
 -- | @translateChain table chain incs@ translates the rules of the
 -- specified chain in order. After this runs, the state will be
@@ -290,7 +317,7 @@ translateChain table chain = do
       -- an ACCEPT policy. However we can't meaningfully translate an
       -- undefined user chain.
       case maccept of
-        Nothing -> error ("user chain " ++ chain ++ " not found in table " ++ table)
+        Nothing -> throwM $ EChainNotFound table chain
         Just accept -> return accept
     Just targetChain -> do
       let -- only modify accept target if we have one from
@@ -304,11 +331,11 @@ translateChain table chain = do
               }
       local switchEnv $ do
         let exit = case cPolicy targetChain of
-                     ACCEPT     -> accept
-                     DROP       -> drop
+                     ACCEPT     -> return accept
+                     DROP       -> return drop
                      -- user chain, so not applicable as we stop
                      -- before processing empty user chains
-                     PUNDEFINED -> error "shouldn't be here"
+                     PUNDEFINED -> panic "shouldn't be translating empty user chain"
             entry  = mkRuleName table chain initialRuleNum
             loop [] incs _ | cPolicy targetChain == PUNDEFINED = do
               -- return edge for user chains handled through map
@@ -316,13 +343,14 @@ translateChain table chain = do
               return (inPort entry)
             loop [] incs _ = do
               -- non-user chains proceed to exit
-              forM_ incs $ \inc -> addEdge (inc, exit)
+              ex <- exit
+              forM_ incs $ \inc -> addEdge (inc, ex)
               return (inPort entry)
             loop (rule:rules) incs num = do
               incs' <- translateRule incs num rule
               loop rules incs' (num+1)
         case cRules targetChain of
-          [] -> return exit
+          [] -> exit
           rules | all uncondRule rules -> do
             -- if we only have unconditional rules, we introduce a
             -- dummy rule as the entrypoint so that callers of this
@@ -379,17 +407,18 @@ nextChain table chain =
     , (("POSTROUTING", "mangle"), ("POSTROUTING", "nat"))
     ])
 
--- | We never have user-defined input for table names, so it should be
--- okay that this is partial. (famous last words)
-lookupTable :: Iptables -> String -> [Chain]
+-- | Look up a table by name. We panic here rather than having a
+-- specialized error because there are no user-defined tables in
+-- iptables.
+lookupTable :: Iptables -> String -> M [Chain]
 lookupTable ipts table =
   case table of
-    "filter"   -> tFilter ipts
-    "nat"      -> tNat ipts
-    "mangle"   -> tMangle ipts
-    "raw"      -> tRaw ipts
-    "security" -> tSecurity ipts
-    _          -> error ("unknown table: " ++ table)
+    "filter"   -> return $ tFilter ipts
+    "nat"      -> return $ tNat ipts
+    "mangle"   -> return $ tMangle ipts
+    "raw"      -> return $ tRaw ipts
+    "security" -> return $ tSecurity ipts
+    _          -> panic $ "table not found: " ++ table
 
 initialRuleNum :: Integer
 initialRuleNum = 0
