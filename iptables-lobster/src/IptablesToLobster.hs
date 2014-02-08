@@ -2,7 +2,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module IptablesToLobster (toLobster, parseIptables, Error(..)) where
+module IptablesToLobster (toLobster, Error(..)) where
 
 import Prelude hiding (drop)
 
@@ -17,18 +17,20 @@ import qualified Data.Set as Set
 import Data.String
 
 import Iptables
-import Iptables.Parser
+import qualified Iptables.Parser as P
 import Iptables.Print
 import Iptables.Types
 
 import qualified SCD.Lobster.Gen.CoreSyn as L
 
--- | Translate 'Iptables' into Lobster. If we encounter an error along
--- the way, discard the translation and return the error.
+-- | Parse and translate iptables rules into Lobster. If we encounter
+-- an error along the way, discard the translation and return the
+-- error.
 --
 -- TODO: Return multiple errors if we can find them
-toLobster :: Iptables -> Either Error [L.Decl]
-toLobster ipts =
+toLobster :: String -> Either Error [L.Decl]
+toLobster s = do
+    ipts <- parseIptables s
     case runM ipts table0 chain0 accept0 translateAll of
       (Left e, _)      -> Left e
       (Right _, final) ->
@@ -49,6 +51,12 @@ toLobster ipts =
           addEdge (L.domPort routing "forward", e2)
           e3 <- translateChain "raw" "OUTPUT"
           addEdge (outPort userspace, e3)
+
+parseIptables :: String -> Either Error Iptables
+parseIptables s =
+  case P.parseIptables s of
+    Left e -> throwE . EIptablesParser $ e
+    Right ipts -> return ipts
 
 stateToLobster :: S -> [L.Decl]
 stateToLobster S { sRules, sActions, sEdges } =
@@ -114,7 +122,7 @@ data Error
   -- translator
   = EUnexpected String
   -- | An error encountered while parsing the iptables rules
-  | EIptablesParser ParseError
+  | EIptablesParser P.ParseError
   -- | @EChainNotFound table chain@: a chain was not found that was
   -- either referred to explicitly by a jump or implicitly by the
   -- structure of the iptables system

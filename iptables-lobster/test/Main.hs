@@ -1,8 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
-import Control.Applicative
 import System.FilePath
 
-import Iptables.Types
 import IptablesToLobster
 import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 
@@ -19,7 +17,7 @@ main = defaultMain [ testGold "example"
 
 testGold :: FilePath -> Test
 testGold file = testCase file $ do
-  s <- unsafeParseIptables <$> readFile (file <.> "iptables")
+  s <- readFile (file <.> "iptables")
   case toLobster s of
     Left e -> assertFailure (show e)
     Right lsr -> do
@@ -30,11 +28,8 @@ testGold file = testCase file $ do
 
 expectFail :: (Error -> Bool) -> FilePath -> Test
 expectFail errPred file = testCase file $ do
-  s <- unsafeParseIptables <$> readFile (file <.> "iptables")
+  s <- readFile (file <.> "iptables")
   case toLobster s of
     Left e | errPred e -> return ()
            | otherwise -> assertFailure ("wrong kind of error: " ++ show e)
     Right _ -> assertFailure "expected an error, but translation succeeded"
-
-unsafeParseIptables :: String -> Iptables
-unsafeParseIptables s = either (error . show) id (parseIptables s)
