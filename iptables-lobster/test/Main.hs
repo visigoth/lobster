@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 import Control.Applicative
 import System.FilePath
 
@@ -13,7 +14,7 @@ main :: IO ()
 main = defaultMain [ testGold "example"
                    , testGold "ftp"
                    , testGold "emptyuserchain"
-                   , expectFail "unimplemented"
+                   , expectFail (\case { EUnknownTarget _ -> True; _ -> False }) "unknowntarget"
                    ]
 
 testGold :: FilePath -> Test
@@ -27,12 +28,13 @@ testGold file = testCase file $ do
       expected <- readFile (file <.> "lsr")
       assertEqual "" actual expected
 
-expectFail :: FilePath -> Test
-expectFail file = testCase file $ do
+expectFail :: (Error -> Bool) -> FilePath -> Test
+expectFail errPred file = testCase file $ do
   s <- unsafeParseIptables <$> readFile (file <.> "iptables")
   case toLobster s of
-    Left _  -> return ()
-    Right _ -> assertFailure "expected failure"
+    Left e | errPred e -> return ()
+           | otherwise -> assertFailure ("wrong kind of error: " ++ show e)
+    Right _ -> assertFailure "expected an error, but translation succeeded"
 
 unsafeParseIptables :: String -> Iptables
 unsafeParseIptables s = either (error . show) id (parseIptables s)

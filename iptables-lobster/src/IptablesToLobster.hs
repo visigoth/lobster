@@ -2,7 +2,7 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module IptablesToLobster (toLobster, parseIptables) where
+module IptablesToLobster (toLobster, parseIptables, Error(..)) where
 
 import Prelude hiding (drop)
 
