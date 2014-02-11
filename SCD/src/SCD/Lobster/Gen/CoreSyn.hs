@@ -42,6 +42,7 @@ module SCD.Lobster.Gen.CoreSyn
        , connect
        ) where
 
+import Data.Monoid
 import Data.String
 
 -- | @Module@ associates a name with Lobster declaration
@@ -69,6 +70,10 @@ instance Show Name where
 
 instance IsString Name where
   fromString = Name
+
+instance Monoid Name where
+  mempty                        = fromString ""
+  (Name n1) `mappend` (Name n2) = Name (n1 `mappend` n2)
 
 nameString :: Name -> String
 nameString (Name s) = s
