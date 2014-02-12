@@ -184,10 +184,9 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     permissionMap = Map.unionWith Set.union (class_perms st) (classPermissions policy)
 
     classDecl :: (S.ClassId, Set S.PermissionId) -> L.Decl
-    classDecl (classId, perms) = L.Class (toClassId classId) [] (stmt1 : stmt2 : stmts)
+    classDecl (classId, perms) = L.Class (toClassId classId) [] (header ++ stmts)
       where
-        stmt1 = L.newPort memberPort
-        stmt2 = L.newPort attributePort
+        header = map L.newPort [memberPort, attributePort, transitionPort]
         stmts = [ L.newPort (toPortId p) | p <- Set.toList perms ]
 
     memberPort :: L.Name
@@ -195,6 +194,9 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
 
     attributePort :: L.Name
     attributePort = L.Name "attribute"
+
+    transitionPort :: L.Name
+    transitionPort = L.Name "type_transition"
 
     toPortId :: S.PermissionId -> L.Name
     toPortId = L.Name . lowercase . S.idString
