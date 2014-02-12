@@ -27,6 +27,8 @@ module Lobster.Policy
   , Domain(..)
   , nameDomain
   , provenanceDomain
+  , classAnnotationDomain
+  , domainAnnotationDomain
   , getSubDomain
   , getPortTypeDomain
   , typeCheckDomain
@@ -60,6 +62,7 @@ import Control.Error (catchE, throwE, hoistEither)
 import Control.Monad (foldM)
 import Control.Monad.Trans (liftIO)
 import Control.DeepSeq
+import Data.Monoid ((<>), mempty)
 
 import qualified Data.Char as Char
 import qualified Data.List as List
@@ -71,6 +74,7 @@ import Lobster.Error
 
 import qualified Lobster.AST as Abs
 import Lobster.AST(
+  Annotation(..),
   ClassId,
   Connection(..),
   Direction(..),
@@ -247,10 +251,17 @@ nullClassConstructor (ClassConstructor ids sts) = null ids && null sts
 -- Lobster signatures.
 --------------------------------------------------------------------------------
 
-data Signature a =
-    Signature
-      {classes :: Map.Map ClassId (Signature a,ClassConstructor a)}
-  deriving (Eq, Show, Ord)
+-- | Information about a class definition.
+data ClassSignature a = ClassSignature
+  { csSubclasses  :: Signature a
+  , csConstructor :: ClassConstructor a
+  , csAnnotation  :: Annotation
+  } deriving (Eq, Show, Ord)
+
+-- | Mapping of class signatures by class name.
+data Signature a = Signature
+  { classes :: Map.Map ClassId (ClassSignature a)
+  } deriving (Eq, Show, Ord)
 
 emptySignature :: Signature a
 emptySignature =
@@ -261,7 +272,7 @@ nullSignature :: Signature a -> Bool
 nullSignature sig = Map.null (classes sig)
 
 lookupClassSignature ::
-    Signature a -> ClassId -> Maybe (Signature a,ClassConstructor a)
+    Signature a -> ClassId -> Maybe (ClassSignature a)
 lookupClassSignature sig cl = Map.lookup cl (classes sig)
 
 lookupContextSignature :: Signature a -> Context -> Maybe (Signature a)
@@ -276,10 +287,11 @@ lookupContextSignature =
           cl : cls' ->
               case lookupClassSignature sig cl of
                 Nothing -> Nothing
-                Just (sig',_) -> findcl cls' sig'
+                Just cs -> findcl cls' (csSubclasses cs)
+--                Just (sig',_) -> findcl cls' sig'
 
 lookupContextClassSignature ::
-    Signature a -> ContextClass -> Maybe (Signature a,ClassConstructor a)
+    Signature a -> ContextClass -> Maybe (ClassSignature a)
 lookupContextClassSignature sig ccl =
     let ContextClass ctxt cl = ccl in
     case lookupContextSignature sig ctxt of
@@ -292,25 +304,33 @@ memberClassSignature sig cl =
       Just _ -> True
       Nothing -> False
 
-addClassSignature ::
-    Signature a -> ClassId -> Signature a -> ClassConstructor a -> Err (Signature a)
-addClassSignature sig cl insig clcon =
-    if Maybe.isJust (lookupClassSignature sig cl)
-      then throwE $ DuplicateClass (show cl)
-      else return (sig {classes = Map.insert cl (insig,clcon) (classes sig)})
+addClassSignature :: Signature a
+                  -> ClassId
+                  -> Signature a
+                  -> ClassConstructor a
+                  -> Annotation
+                  -> Err (Signature a)
+addClassSignature sig cl insig clcon ann =
+  if Maybe.isJust (lookupClassSignature sig cl)
+    then throwE $ DuplicateClass (show cl)
+    else let cs = ClassSignature insig clcon ann in
+         return (sig {classes = Map.insert cl cs (classes sig)})
 
-addStatementSignature :: Signature a -> Statement a -> Err (Signature a)
-addStatementSignature sig statement =
+addStatementSignature :: Signature a
+                      -> Statement a
+                      -> Annotation
+                      -> Err (Signature a)
+addStatementSignature sig statement ann =
     case statement of
       ClassDeclaration _ cl pl sts ->
           do insig <- addStatementsSignature emptySignature sts
-             sig' <- addClassSignature sig cl insig (ClassConstructor pl sts)
+             sig' <- addClassSignature sig cl insig (ClassConstructor pl sts) ann
              return sig'
-      Annotated _ s -> addStatementSignature sig s
+      Annotated ann s -> addStatementSignature sig s ann
       _ -> return sig
 
 addStatementsSignature :: Signature a -> [Statement a] -> Err (Signature a)
-addStatementsSignature = foldM addStatementSignature
+addStatementsSignature = foldM (\a b -> addStatementSignature a b mempty)
 
 mkSignature :: [Statement a] -> Err (Signature a)
 mkSignature = addStatementsSignature emptySignature
@@ -328,19 +348,20 @@ mkContextSignature sig = ContextSignature sig emptyContext
 
 lookupContextClassContextSignature ::
     ContextSignature a -> ContextClass ->
-    Maybe (ContextSignature a,Signature a,ClassConstructor a)
+    Maybe (ContextSignature a, ClassSignature a)
 lookupContextClassContextSignature csig ccl =
     let ContextSignature sig _ = csig in
     case lookupContextClassSignature sig ccl of
       Nothing -> Nothing
-      Just (clsig,clcon) ->
+      -- Just (clsig,clcon) ->
+      Just cs ->
           let ContextClass ctxt cl = ccl in
           let ctxt' = consContext ctxt cl in
-          Just (ContextSignature sig ctxt', clsig, clcon)
+          Just (ContextSignature sig ctxt', cs)
 
 getContextClassContextSignature ::
     ContextSignature a -> ContextClass ->
-    Err (ContextSignature a,Signature a,ClassConstructor a)
+    Err (ContextSignature a, ClassSignature a)
 getContextClassContextSignature sig cl =
     case lookupContextClassContextSignature sig cl of
       Nothing -> throwE $ UndefinedClass (show cl)
@@ -348,7 +369,7 @@ getContextClassContextSignature sig cl =
 
 lookupClassContextSignature ::
     ContextSignature a -> ClassId ->
-    Maybe (ContextSignature a,ContextClass,Signature a,ClassConstructor a)
+    Maybe (ContextSignature a, ContextClass, ClassSignature a)
 lookupClassContextSignature csig cl =
     let ContextSignature _ ctxt = csig in
     let ctxts = searchContext ctxt in
@@ -362,11 +383,11 @@ lookupClassContextSignature csig cl =
               let ccl = ContextClass ctxt cl in
               case lookupContextClassContextSignature csig ccl of
                   Nothing -> findcl ctxts'
-                  Just (csig',clsig,clcon) -> Just (csig',ccl,clsig,clcon)
+                  Just (csig', cs) -> Just (csig', ccl, cs)
 
 getClassContextSignature ::
     ContextSignature a -> ClassId ->
-    Err (ContextSignature a,ContextClass,Signature a,ClassConstructor a)
+    Err (ContextSignature a, ContextClass, ClassSignature a)
 getClassContextSignature sig cl =
     case lookupClassContextSignature sig cl of
       Nothing -> throwE $ UndefinedClass (show cl)
@@ -484,6 +505,12 @@ provenanceDomain (Domain d) = Domain.value d
 portsDomain :: Domain -> Map.Map PortId (Domain.PortType PortTypeValue)
 portsDomain (Domain dom) = Domain.ports dom
 
+classAnnotationDomain :: Domain -> Annotation
+classAnnotationDomain (Domain dom) = Domain.classAnnotation dom
+
+domainAnnotationDomain :: Domain -> Annotation
+domainAnnotationDomain (Domain dom) = Domain.domainAnnotation dom
+
 getPortTypeDomain :: Domain -> DomainPort -> Err PortType
 getPortTypeDomain (Domain dom) dp =
     do pt <- Domain.getPortType dom dp
@@ -551,6 +578,16 @@ addAssertion (Domain d) a = Domain $ Domain.addAssertion d a
 
 checkAssertionsDomain :: Domain -> [Either String String]
 checkAssertionsDomain (Domain d) = Domain.checkAssertions_ d
+
+-- | Set a domain's annotation from its class definition.
+annotateDomainClass :: Domain -> Annotation -> Domain
+annotateDomainClass (Domain dom) ann =
+  Domain (dom { Domain.classAnnotation = ann })
+
+-- | Set a domain's annotation from its instantitation.
+annotateDomainInstantiation :: Domain -> Annotation -> Domain
+annotateDomainInstantiation (Domain dom) ann =
+  Domain (dom { Domain.domainAnnotation = ann })
 
 --------------------------------------------------------------------------------
 -- Domain ports.
@@ -636,6 +673,14 @@ toDomainPortValue val =
 toDomainPortsValue :: [Value] -> Err [Domain.DomainPort]
 toDomainPortsValue = mapM toDomainPortValue
 
+-- | Return true if a class signature has no subclasses and no
+-- constructor arguments (required for use as a port type).
+isEmptyClass :: ClassSignature a -> Bool
+isEmptyClass cs = nullSignature sig && nullClassConstructor con
+  where
+    sig = csSubclasses cs
+    con = csConstructor cs
+
 toPortTypeValueValue ::
     ContextSignature a -> Value -> Err (Domain.PortTypeValue PortTypeValue)
 toPortTypeValueValue sig v =
@@ -645,8 +690,8 @@ toPortTypeValueValue sig v =
       ClassValue ccl ->
           case lookupContextClassContextSignature sig ccl of
             Nothing -> throwE $ UndefinedClass (show ccl)
-            Just (_,clsig,clcon) ->
-                if nullSignature clsig && nullClassConstructor clcon
+            Just (_, cs) ->
+                if isEmptyClass cs
                   then return (Domain.Value (TypePortTypeValue ccl))
                   else throwE $ NonEmptyClass (prettyPrintContextClass ccl)
       _ -> throwE $ TypeMismatch (show v) "port type value"
@@ -784,7 +829,7 @@ evaluateQualNameExpression sig env obj qn = case qn of
              v1 <- evaluateQualNameExpression sig env obj n1
              case v1 of
                ClassValue c1 ->
-                   do (sig',_,_) <- getContextClassContextSignature sig c1
+                   do (sig',_) <- getContextClassContextSignature sig c1
                       v2 <- evaluateExpression sig' emptyEnvironment obj e2
                       case v2 of
                         ClassValue _ -> return v2
@@ -812,7 +857,7 @@ evaluateNameExpression sig env n = case n of
             Nothing -> throwE $ UnboundVar (Syntax.idString i)
       TypeIdent i ->
           case lookupClassContextSignature sig (Syntax.mkId $ Syntax.idString i) of
-            Just (_,ccl,_,_) -> return (ClassValue ccl)
+            Just (_,ccl,_) -> return (ClassValue ccl)
             Nothing -> throwE $ UnboundType (Syntax.idString i)
 
 evaluateExpressions ::
@@ -852,10 +897,13 @@ checkValidArg _                   = return ()
 checkValidArgs :: [Value] -> Err ()
 checkValidArgs = mapM_ checkValidArg
 
-interpretStatement ::
-    ContextSignature a -> Environment -> Domain -> Statement a ->
-    Err (Environment,Domain)
-interpretStatement sig env obj statement =
+interpretStatement :: ContextSignature a
+                   -> Environment
+                   -> Domain
+                   -> Annotation
+                   -> Statement a
+                   -> Err (Environment,Domain)
+interpretStatement sig env obj annot statement =
     case statement of
       Assert _ connA connB flowPred -> do
         a <- fromConnRE sig env obj connA
@@ -864,18 +912,22 @@ interpretStatement sig env obj statement =
         let ca = Assertion (trim (printTree statement)) c
         return (env, addAssertion obj ca)
       DomainDeclaration _ n (ClassInstantiation cl el) ->
-          do (clsig, ccl, _, ClassConstructor ids sts) <-
-                 getClassContextSignature sig cl
+          do (clsig, ccl, cs) <- getClassContextSignature sig cl
+             let ClassConstructor ids sts = csConstructor cs
+             let classAnn = csAnnotation cs
              args' <- evaluateExpressions sig env obj el
              checkValidArgs args'
              clenv <- mkEnvironment (zip ids args')
              let clobj = emptyDomain (Syntax.idString n) (ccl,args')
-             (_,clobj') <- interpretStatements clsig clenv clobj sts
+             let clobj_ann = annotateDomainInstantiation
+                               (annotateDomainClass clobj classAnn) annot
+             (_,clobj') <- interpretStatements clsig clenv clobj_ann sts
              let (obj',clobjid) = addSubDomain obj clobj'
              let val = DomainValue clobjid
              env' <- addEnvironment env n val
-             return (env',obj')
-      ClassDeclaration _ _ _ _ -> return (env,obj)
+             return (env', obj')
+      ClassDeclaration _ _ _ _ ->
+        return (env, obj)
       PortDeclaration _ pid pty pconns ->
           let ptce = Syntax.toConstraintsPortDeclarationType pty in
           do ptc <- evaluatePortTypeConstraints sig env obj ptce
@@ -901,7 +953,10 @@ interpretStatement sig env obj statement =
           do val <- evaluateExpression sig env obj expr
              env' <- addEnvironment env i val
              return (env',obj)
-      Annotated _ s -> interpretStatement sig env obj s
+      Annotated ann s ->
+        -- Nested annotations should never be created by the
+        -- parser, but combine them just in case.
+        interpretStatement sig env obj (annot <> ann) s
     -- I don't think this adds much, we'd rather have source position...
     -- `catchE` (\e -> throwE $ InStatement (trim $ printTree statement) e)
 
@@ -912,7 +967,7 @@ interpretStatements sig env obj sts =
     case sts of
       [] -> return (env,obj)
       st:sts' ->
-          do (env',obj') <- interpretStatement sig env obj st
+          do (env',obj') <- interpretStatement sig env obj mempty st
              interpretStatements sig env' obj' sts'
 
 toDomain :: Policy a -> Err ([Either String String],Domain)

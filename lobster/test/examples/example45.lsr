@@ -1,16 +1,18 @@
 // Lobster annotation example.
 
-[Foo("foo")]
+[ObjType("class"), ClassName("Process")]
 class Process() {
-  [Bar("bar", 42)]
+  [ObjType("port"), PortName("active")]
   port active : {position = subject};
 }
 
+[ObjType("class"), ClassName("File")]
 class File(filenameRegex) {
   port read : {position = object};
   port write : {position = object};
 }
 
+[ObjType("class"), ClassName("ExampleApp")]
 class ExampleApp(dataFilenameRegexp) {
   domain p = Process();
 

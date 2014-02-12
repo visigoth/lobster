@@ -70,12 +70,14 @@ import qualified Data.Map as Map
 import qualified Data.Traversable as Traversable
 import Data.List
 import Data.Maybe
+import Data.Monoid
 -- import Debug.Trace
 
 import Lobster.Error
 
 --import qualified Lobster.Abs as Abs
 import Lobster.AST(
+  Annotation(..),
   Connection(..),
   Direction(..),
   FlowId,
@@ -383,6 +385,8 @@ prettyPrintDomainPortId obj i = case lookupSubDomain obj i of
 data Domain a b = Domain
   { name :: String
   , value :: a
+  , classAnnotation :: Annotation
+  , domainAnnotation :: Annotation
   , ports :: Map.Map PortId (PortType b)
   , subDomains :: Map.Map DomainId (Domain a b)
   , connections :: Map.Map (DomainPort,DomainPort) Connection
@@ -390,7 +394,7 @@ data Domain a b = Domain
   }
 
 instance (NFData a, NFData b) => NFData (Domain a b) where
-  rnf (Domain a b c d e f) = rnf a `seq` rnf b `seq` rnf c `seq` rnf d `seq` rnf e `seq` rnf f
+  rnf (Domain a b _ _ c d e f) = rnf a `seq` rnf b `seq` rnf c `seq` rnf d `seq` rnf e `seq` rnf f
 
 --------------------------------------------------------------------------------
 -- Assertions.
@@ -438,6 +442,8 @@ empty :: String -> a -> Domain a b
 empty n v = Domain
   { name = n,
     value = v,
+    classAnnotation = mempty,
+    domainAnnotation = mempty,
     ports = Map.empty,
     subDomains = Map.empty,
     connections = Map.empty,
