@@ -23,6 +23,8 @@ module SCD.Lobster.Gen.CoreSyn
        , Dir(..)
        , Param
        , PortConstraint(..)
+       , ConnectAnnotation(..)
+       , AnnotationElement(..)
 
        , newClass
        , newType
@@ -40,6 +42,7 @@ module SCD.Lobster.Gen.CoreSyn
        , neutral
        , bidi
        , connect
+       , connect'
        ) where
 
 import Data.Monoid
@@ -59,7 +62,7 @@ data Decl
  | Port    Name [PortConstraint] (Dir,[DomPort])
  | Domain  Name Name [Param]
  | Type    Name [Name]
- | Connect DomPort DomPort Dir
+ | Connect DomPort DomPort Dir [ConnectAnnotation]
  | Comment String
 
 newtype Name = Name String
@@ -122,6 +125,10 @@ data PortConstraint
  | PortPos Bool  -- False => subject; True => ....yep,you guessed it..
  | PortType Name
 
+data ConnectAnnotation = ConnectAnnotation Name [AnnotationElement]
+
+data AnnotationElement = AnnotationInt Int | AnnotationString String
+
 newDomain :: Name -> Name -> [Param] -> Decl
 newDomain binder ctor args = Domain binder ctor args
 
@@ -141,5 +148,7 @@ bidi :: DomPort -> DomPort -> Decl
 bidi = connect B
 
 connect :: Dir -> DomPort -> DomPort -> Decl
-connect d a b = Connect a b d
+connect d a b = Connect a b d []
 
+connect' :: Dir -> DomPort -> DomPort -> [ConnectAnnotation] -> Decl
+connect' d a b xs = Connect a b d xs

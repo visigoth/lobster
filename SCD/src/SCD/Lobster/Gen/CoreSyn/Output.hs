@@ -56,9 +56,13 @@ ppDecl i d =
 	  then empty
 	  else (text "// attributes:" <+> hsep (map ppName as))))
 
-   Connect dpA dpB di ->
+   Connect dpA dpB di [] ->
      nest i $
       ppDP dpA <+> ppDir True di <+> ppDP dpB <> char ';'
+   Connect dpA dpB di xs ->
+     nest i $ vcat $
+      [ brackets (hcat (intersperse comma (map ppAnnotation xs))) 
+      , ppDP dpA <+> ppDir True di <+> ppDP dpB <> char ';' ]
 
    Comment "" -> text "" -- hack!
    Comment s -> nest i $ text ("// " ++ s)
@@ -92,3 +96,11 @@ ppDir asArrow d = text $
 ppDP :: DomPort -> Doc
 ppDP (DomPort (Just d) p) = ppName d <> char '.' <> ppName p
 ppDP (DomPort Nothing p) = ppName p
+
+ppAnnotation :: ConnectAnnotation -> Doc
+ppAnnotation (ConnectAnnotation n es) =
+  ppName n <> parens (hcat (intersperse comma (map ppElement es)))
+
+ppElement :: AnnotationElement -> Doc
+ppElement (AnnotationInt x) = text (show x)
+ppElement (AnnotationString s) = text (show s)
