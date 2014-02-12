@@ -116,7 +116,10 @@ addTypeTransition :: S.TypeId -> S.TypeId -> S.ClassId -> S.TypeId -> M ()
 addTypeTransition subj rel cls new = modify f
   where
     f st = St
-      { object_classes = object_classes st
+      { object_classes =
+          insertMapSet (S.fromId (S.toId subj)) processClassId $
+          insertMapSet (S.fromId (S.toId new)) cls $
+          object_classes st
       , class_perms = class_perms st
       , attrib_members = attrib_members st
       , allow_rules = allow_rules st
