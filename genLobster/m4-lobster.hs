@@ -532,7 +532,8 @@ instance Subst M4.Stmt where
       Ifdef i stmts1 stmts2   -> Ifdef i (subst s stmts1) (subst s stmts2)
       Ifndef i stmts          -> Ifndef i (subst s stmts)
       RefPolicyWarn _         -> stmt
-      Call i args             -> Call i (subst s args)
+      Call i args | isDS args -> Call i s
+                  | otherwise -> Call i (subst s args)
       Role r attrs            -> Role (subst s r) (subst s attrs)
       AttributeRole attr      -> AttributeRole (subst s attr)
       RoleAttribute r attrs   -> RoleAttribute (subst s r) (subst s attrs)
@@ -560,6 +561,8 @@ instance Subst M4.Stmt where
       Require _reqs           -> stmt --FIXME
       GenBoolean t i b        -> GenBoolean t (subst s i) b
       StmtPosition stmt1 pos  -> StmtPosition (subst s stmt1) pos
+    where
+      isDS = (==) [fromList [S.SignedId S.Positive (S.mkId "$*")]]
 
 substStmt :: Substitution -> Stmt -> Stmt
 substStmt = subst
