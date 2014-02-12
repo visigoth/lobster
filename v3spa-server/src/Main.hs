@@ -49,14 +49,12 @@ buildErrors err = map go (errorMessage err)
 
 handleParse :: Snap ()
 handleParse = method POST $ do
-  body <- (T.unpack . E.decodeUtf8) <$> readRequestBody 10000000
-  liftIO $ putStrLn $ "body: " ++ show body
-  let policy = P.parsePolicy body
   modifyResponse $ setContentType "application/json"
+  body <- (T.unpack . E.decodeUtf8) <$> readRequestBody 10000000
+  let policy = P.parsePolicy body
   case policy of
     Left err -> sendError err
     Right p  -> do
-      liftIO $ putStrLn (show p)
       case P.toDomain p of
         Left err -> sendError err
         Right (checks, dom) -> do
