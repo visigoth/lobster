@@ -39,10 +39,11 @@ data AllowRule = AllowRule
   } deriving (Eq, Ord, Show)
 
 data St = St
-  { object_classes :: !(Map S.TypeOrAttributeId (Set S.ClassId))
-  , class_perms    :: !(Map S.ClassId (Set S.PermissionId))
-  , attrib_members :: !(Map S.TypeId (Set S.AttributeId))
-  , allow_rules    :: !(Map AllowRule [P.Pos])
+  { object_classes   :: !(Map S.TypeOrAttributeId (Set S.ClassId))
+  , class_perms      :: !(Map S.ClassId (Set S.PermissionId))
+  , attrib_members   :: !(Map S.TypeId (Set S.AttributeId))
+  , allow_rules      :: !(Map AllowRule [P.Pos])
+  , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
   }
 
 processClassId :: S.ClassId
@@ -53,10 +54,12 @@ activePermissionId = S.mkId "active"
 
 initSt :: St
 initSt = St
-  { object_classes = Map.empty
-  , class_perms    = Map.singleton processClassId (Set.singleton activePermissionId)
-  , attrib_members = Map.empty
-  , allow_rules    = Map.empty
+  { object_classes   = Map.empty
+  , class_perms      = Map.singleton processClassId (Set.singleton activePermissionId)
+  , attrib_members   = Map.empty
+  --, attrib_members = Set.empty
+  , allow_rules      = Map.empty
+  , type_transitions = Set.empty
   }
 
 type M a = ReaderT [P.Pos] (State St) a
@@ -93,6 +96,7 @@ addAllow subject object cls perms = do
       , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
       , attrib_members = attrib_members st
       , allow_rules = foldr (\r -> Map.insertWith (++) r ps) (allow_rules st) rules
+      , type_transitions = type_transitions st
       }
 
 addAttribs :: S.TypeId -> [S.AttributeId] -> M ()
@@ -105,6 +109,18 @@ addAttribs typeId attrIds = modify f
           Map.insertWith (flip Set.union) typeId (Set.fromList attrIds) $
           attrib_members st
       , allow_rules = allow_rules st
+      , type_transitions = type_transitions st
+      }
+
+addTypeTransition :: S.TypeId -> S.TypeId -> S.ClassId -> S.TypeId -> M ()
+addTypeTransition subj rel cls new = modify f
+  where
+    f st = St
+      { object_classes = object_classes st
+      , class_perms = class_perms st
+      , attrib_members = attrib_members st
+      , allow_rules = allow_rules st
+      , type_transitions = Set.insert (subj, rel, cls, new) (type_transitions st)
       }
 
 isDefined :: M4.IfdefId -> Bool
@@ -121,6 +137,14 @@ processStmt stmt =
     Ifndef i stmts -> processStmts (if isDefined i then [] else stmts)
     Type t _aliases attrs -> addAttribs t attrs -- TODO: track aliases
     TypeAttribute t attrs -> addAttribs t (toList attrs)
+    Transition S.TypeTransition (S.SourceTarget al bl cl) t ->
+      sequence_ $
+        [ addTypeTransition subject related classId object
+        | let object = (S.fromId . S.toId) t
+        , subject <- map (S.fromId . S.toId) $ filterSignedId $ toList al
+        , related <- map (S.fromId . S.toId) $ filterSignedId $ toList bl
+        , classId <- toList cl
+        ]
     TeAvTab S.Allow (S.SourceTarget al bl cl) (S.Permissions dl) ->
       sequence_ $
         [ addAllow subject object classId perms
@@ -160,10 +184,9 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     permissionMap = Map.unionWith Set.union (class_perms st) (classPermissions policy)
 
     classDecl :: (S.ClassId, Set S.PermissionId) -> L.Decl
-    classDecl (classId, perms) = L.Class (toClassId classId) [] (stmt1 : stmt2 : stmts)
+    classDecl (classId, perms) = L.Class (toClassId classId) [] (header ++ stmts)
       where
-        stmt1 = L.newPort memberPort
-        stmt2 = L.newPort attributePort
+        header = map L.newPort [memberPort, attributePort, transitionPort]
         stmts = [ L.newPort (toPortId p) | p <- Set.toList perms ]
 
     memberPort :: L.Name
@@ -171,6 +194,9 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
 
     attributePort :: L.Name
     attributePort = L.Name "attribute"
+
+    transitionPort :: L.Name
+    transitionPort = L.Name "type_transition"
 
     toPortId :: S.PermissionId -> L.Name
     toPortId = L.Name . lowercase . S.idString
@@ -214,9 +240,25 @@ outputAttributes st ty attr = [ outputAttribute ty attr cls | cls <- classes ]
     classesOf t = Map.findWithDefault Set.empty t (object_classes st)
     classes = Set.toList $ Set.intersection (classesOf ty) (classesOf attr)
 
+outputTypeTransition :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
+outputTypeTransition (subj, rel, cls, new) =
+  L.connect' L.N
+    (L.domPort (toIdentifier subj processClassId) activePort)
+    (L.domPort (toIdentifier new cls) transitionPort)
+    [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
+  where
+    toIdentifier :: S.TypeId -> S.ClassId -> L.Name
+    toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
+
+    activePort :: L.Name
+    activePort = L.Name "active"
+
+    transitionPort :: L.Name
+    transitionPort = L.Name "type_transition"
+
 outputLobster :: M4.Policy -> St -> [L.Decl]
 outputLobster policy st =
-  classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls
+  classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls ++ transitionDecls
   where
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
@@ -239,6 +281,9 @@ outputLobster policy st =
       (ty, attrs) <- Map.assocs (attrib_members st)
       attr <- Set.toList attrs
       outputAttributes st (S.fromId (S.toId ty)) (S.fromId (S.toId attr))
+
+    transitionDecls :: [L.Decl]
+    transitionDecls = map outputTypeTransition (Set.toList (type_transitions st))
 
 ----------------------------------------------------------------------
 
