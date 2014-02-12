@@ -93,6 +93,16 @@ UIdent    :: { UIdent} : L_UIdent { UIdent ($1)}
 Policy :: { Policy Annot }
 Policy : ListStatement { Policy (reverse $1) } 
 
+AnnotationElement :: { AnnotationElement  }
+AnnotationElement : UIdent '(' ListExpression ')' { ($1, $3) }
+
+ListAnnotationElement :: { [AnnotationElement] }
+ListAnnotationElement : {- empty -} { [] } 
+  | AnnotationElement { (:[]) $1 }
+  | AnnotationElement ',' ListAnnotationElement { (:) $1 $3 }
+
+Annotation :: { Annotation }
+Annotation : ListAnnotationElement { Annotation $1 }
 
 Statement :: { Statement Annot }
 Statement : 'class' ClassId '(' ListIdentifier ')' '{' ListStatement '}' { ClassDeclaration (tokenPosn $1) $2 $4 (reverse $7) } 
@@ -101,7 +111,7 @@ Statement : 'class' ClassId '(' ListIdentifier ')' '{' ListStatement '}' { Class
   | Identifier '=' Expression ';' { Assignment (tokenPosn $2) $1 $3 }
   | ListExpression Connection ListExpression ';' { PortConnection (tokenPosn $4) $1 $2 $3 }
   | 'assert' ConnRE '->' ConnRE '::' FlowPred ';' { Assert (tokenPosn $1) $2 $4 $6 }
-
+  | '[' Annotation ']' Statement { Annotated $2 $4 }
 
 ClassInstantiation :: { ClassInstantiation }
 ClassInstantiation : ClassId '(' ListExpression ')' { ClassInstantiation $1 $3 } 
@@ -174,7 +184,6 @@ QualName : Name { UnQual $1 }
 Name :: { Name }
 Name : ClassId { TypeIdent $1 } 
   | Identifier { Ident $1 }
-
 
 PortTypeConstraint :: { PortTypeConstraint }
 PortTypeConstraint : FlowId '=' NoneExpression { PortTypeConstraint $1 $3 } 

@@ -1,11 +1,24 @@
 module Lobster.AST where
 
+import Data.Monoid
+
 newtype LIdent = LIdent String deriving (Eq,Ord,Show)
 newtype UIdent = UIdent String deriving (Eq,Ord,Show)
+
 data Policy a =
    Policy [Statement a]
   deriving (Eq,Ord,Show)
 
+type AnnotationElement = (UIdent, [Expression])
+
+data Annotation = Annotation [AnnotationElement]
+  deriving (Eq, Ord, Show)
+
+instance Monoid Annotation where
+  mempty = Annotation []
+  mappend (Annotation a) (Annotation b) = Annotation (a ++ b)
+
+-- TODO: re-evaulate using this type parameter for source location.
 data Statement a =
    ClassDeclaration a ClassId [Identifier] [Statement a]
  | PortDeclaration a PortId PortDeclarationType PortDeclarationConnection
@@ -13,6 +26,7 @@ data Statement a =
  | Assignment a Identifier Expression
  | PortConnection a [Expression] Connection [Expression]
  | Assert a ConnRE ConnRE FlowPred
+ | Annotated Annotation (Statement a)
   deriving (Eq,Ord,Show)
 
 data ClassInstantiation =

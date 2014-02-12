@@ -306,6 +306,7 @@ addStatementSignature sig statement =
           do insig <- addStatementsSignature emptySignature sts
              sig' <- addClassSignature sig cl insig (ClassConstructor pl sts)
              return sig'
+      Annotated _ s -> addStatementSignature sig s
       _ -> return sig
 
 addStatementsSignature :: Signature a -> [Statement a] -> Err (Signature a)
@@ -900,6 +901,7 @@ interpretStatement sig env obj statement =
           do val <- evaluateExpression sig env obj expr
              env' <- addEnvironment env i val
              return (env',obj)
+      Annotated _ s -> interpretStatement sig env obj s
     -- I don't think this adds much, we'd rather have source position...
     -- `catchE` (\e -> throwE $ InStatement (trim $ printTree statement) e)
 
