@@ -44,6 +44,7 @@ module Lobster.Domain
   , addSubDomain
   , foldSubDomain
   , foldMSubDomain
+  , ConnInfo(..)
   , foldConnectionsDomain
   , addConnections
   , addPortConnections
@@ -59,7 +60,7 @@ module Lobster.Domain
   , checkAssertions_
   ) where
 
-import Control.Error (catchE, throwE, hoistEither)
+import Control.Error (throwE)
 import Control.Monad(liftM,foldM)
 import Control.DeepSeq
 
@@ -99,6 +100,15 @@ import Lobster.Symbion as Symbion
 --   | BidirectionalConnection
 --   deriving (Eq, Read, Show, Ord)
 
+-- | A connection's direction and annotations.
+data ConnInfo = ConnInfo
+  { ciConnection :: Connection
+  , ciAnnotation :: Annotation
+  } deriving (Eq, Ord, Show)
+
+instance NFData ConnInfo where
+    rnf (ConnInfo a _) = rnf a
+
 prettyPrintConnection :: Connection -> String
 prettyPrintConnection conn =
     case conn of
@@ -112,6 +122,10 @@ reverseConnection LeftToRightConnection = RightToLeftConnection
 reverseConnection RightToLeftConnection = LeftToRightConnection
 reverseConnection c = c
 
+reverseConnInfo :: ConnInfo -> ConnInfo
+reverseConnInfo ci =
+  ci{ciConnection=reverseConnection (ciConnection ci)}
+
 -- The kind of a connection dominates the kind of a neutral connection.
 -- When two connections have the same kind, they can be unified,
 -- otherwise an error has occurred.
@@ -123,11 +137,18 @@ unifyConnection c1 c2 =
       _ -> if c1 == c2 then return c1
            else throwE $ BadConnection (show c1) (show c2) "incompatible connection directions"
 
-unifyMaybeConnection :: Maybe Connection -> Connection -> Err Connection
-unifyMaybeConnection mc1 c2 =
+unifyConnInfo :: ConnInfo -> ConnInfo -> Err ConnInfo
+unifyConnInfo c1 c2 = do
+  conn <- unifyConnection (ciConnection c1) (ciConnection c2)
+  -- This may not be exactly right?  What if they are identical?
+  let anns = ciAnnotation c1 <> ciAnnotation c2
+  return $ ConnInfo conn anns
+
+unifyMaybeConnInfo :: Maybe ConnInfo -> ConnInfo -> Err ConnInfo
+unifyMaybeConnInfo mc1 c2 =
     case mc1 of
       Nothing -> return c2
-      Just c1 -> unifyConnection c1 c2
+      Just c1 -> unifyConnInfo c1 c2
 
 --------------------------------------------------------------------------------
 -- (Main) direction of data flow at a port.
@@ -296,9 +317,9 @@ prettyPrintPortType v2s (PortType m) =
 --------------------------------------------------------------------------------
 
 
-originPortType :: Connection -> PortType a
+originPortType :: ConnInfo -> PortType a
 originPortType c =
-    case originDirection c of
+    case originDirection (ciConnection c) of
       Just d -> mkDirPortType d
       Nothing -> anyPortType
   where mkDirPortType :: Direction -> PortType a
@@ -389,7 +410,7 @@ data Domain a b = Domain
   , domainAnnotation :: Annotation
   , ports :: Map.Map PortId (PortType b)
   , subDomains :: Map.Map DomainId (Domain a b)
-  , connections :: Map.Map (DomainPort,DomainPort) Connection
+  , connections :: Map.Map (DomainPort,DomainPort) ConnInfo
   , assertions :: [Assertion]
   }
 
@@ -538,7 +559,7 @@ foldPortDomain f x obj = Map.foldWithKey f x (ports obj)
 -}
 
 foldConnectionsDomain ::
-    (DomainPort -> Connection -> DomainPort -> s -> s) ->
+    (DomainPort -> ConnInfo -> DomainPort -> s -> s) ->
     s -> Domain a b -> s
 foldConnectionsDomain f =
     \x obj -> Map.foldWithKey f' x (connections obj)
@@ -546,7 +567,7 @@ foldConnectionsDomain f =
       f' (p,q) c z = f p c q z
 
 foldMConnections ::
-    (DomainPort -> Connection -> DomainPort -> s -> Err s) ->
+    (DomainPort -> ConnInfo -> DomainPort -> s -> Err s) ->
     s -> Domain a b -> Err s
 foldMConnections f =
     \x obj -> foldM f' x (Map.toList (connections obj))
@@ -554,24 +575,24 @@ foldMConnections f =
       f' z ((p,q),c) = f p c q z
 
 appConnections ::
-    (DomainPort -> Connection -> DomainPort -> Err ()) -> Domain a b -> Err ()
+    (DomainPort -> ConnInfo -> DomainPort -> Err ()) -> Domain a b -> Err ()
 appConnections f =
     foldMConnections f' ()
     where
       f' p c q () = f p c q
 
 lookupConnectionDomain ::
-    Domain a b -> DomainPort -> DomainPort -> Maybe Connection
+    Domain a b -> DomainPort -> DomainPort -> Maybe ConnInfo
 lookupConnectionDomain obj p1 p2 =
     case compare p1 p2 of
       LT -> Map.lookup (p1,p2) (connections obj)
       EQ -> Nothing
-      GT -> liftM reverseConnection (Map.lookup (p2,p1) (connections obj))
+      GT -> liftM reverseConnInfo (Map.lookup (p2,p1) (connections obj))
 
 addConnectionDomain ::
-    Domain a b -> DomainPort -> Connection -> DomainPort -> Err (Domain a b)
+    Domain a b -> DomainPort -> ConnInfo -> DomainPort -> Err (Domain a b)
 addConnectionDomain obj p1 c p2 =
-    do c' <- unifyMaybeConnection (lookupConnectionDomain obj p1 p2) c
+    do c' <- unifyMaybeConnInfo (lookupConnectionDomain obj p1 p2) c
        case compare p1 p2 of
          LT -> let m = connections obj
                    m' = Map.insert (p1,p2) c' m in
@@ -581,44 +602,49 @@ addConnectionDomain obj p1 c p2 =
                   " p2: " ++ show p2
           -- throwE $ SelfConnection (prettyPrintDomainPort obj p1)
          GT -> let m = connections obj
-                   m' = Map.insert (p2,p1) (reverseConnection c') m in
+                   m' = Map.insert (p2,p1) (reverseConnInfo c') m in
                return (obj {connections = m'})
 
-addConnections ::
-    Domain a b -> DomainPort -> Connection -> [DomainPort] ->
-    Err (Domain a b)
-addConnections =
-    \obj p1 conn ps2 -> foldM (add p1 conn) obj ps2
-    where
-      add p1 conn obj p2 = addConnectionDomain obj p1 conn p2
+addConnections :: Domain a b
+               -> DomainPort
+               -> Connection
+               -> Annotation
+               -> [DomainPort]
+               -> Err (Domain a b)
+addConnections obj p1 conn ann ps2 = foldM add obj ps2
+  where
+    ci = ConnInfo conn ann
+    add x p2 = addConnectionDomain x p1 ci p2
 
 addDirectedConnectionsDomain ::
-    Domain a b -> DomainPort -> Connection ->
-    [(Connection,DomainPort)] -> Err (Domain a b)
+    Domain a b -> DomainPort -> ConnInfo ->
+    [(ConnInfo, DomainPort)] -> Err (Domain a b)
 addDirectedConnectionsDomain =
     \obj p1 conn ps2 -> foldM (add p1 conn) obj ps2
     where
       add p1 conn obj (c2,p2) =
-          do conn' <- unifyConnection conn c2
+          do conn' <- unifyConnInfo conn c2
              addConnectionDomain obj p1 conn' p2
 
-addPortConnections ::
-    Domain a b -> [DomainPort] -> Connection -> [DomainPort] ->
-    Err (Domain a b)
-addPortConnections =
-    \obj ps1 conn ps2 -> foldM (add conn ps2) obj ps1
-    where
-      add conn ps2 obj p1 = addConnections obj p1 conn ps2
+addPortConnections :: Domain a b
+                   -> [DomainPort]
+                   -> Connection
+                   -> Annotation
+                   -> [DomainPort]
+                   -> Err (Domain a b)
+addPortConnections obj ps1 conn ann ps2 = foldM add obj ps1
+  where
+    add x p1 = addConnections x p1 conn ann ps2
 
 addPortDirectedConnectionsDomain ::
-    Domain a b -> [(Connection,DomainPort)] -> Connection ->
-    [(Connection,DomainPort)] -> Err (Domain a b)
+    Domain a b -> [(ConnInfo, DomainPort)] -> ConnInfo ->
+    [(ConnInfo, DomainPort)] -> Err (Domain a b)
 addPortDirectedConnectionsDomain =
     \obj ps1 conn ps2 -> foldM (add conn ps2) obj ps1
     where
       add conn ps2 obj (c1,p1) =
-          let c1' = reverseConnection c1 in
-          do conn' <- unifyConnection conn c1'
+          let c1' = reverseConnInfo c1 in
+          do conn' <- unifyConnInfo conn c1'
              addDirectedConnectionsDomain obj p1 conn' ps2
 
 getPortType :: Domain a b -> DomainPort -> Err (PortType b)
@@ -641,7 +667,7 @@ updatePortTypeDomain obj (DomainPort {domain = o, port = p}) t =
 
 liftConnectionPortTypeDomain ::
     (b -> b -> Maybe b) -> (b -> b -> Bool) -> (b -> String) ->
-    DomainPort -> Connection -> DomainPort ->
+    DomainPort -> ConnInfo -> DomainPort ->
     Domain a b -> Err (Domain a b)
 liftConnectionPortTypeDomain unify connectable pp p1 conn p2 obj =
     case (isExternalDomainPort p1, isExternalDomainPort p2) of
@@ -658,12 +684,12 @@ liftConnectionPortTypeDomain unify connectable pp p1 conn p2 obj =
                  ("incompatible connection types '" ++
                   prettyPrintPortType pp t1 ++ "' and '" ++
                   prettyPrintPortType pp t2 ++ "' for connection type '" ++
-                  prettyPrintConnection conn ++ "'")
+                  prettyPrintConnection (ciConnection conn) ++ "'")
       (True,True) -> throwE $ BadConnection (prettyPrintDomainPort obj p1)
                                             (prettyPrintDomainPort obj p2)
                                             "invalid internal connection"
       (True,False) ->
-          let conn' = reverseConnection conn in
+          let conn' = reverseConnInfo conn in
           liftConnectionPortTypeDomain unify connectable pp p2 conn' p1 obj
       (False,True) ->
           do t1 <- getPortType obj p1
@@ -725,7 +751,7 @@ explodeSubDomain =
                                      (prettyPrintDomainPort obj p2)
                                      "invalid internal connection"
             (Just _, Nothing) ->
-                let conn' = reverseConnection conn in
+                let conn' = reverseConnInfo conn in
                 addSubConn intObj p2 conn' p1 (intPort,obj)
             (Nothing, Just o2) ->
                 do o2' <- getIntObj intObj o2
@@ -745,7 +771,10 @@ explodeSubDomain =
       expandPort subId intPort p =
           if equalInternalDomainPort subId p
             then getIntPort intPort (port p)
-            else [(NeutralConnection,p)]
+            -- XXX i don't understand why this connection is created
+            -- XXX out of nowhere, but for now I'm going to give it
+            -- XXX an empty annotation.
+            else [(ConnInfo NeutralConnection mempty, p)]
 
       expand subId intPort p1 conn p2 obj =
           let ps1 = expandPort subId intPort p1
@@ -772,7 +801,7 @@ prettyPrint ppV ppPTV =
           foldSubDomain (\_ o z -> pp ind' o ++ z) "" obj ++
           concat (map (ppPort ind') (Map.toList (ports obj))) ++
           foldConnectionsDomain
-            (\p c q z -> ppConnection obj ind' p c q ++ z) "" obj ++
+            (\p c q z -> ppConnection obj ind' p (ciConnection c) q ++ z) "" obj ++
           ind ++ "}\n"
 
       ppPort ind pt = ind ++ "port " ++ ppPT pt ++ ";\n"
@@ -804,7 +833,8 @@ domainToGraph d = Symbion.mkLGraph (prettyPrintSymbP d) nodes edges
   edges =
     explicitConnections ++
     concatMap implicitConnections (Map.toList $ subDomains d)
-  explicitConnections = concatMap mkLeftToRight $ Map.toList $ connections d
+  conns = Map.toList $ fmap ciConnection (connections d)
+  explicitConnections = concatMap mkLeftToRight conns
 
 domainPortToSymbPs :: DomainPort -> [SymbP]
 domainPortToSymbPs p = [domainPToInP p, domainPToOutP p]

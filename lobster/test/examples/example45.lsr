@@ -18,7 +18,9 @@ class ExampleApp(dataFilenameRegexp) {
 
   domain f = File(dataFilenameRegexp);
 
+  [Test("left")]
   p.active <-- f.read;
+  [Test("right")]
   p.active --> f.write;
 }
 

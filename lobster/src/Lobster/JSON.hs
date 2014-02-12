@@ -130,8 +130,9 @@ instance ToJSON P.Domain where
       goConn p1 c p2 xs = obj : xs
         where
           obj = object
-                  [ "left"       .= toJSON p1
-                  , "right"      .= toJSON p2
-                  , "connection" .= toJSON c
+                  [ "left"        .= toJSON p1
+                  , "right"       .= toJSON p2
+                  , "connection"  .= toJSON (D.ciConnection c)
+                  , "annotations" .= toJSON (D.ciAnnotation c)
                   ]
       conns (P.Domain d') = D.foldConnectionsDomain goConn [] d'

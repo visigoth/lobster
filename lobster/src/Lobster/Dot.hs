@@ -49,14 +49,15 @@ dotPortType pid@(PortId (LIdent s)) _ = do
   -- use a record shape to list all the components of the PortType.
 
 dotConnection :: (PortNodes, Map.Map DomainId PortNodes)
-              -> ((DomainPort, DomainPort), Connection) -> Dot.Dot ()
-dotConnection (env, envs) ((dp1, dp2), c) = do
+              -> ((DomainPort, DomainPort), ConnInfo) -> Dot.Dot ()
+dotConnection (env, envs) ((dp1, dp2), ci) = do
+  let conn = ciConnection ci
   let idOf dp =
         case domain dp of
           Nothing -> Map.lookup (port dp) env
           Just di -> Map.lookup di envs >>= Map.lookup (port dp)
   case (idOf dp1, idOf dp2) of
-    (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection c)]
+    (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection conn)]
     _                  -> fail "invalid DomainPort"
 
 dirConnection :: Connection -> String

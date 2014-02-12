@@ -543,21 +543,35 @@ foldMSubDomain f =
     where
       f' i d x = f i (Domain d) x
 
-addConnectionsDomain ::
-    Domain -> DomainPort -> Connection -> [DomainPort] -> Err Domain
-addConnectionsDomain (Domain dom) dp conn dps =
-    do dom' <- Domain.addConnections dom dp conn dps
+addConnectionsDomain :: Domain
+                     -> DomainPort
+                     -> Connection
+                     -> Annotation
+                     -> [DomainPort]
+                     -> Err Domain
+addConnectionsDomain (Domain dom) dp conn ann dps =
+    do dom' <- Domain.addConnections dom dp conn ann dps
        return (Domain dom')
 
-addPortConnectionsDomain ::
-    Domain -> [DomainPort] -> Connection -> [DomainPort] -> Err Domain
-addPortConnectionsDomain (Domain dom) dps1 conn dps2 =
-    do dom' <- Domain.addPortConnections dom dps1 conn dps2
+addPortConnectionsDomain :: Domain
+                         -> [DomainPort]
+                         -> Connection
+                         -> Annotation
+                         -> [DomainPort]
+                         -> Err Domain
+addPortConnectionsDomain (Domain dom) dps1 conn ann dps2 =
+    do dom' <- Domain.addPortConnections dom dps1 conn ann dps2
        return (Domain dom')
 
-foldMConnectionsDomain ::
-    (DomainPort -> Connection -> DomainPort -> s -> Err s) -> s -> Domain -> Err s
-foldMConnectionsDomain f x (Domain d) = Domain.foldMConnections f x d
+foldMConnectionsDomain
+  :: (DomainPort -> Connection -> Annotation -> DomainPort -> s -> Err s)
+  -> s
+  -> Domain
+  -> Err s
+foldMConnectionsDomain f x (Domain d) = Domain.foldMConnections go x d
+  where
+    go p1 (Domain.ConnInfo conn ann) p2 s =
+      f p1 conn ann p2 s
 
 typeCheckDomain :: Domain -> Err ()
 typeCheckDomain (Domain dom) =
@@ -939,7 +953,9 @@ interpretStatement sig env obj annot statement =
                    Abs.Connection conn ps ->
                        do ps' <- evaluateExpressions sig env obj' ps
                           ps'' <- toDomainPortsValue ps'
-                          addConnectionsDomain obj' p conn ps''
+                          -- XXX no way to annotate these types of
+                          -- connections
+                          addConnectionsDomain obj' p conn mempty ps''
              env' <- addEnvironment env (Syntax.toId pid) (DomainPortValue p)
              return (env',obj'')
       PortConnection _ ps1 conn ps2 ->
@@ -947,7 +963,7 @@ interpretStatement sig env obj annot statement =
              ps1'' <- toDomainPortsValue ps1'
              ps2' <- evaluateExpressions sig env obj ps2
              ps2'' <- toDomainPortsValue ps2'
-             obj' <- addPortConnectionsDomain obj ps1'' conn ps2''
+             obj' <- addPortConnectionsDomain obj ps1'' conn annot ps2''
              return (env,obj')
       Assignment _ i expr ->
           do val <- evaluateExpression sig env obj expr
