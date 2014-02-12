@@ -50,23 +50,23 @@ errorMessage err =
     SelfConnection s ->
       [printf "cannot connection port '%s' to itself" s]
     UndefinedPort s ->
-      [printf "undefined port '%s'"]
+      [printf "undefined port '%s'" s]
     DuplicatePort s ->
-      [printf "duplicate port definition '%s'"]
+      [printf "duplicate port definition '%s'" s]
     UndefinedDomain s ->
-      [printf "undefined domain '%s'"]
+      [printf "undefined domain '%s'" s]
     UndefinedClass s ->
-      [printf "undefined class '%s'"]
+      [printf "undefined class '%s'" s]
     DuplicateClass s ->
-      [printf "duplicate class definition '%s'"]
+      [printf "duplicate class definition '%s'" s]
     NonEmptyClass s ->
       [printf "cannot use non-empty class '%s' as port type" s]
     TypeMismatch e t ->
       [printf "value '%s' not of expected type '%s'" e t]
     DuplicateBinding s ->
-      [printf "duplicate definition '%s'"]
+      [printf "duplicate definition '%s'" s]
     BadArgument s ->
-      [printf "cannot pass value of type '%s' as domain argument"]
+      [printf "cannot pass value of type '%s' as domain argument" s]
     MiscError s ->
       [s]
 
