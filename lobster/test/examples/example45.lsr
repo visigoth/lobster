@@ -1,0 +1,24 @@
+// Lobster annotation example.
+
+[Foo("foo")]
+class Process() {
+  [Bar("bar", 42)]
+  port active : {position = subject};
+}
+
+class File(filenameRegex) {
+  port read : {position = object};
+  port write : {position = object};
+}
+
+class ExampleApp(dataFilenameRegexp) {
+  domain p = Process();
+
+  domain f = File(dataFilenameRegexp);
+
+  p.active <-- f.read;
+  p.active --> f.write;
+}
+
+[SourcePos("foo.txt", 1, 2, 3), SourceType("selinux")]
+domain app = ExampleApp("/tmp/example.*");
