@@ -74,12 +74,12 @@ Library
                      --SCD.Lobster.Gen.CoreSyn.Convert
                      --SCD.Lobster.Gen.CoreSyn.Mangle
                      SCD.Lobster.Gen.CoreSyn.Output
-                     SCD.Lobster.Gen.CoreSyn.Util
-                     SCD.Lobster.Gen.Perm
-                     SCD.Lobster.Gen.PermFlow
-                     SCD.Lobster.Gen.Monad
+                     --SCD.Lobster.Gen.CoreSyn.Util
+                     --SCD.Lobster.Gen.Perm
+                     --SCD.Lobster.Gen.PermFlow
+                     --SCD.Lobster.Gen.Monad
                      --SCD.Lobster.Gen.Match
-                     SCD.Lobster.Gen.Util
+                     --SCD.Lobster.Gen.Util
 
       -- SCD.M4: syntax, parsing, prettyprinting of the Reference Policy language
                      SCD.M4.Lexer
