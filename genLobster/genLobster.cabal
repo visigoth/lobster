@@ -33,6 +33,7 @@ Executable selinux-lobster
 
 Executable m4-lobster
   Main-is:           m4-lobster.hs
+  ghc-options:       -rtsopts
   Build-Depends:
                      base >= 4,
                      pretty >= 1,
