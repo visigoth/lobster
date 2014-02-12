@@ -11,7 +11,7 @@ import Control.Exception
 import Data.Monoid ((<>))
 
 import Lobster.Lexer (alexNoPos)
-import Lobster.Monad (runP)
+import Lobster.Error
 import Lobster.JSON
 import Snap
 
@@ -40,17 +40,26 @@ sendVO vo = do
   writeLBS (AP.encodePretty' conf vo)
   writeLBS "\r\n"
 
+sendError :: Error -> Snap ()
+sendError err = sendVO $ emptyVO { errors = buildErrors err }
+
+buildErrors err = map go (errorMessage err)
+  where
+    go s = (alexNoPos, s)   -- FIXME: add position
+
 handleParse :: Snap ()
 handleParse = method POST $ do
   body <- (T.unpack . E.decodeUtf8) <$> readRequestBody 10000000
+  liftIO $ putStrLn $ "body: " ++ show body
   let policy = P.parsePolicy body
   modifyResponse $ setContentType "application/json"
   case policy of
-    Left err -> sendVO $ emptyVO { errors = [err] }
+    Left err -> sendError err
     Right p  -> do
-      case runP (P.toDomain p) of
-        Left err -> sendVO $ emptyVO { errors = [(alexNoPos, err)] }
-        Right (checks, dom) ->
+      liftIO $ putStrLn (show p)
+      case P.toDomain p of
+        Left err -> sendError err
+        Right (checks, dom) -> do
           sendVO $ emptyVO { checkResults = checks
                            , domain = Just dom
                            }
