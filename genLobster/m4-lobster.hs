@@ -42,7 +42,7 @@ data St = St
   { object_classes   :: !(Map S.TypeOrAttributeId (Set S.ClassId))
   , class_perms      :: !(Map S.ClassId (Set S.PermissionId))
   , attrib_members   :: !(Map S.TypeId (Set S.AttributeId))
-  , allow_rules      :: !(Map AllowRule [P.Pos])
+  , allow_rules      :: !(Map AllowRule (Set P.Pos))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
   }
 
@@ -85,7 +85,9 @@ addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
 addAllow subject object cls perms = do
   ps <- ask
-  modify (f ps)
+  -- discard all but the outermost enclosing source position
+  -- so that we only get the position of the top-level macro
+  modify (f (Set.fromList (take 1 (reverse ps))))
   where
     rules = [ AllowRule subject object cls perm | perm <- Set.toList perms ]
     f ps st = St
@@ -95,7 +97,7 @@ addAllow subject object cls perms = do
           object_classes st
       , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
       , attrib_members = attrib_members st
-      , allow_rules = foldr (\r -> Map.insertWith (++) r ps) (allow_rules st) rules
+      , allow_rules = foldr (\r -> Map.insertWith (flip Set.union) r ps) (allow_rules st) rules
       , type_transitions = type_transitions st
       }
 
@@ -207,11 +209,18 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
 
-outputAllowRule :: AllowRule -> L.Decl
-outputAllowRule (AllowRule subject object cls perm) =
-  L.neutral
-     (L.domPort (toIdentifier subject processClassId) activePort)
-     (L.domPort (toIdentifier object cls) (toPortId perm))
+
+outputPos :: P.Pos -> L.ConnectAnnotation
+outputPos (P.Pos fname _ l c) =
+  L.ConnectAnnotation (L.Name "SourcePos")
+    [L.AnnotationString fname, L.AnnotationInt l, L.AnnotationInt c]
+
+outputAllowRule :: (AllowRule, Set P.Pos) -> L.Decl
+outputAllowRule (AllowRule subject object cls perm, ps) =
+  L.connect' L.N
+    (L.domPort (toIdentifier subject processClassId) activePort)
+    (L.domPort (toIdentifier object cls) (toPortId perm))
+    (map outputPos (Set.toList ps))
   where
     toIdentifier :: S.TypeOrAttributeId -> S.ClassId -> L.Name
     toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
@@ -277,7 +286,7 @@ outputLobster policy st =
       ]
 
     connectionDecls :: [L.Decl]
-    connectionDecls = map outputAllowRule (Map.keys (allow_rules st))
+    connectionDecls = map outputAllowRule (Map.assocs (allow_rules st))
 
     attributeDecls :: [L.Decl]
     attributeDecls = do
