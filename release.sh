@@ -9,7 +9,9 @@
 set -x
 set -e
 
-PROGS="genLobster lobster-dot lobster-json lobster-selinux v3spa-server"
+PROGS="lobster-json m4-lobster v3spa-server"
+
+IPTABLES_EXAMPLES="ftp.iptables example.iptables"
 
 d=`date +"%Y%m%d"`
 dir="lobster-tools-$d"
@@ -19,6 +21,13 @@ mkdir "$dir"
 
 for f in $PROGS; do
   cp ".cabal-sandbox/bin/$f" "$dir"
+done
+
+mkdir "$dir/examples"
+mkdir "$dir/examples/iptables"
+
+for f in $IPTABLES_EXAMPLES; do
+  cp "iptables-lobster/$f" "$dir/examples/iptables"
 done
 
 zip -r "$dir.zip" "$dir"
