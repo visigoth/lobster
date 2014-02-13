@@ -20,27 +20,18 @@ Library
     deepseq >= 1.1,
     aeson >= 0.6.2,
     dotgen >= 0.4.1,
-    process >= 1.1.0.2
-
-  Build-tools:
-    bnfc
-    -- bnfc >= 2.4.2.0
+    process >= 1.1.0.2,
+    errors
 
   Exposed-modules:
 -- Lobster abstract syntax, parsing, and compilation into native policy
     Lobster.Domain
     Lobster.Monad
-    Lobster.Abs
     Lobster.AST
-    Lobster.ErrM
-    Lobster.ErrMonad
-    Lobster.Lex
+    Lobster.Error
     Lobster.Lexer
-    Lobster.Par
     Lobster.Parser
     Lobster.PrettyPrint
-    Lobster.Print
-    Lobster.Skel
     Lobster.Policy
     Lobster.Symbion
     Lobster.Syntax
@@ -73,7 +64,8 @@ Executable lobster-test
                   test-framework,
                   test-framework-hunit,
                   HUnit >= 1.2.2.1,
-                  lobster
+                  lobster,
+                  errors
 
 Executable lobster-json
   Main-is:        lobster-json.hs
@@ -82,8 +74,10 @@ Executable lobster-json
                   bytestring >= 0.10,
                   text >= 0.11,
                   containers >= 0.5,
+                  mtl >= 1.0.1,
                   aeson >= 0.6.2,
                   aeson-pretty >= 0.7,
+                  errors,
                   lobster
 
 Executable lobster-dot

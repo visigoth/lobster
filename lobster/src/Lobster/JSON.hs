@@ -21,7 +21,7 @@ import Lobster.Monad (runP)
 
 import qualified Data.Map as M
 
-import qualified Lobster.Abs    as A
+import qualified Lobster.AST    as A
 import qualified Lobster.Policy as P
 import qualified Lobster.Domain as D
 
@@ -83,6 +83,23 @@ instance ToJSON D.DomainPort where
   toJSON (D.DomainPort Nothing p) =
     object [ "port" .= portIdName p ]
 
+instance ToJSON A.Annotation where
+  toJSON (A.Annotation xs) = toJSON (map go xs)
+    where
+      go (name, args) =
+        object
+          [ "name"     .= name
+          , "args"     .= toJSON args
+          ]
+
+instance ToJSON A.UIdent where
+  toJSON (A.UIdent x) = toJSON x
+
+instance ToJSON A.Expression where
+  toJSON (A.IntExpression x)    = toJSON x
+  toJSON (A.StringExpression x) = toJSON x
+  toJSON _ = error "unsupported annotation expression"
+
 instance ToJSON P.Value where
   toJSON (P.IntValue x)                   = toJSON x
   toJSON (P.StringValue x)                = toJSON x
@@ -96,12 +113,14 @@ instance ToJSON P.Value where
 instance ToJSON P.Domain where
   toJSON d =
     object
-      [ "name"        .= P.nameDomain d
-      , "subdomains"  .= toJSON (M.fromList subdomains)
-      , "class"       .= P.prettyPrintContextClass ctx
-      , "args"        .= map toJSON args
-      , "ports"       .= toJSON (M.mapKeys portIdName (ports d))
-      , "connections" .= conns d
+      [ "name"              .= P.nameDomain d
+      , "subdomains"        .= toJSON (M.fromList subdomains)
+      , "class"             .= P.prettyPrintContextClass ctx
+      , "args"              .= map toJSON args
+      , "ports"             .= toJSON (M.mapKeys portIdName (ports d))
+      , "connections"       .= conns d
+      , "classAnnotations"  .= toJSON (P.classAnnotationDomain d)
+      , "domainAnnotations" .= toJSON (P.domainAnnotationDomain d)
       ]
     where
       goDom (D.DomainId domId) dom xs = (show domId, dom) : xs
@@ -111,8 +130,9 @@ instance ToJSON P.Domain where
       goConn p1 c p2 xs = obj : xs
         where
           obj = object
-                  [ "left"       .= toJSON p1
-                  , "right"      .= toJSON p2
-                  , "connection" .= toJSON c
+                  [ "left"        .= toJSON p1
+                  , "right"       .= toJSON p2
+                  , "connection"  .= toJSON (D.ciConnection c)
+                  , "annotations" .= toJSON (D.ciAnnotation c)
                   ]
       conns (P.Domain d') = D.foldConnectionsDomain goConn [] d'

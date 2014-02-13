@@ -9,7 +9,7 @@ Working with Lobster abstract syntax.
 -}
 module SCD.Lobster.Util where
 
-import Lobster.Abs as L
+import Lobster.AST as L
 import Text.Happy.ParserMonad(noPos)
 
 import SCD.M4.Syntax as M4

@@ -32,8 +32,8 @@ import qualified Text.PrettyPrint.Pp as Pp
 import Text.Regex.Posix((=~))
 
 import Lobster.Monad
-import qualified Lobster.Abs as Abs
-import Lobster.Abs (
+import qualified Lobster.AST as AST
+import Lobster.AST (
   Connection(..),
   PortId,
   Position(..))
@@ -192,7 +192,7 @@ toSELinux pref obj = do
 typeTransitionContextClass :: Policy.ContextClass
 typeTransitionContextClass = Policy.mkContextClass typeTransitionClass
 
-typeTransitionClass :: Abs.ClassId
+typeTransitionClass :: AST.ClassId
 typeTransitionClass = Syntax.mkId "TypeTransition"
 
 portTypeTypeClass :: (ContextClass, [Value]) -> String -> String

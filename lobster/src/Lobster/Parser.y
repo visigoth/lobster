@@ -2,9 +2,12 @@
 {
 {-# OPTIONS_GHC -fno-warn-incomplete-patterns -fno-warn-overlapping-patterns #-}
 module Lobster.Parser where
+
+import Control.Error
+
 import Lobster.AST
 import Lobster.Lexer
-import Lobster.ErrMonad
+import Lobster.Error
 
 }
 
@@ -37,7 +40,7 @@ import Lobster.ErrMonad
 %name pListPortTypeConstraint ListPortTypeConstraint
 
 -- no lexer declaration
-%monad { Err } { thenM } { returnM }
+%monad { Err }
 %tokentype { Token }
 
 %token 
@@ -87,19 +90,38 @@ String  :: { String }  : L_quoted {  $1 }
 LIdent    :: { LIdent} : L_LIdent { LIdent ($1)}
 UIdent    :: { UIdent} : L_UIdent { UIdent ($1)}
 
-Policy :: { Policy Annot }
+Policy :: { Policy }
 Policy : ListStatement { Policy (reverse $1) } 
 
+AnnotationElement :: { AnnotationElement  }
+AnnotationElement : UIdent '(' ListExpression ')' { ($1, $3) }
 
-Statement :: { Statement Annot }
-Statement : 'class' ClassId '(' ListIdentifier ')' '{' ListStatement '}' { ClassDeclaration (tokenPosn $1) $2 $4 (reverse $7) } 
-  | 'port' PortId PortDeclarationType PortDeclarationConnection ';' { PortDeclaration (tokenPosn $1) $2 $3 $4 }
-  | 'domain' Identifier '=' ClassInstantiation ';' { DomainDeclaration (tokenPosn $1) $2 $4 }
-  | Identifier '=' Expression ';' { Assignment (tokenPosn $2) $1 $3 }
-  -- TODO
-  | ListExpression Connection ListExpression ';' { PortConnection undefined $1 $2 $3 }
-  | 'assert' ConnRE '->' ConnRE '::' FlowPred ';' { Assert (tokenPosn $1) $2 $4 $6 }
+ListAnnotationElement :: { [AnnotationElement] }
+ListAnnotationElement : {- empty -} { [] } 
+  | AnnotationElement { (:[]) $1 }
+  | AnnotationElement ',' ListAnnotationElement { (:) $1 $3 }
 
+Annotation :: { Annotation }
+Annotation : ListAnnotationElement { Annotation $1 }
+
+Statement :: { Statement }
+Statement
+  : 'class' ClassId '(' ListIdentifier ')' '{' ListStatement '}'
+    { annPos (tokenPosn $1) $ ClassDeclaration $2 $4 (reverse $7) }
+  | 'port' PortId PortDeclarationType PortDeclarationConnection ';'
+    { annPos (tokenPosn $1) $ PortDeclaration $2 $3 $4 }
+  | 'domain' Identifier '=' ClassInstantiation ';'
+    { annPos (tokenPosn $1) $ DomainDeclaration $2 $4 }
+  | Identifier '=' Expression ';'
+    -- XXX not ideal, would rather have start token
+    { annPos (tokenPosn $2) $ Assignment $1 $3 }
+  | ListExpression Connection ListExpression ';'
+    -- XXX not ideal, would rather have start token
+    { annPos (tokenPosn $4) $ PortConnection $1 $2 $3 }
+  | 'assert' ConnRE '->' ConnRE '::' FlowPred ';'
+    { annPos (tokenPosn $1) $ Assert $2 $4 $6 }
+  | '[' Annotation ']' Statement
+    { Annotated $2 $4 }
 
 ClassInstantiation :: { ClassInstantiation }
 ClassInstantiation : ClassId '(' ListExpression ')' { ClassInstantiation $1 $3 } 
@@ -173,7 +195,6 @@ Name :: { Name }
 Name : ClassId { TypeIdent $1 } 
   | Identifier { Ident $1 }
 
-
 PortTypeConstraint :: { PortTypeConstraint }
 PortTypeConstraint : FlowId '=' NoneExpression { PortTypeConstraint $1 $3 } 
 
@@ -218,7 +239,7 @@ ListExpression : {- empty -} { [] }
   | Expression ',' ListExpression { (:) $1 $3 }
 
 
-ListStatement :: { [Statement Annot] }
+ListStatement :: { [Statement] }
 ListStatement : {- empty -} { [] } 
   | ListStatement Statement { flip (:) $1 $2 }
 
@@ -231,21 +252,29 @@ ListPortTypeConstraint : {- empty -} { [] }
 
 
 {
-type Annot = Posn
+annPos :: Posn -> Statement -> Statement
+annPos pos stmt = Annotated ann stmt
+  where
+    ann = Annotation [(UIdent "SourcePos",
+                       [StringExpression filename,
+                        IntExpression (fromIntegral line),
+                        IntExpression (fromIntegral column)])]
+    filename = "unknown"
+    Pn _ line column = pos
 
-returnM :: a -> Err a
-returnM = return
-
-thenM :: Err a -> (a -> Err b) -> Err b
-thenM = (>>=)
+posError :: Posn -> Error -> Error
+posError pos err = LocError loc err
+  where
+    loc = ErrorLoc "unknown" (fromIntegral line) (fromIntegral column)
+    Pn _ line column = pos
 
 happyError :: [Token] -> Err a
 happyError ts =
   case ts of
-    [] -> Bad alexNoPos "syntax error"
-    [Err p] -> Bad p "syntax due to lexer error"
-    PT p _ : _ -> Bad p $ "syntax error before " ++
-                          unwords (map (id . prToken) (take 4 ts))
+    [] -> throwE $ SyntaxError "syntax error"
+    [Err p] -> throwE $ posError p (SyntaxError "syntax error")
+    -- TODO: could show token here
+    PT p _ : _ -> throwE $ posError p (SyntaxError "syntax error")
 
 myLexer = tokens
 }

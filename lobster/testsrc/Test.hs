@@ -5,16 +5,11 @@ module Main where
 import System.IO ( stdin, hGetContents )
 import System.Environment ( getArgs, getProgName )
 
-import Lobster.Lex
-import Lobster.Par
-import Lobster.Skel
-import Lobster.Print
-import Lobster.Abs
-
-
-
-
-import Lobster.ErrM
+import Lobster.Error
+import Lobster.Lexer
+import Lobster.Parser
+import Lobster.PrettyPrint
+import Lobster.AST
 
 type ParseFun a = [Token] -> Err a
 
@@ -30,12 +25,13 @@ runFile v p f = putStrLn f >> readFile f >>= run v p
 
 run :: (Print a, Show a) => Verbosity -> ParseFun a -> String -> IO ()
 run v p s = let ts = myLLexer s in case p ts of
-           Bad s    -> do putStrLn "\nParse              Failed...\n"
+           Left e   -> do putStrLn $ "\nParse Failed at " ++ {- show p ++ -} "\n"   -- FIXME
+                          putStrLn $ "Error: " ++ show e
                           putStrV v "Tokens:"
                           putStrV v $ show ts
                           putStrLn s
-           Ok  tree -> do putStrLn "\nParse Successful!"
-                          showTree v tree
+           Right x  -> do putStrLn "\nParse Successful!"
+                          showTree v x
 
 
 

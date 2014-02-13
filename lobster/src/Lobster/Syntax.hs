@@ -16,7 +16,7 @@ module Lobster.Syntax where
 import Prelude
 --import qualified Data.List as List
 
-import Lobster.Abs as Abs
+import Lobster.AST as Abs
 
 --------------------------------------------------------------------------------
 -- A class for identifiers. Identifiers can be converted back and forth from

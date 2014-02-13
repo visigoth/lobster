@@ -8,9 +8,9 @@ import System.FilePath
 
 import Lobster.Monad
 --import qualified Lobster.Abs as Abs
-import qualified Lobster.Lex as Lex
-import qualified Lobster.Par as Par
-import qualified Lobster.ErrM as ErrM
+import qualified Lobster.Lexer as Lex
+import qualified Lobster.Parser as Parser
+import qualified Lobster.ErrMonad as ErrM
 --import qualified SCD.Lobster.Domain as Domain
 import qualified Lobster.Policy as Policy
 import Lobster.Policy(
@@ -21,17 +21,17 @@ import qualified Lobster.SELinux.SELinux as SELinux
 import Lobster.SELinux.SELinux(
   SELinux)
 
-parsePolicyFile :: FilePath -> IO Policy
+parsePolicyFile :: FilePath -> IO (Policy Lex.Posn)
 parsePolicyFile filename =
     do chars <- readFile filename
        let toks = Lex.tokens chars
-       case Par.pPolicy toks of
-         ErrM.Bad e ->
+       case Parser.pPolicy toks of
+         ErrM.Bad posn e ->
              error ("ERROR: unable to parse Lobster policy file " ++
-                    filename ++ ":\n" ++ e)
+                    filename ++ ": " ++ show posn ++ "\n" ++ e)
          ErrM.Ok policy -> return policy
 
-interpretPolicy :: FilePath -> Policy -> IO Domain
+interpretPolicy :: FilePath -> Policy Lex.Posn -> IO Domain
 interpretPolicy filename policy =
     case runP (Policy.toDomain policy) of
       Right (eexs,domain) -> do

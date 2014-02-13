@@ -33,8 +33,8 @@ testCases = map buildCase $ zip [1 .. ] (ta ++ tb ++ tc ++ td)
 buildCase (i, tst) = do
   testCase ("Symbion test #"++ show i) runTst
   where runTst = case evalGrPred tst of
-                   Ok    -> return ()
-                   Err e -> assertFailure $ "failed:" ++ ppErr e
+                   Ok          -> return ()
+                   ResultErr e -> assertFailure $ "failed:" ++ ppErr e
 
 
 ga :: LGraph Char

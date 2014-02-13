@@ -6,6 +6,7 @@ import System.FilePath((</>))
 
 import Prelude hiding (catch)
 import Control.Exception (catch, SomeException)
+import Control.Error (runEitherT, fmapLT, throwT, hoistEither)
 import Data.Either (lefts)
 
 import qualified System.IO
@@ -13,12 +14,11 @@ import qualified Data.Char as Char
 import qualified Data.List as List
 import qualified Data.Maybe as Maybe
 
-import Lobster.Monad
 import Lobster.Policy ( Domain, Policy )
+import Lobster.Error (Error(MiscError))
 
-import qualified Lobster.Lex as Lex
-import qualified Lobster.Par as Par
-import qualified Lobster.ErrM as ErrM
+import qualified Lobster.Lexer as Lex
+import qualified Lobster.Parser as Par
 import qualified Lobster.Policy as P
 
 import Test.Framework.Providers.HUnit
@@ -91,12 +91,14 @@ testPolicy file = catch (checkFile file) handler
 
 -- | Attempt to parse, interpret, and flatten a lobster source file.
 -- Throws exceptions in some failure cases.
+--
+-- FIXME: clean this up?
 checkFile :: FilePath -> IO (Either String ())
-checkFile file = do
+checkFile file = runEitherT $ fmapLT show $ do
   policy <- P.parsePolicyFile file
-  let (es, domain) = P.interpretPolicy policy
+  (es, domain) <- hoistEither $ P.interpretPolicy policy
   case lefts es of
-    [] -> case runP (P.flattenDomain domain ) of
-            Left  e -> return $ Left e
-            Right _ -> return $ Right ()
-    xs  -> return $ Left (unlines xs)
+    [] -> case P.flattenDomain domain of
+            Left  e -> throwT e
+            Right _ -> return ()
+    xs  -> throwT $ MiscError (unlines xs)

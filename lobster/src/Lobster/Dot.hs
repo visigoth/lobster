@@ -9,15 +9,15 @@ module Lobster.Dot where
 
 import Data.Traversable
 import Control.Applicative
+import Control.Error (runEitherT, hoistEither)
 import Control.Monad (ap, liftM)
 import System.IO
 import System.Process
 
 import qualified Data.Map as Map
 
-import Lobster.Abs
+import Lobster.AST
 import Lobster.Domain
-import Lobster.Monad
 import qualified Lobster.Policy as P
 
 import qualified Text.Dot as Dot -- Andy Gill's "dotgen" package
@@ -49,14 +49,15 @@ dotPortType pid@(PortId (LIdent s)) _ = do
   -- use a record shape to list all the components of the PortType.
 
 dotConnection :: (PortNodes, Map.Map DomainId PortNodes)
-              -> ((DomainPort, DomainPort), Connection) -> Dot.Dot ()
-dotConnection (env, envs) ((dp1, dp2), c) = do
+              -> ((DomainPort, DomainPort), ConnInfo) -> Dot.Dot ()
+dotConnection (env, envs) ((dp1, dp2), ci) = do
+  let conn = ciConnection ci
   let idOf dp =
         case domain dp of
           Nothing -> Map.lookup (port dp) env
           Just di -> Map.lookup di envs >>= Map.lookup (port dp)
   case (idOf dp1, idOf dp2) of
-    (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection c)]
+    (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection conn)]
     _                  -> fail "invalid DomainPort"
 
 dirConnection :: Connection -> String
@@ -70,10 +71,13 @@ dirConnection conn =
 -- | Read domain from .lsr file.
 parseDomainFile :: FilePath -> IO P.Domain
 parseDomainFile filename = do
-  policy <- P.parsePolicyFile filename
-  case runP (P.toDomain policy) of
-    Left e -> error $ "ERROR: unable to process:\n" ++ e
-    Right (_, dom) -> return dom
+  result <- runEitherT $ do
+    policy <- P.parsePolicyFile filename
+    (_, dom) <- hoistEither $ P.toDomain policy
+    return dom
+  case result of
+    Left e    -> error $ "ERROR: Unable to process:\n" ++ show e
+    Right dom -> return dom
 
 -- | Read .lsr input file, return .dot code as a string.
 dotDomainFile :: FilePath -> IO String
