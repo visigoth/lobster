@@ -8,6 +8,7 @@
 module Lobster.Error where
 
 import Control.Error
+import Data.List (intercalate)
 import Data.Maybe
 import Text.Printf
 
@@ -49,7 +50,7 @@ type ErrT m a = EitherT Error m a
 
 -- | Return a single string error message.
 errorMessage :: Error -> String
-errorMessage err = concatMap (++ "\n") (errorMessages err)
+errorMessage err = intercalate "\n" (errorMessages err)
 
 -- | Return a list of error messages for an Error object.
 errorMessages :: Error -> [String]

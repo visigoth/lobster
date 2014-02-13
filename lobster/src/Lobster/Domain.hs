@@ -86,8 +86,10 @@ import Lobster.AST(
   Position,
   ClassId
   )
+import Lobster.PrettyPrint (printTree)
 import qualified Lobster.Syntax as Syntax
 import Lobster.Symbion as Symbion
+
 
 --------------------------------------------------------------------------------
 -- Connections.
@@ -488,18 +490,18 @@ getPortDomain :: Domain a b -> PortId -> Err (PortType b)
 getPortDomain obj pid =
     case lookupPortDomain obj pid of
       Just p -> return p
-      Nothing -> throwE $ UndefinedPort (show pid)
+      Nothing -> throwE $ UndefinedPort (printTree pid)
 
 addPort :: Domain a b -> PortId -> PortType b -> Err (Domain a b)
 addPort obj pid pty =
     case lookupPortDomain obj pid of
       Nothing -> return (obj {ports = Map.insert pid pty (ports obj)})
-      Just _ -> throwE $ DuplicatePort (show pid)
+      Just _ -> throwE $ DuplicatePort (printTree pid)
 
 updatePortDomain :: Domain a b -> PortId -> PortType b -> Err (Domain a b)
 updatePortDomain obj pid pty =
     case lookupPortDomain obj pid of
-      Nothing -> throwE $ DuplicatePort (show pid)
+      Nothing -> throwE $ DuplicatePort (printTree pid)
       Just _ -> return (obj {ports = Map.insert pid pty (ports obj)})
 
 lookupSubDomain :: Domain a b -> DomainId -> Maybe (Domain a b)
