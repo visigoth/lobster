@@ -16,7 +16,6 @@ module SCD.Lobster.Gen.CoreSyn.Output where
 
 import SCD.Lobster.Gen.CoreSyn
 import Text.PrettyPrint
-import Data.List
 
 showLobster :: [Decl] -> String
 showLobster ds = render $ ppLobster ds
@@ -34,7 +33,7 @@ ppDecl i d =
     nest i $
      text "class" <+>
       ppName nm <+>
-       parens (hcat (intersperse (text ", ") (map ppName ps))) <+> char '{' $$
+       parens (hsep (punctuate comma (map ppName ps))) <+> char '{' $$
         vcat (map (ppDecl iBody) body) $$
        text "}" $$
        text ""
@@ -42,13 +41,13 @@ ppDecl i d =
      nest i $
       text "port" <+> ppName nm <+>
        (if null pcs then empty
-        else text ":" <+> braced (intersperse (text ", ") (map ppPC pcs))) <>
+        else text ":" <+> braces (sep (punctuate comma (map ppPC pcs)))) <>
        (if null ps then empty else space <> ppDir True di <+> hsep (map ppDP ps)) <>
          char ';'
    Domain v f args ->
      nest i $
       text "domain" <+> ppName v <+> char '=' <+>
-        ppName f <> parens (hcat (intersperse (text ", ") (map ppName args))) <> char ';'
+        ppName f <> parens (hsep (punctuate comma (map ppName args))) <> char ';'
    Type t as ->
      nest i (
       text "type" <+> ppName t <> char ';' <+>
@@ -61,7 +60,7 @@ ppDecl i d =
       ppDP dpA <+> ppDir True di <+> ppDP dpB <> char ';'
    Connect dpA dpB di xs ->
      nest i $ vcat $
-      [ brackets (hcat (intersperse comma (map ppAnnotation xs))) 
+      [ brackets (sep (punctuate comma (map ppAnnotation xs))) 
       , ppDP dpA <+> ppDir True di <+> ppDP dpB <> char ';' ]
 
    Comment "" -> text "" -- hack!
@@ -99,7 +98,7 @@ ppDP (DomPort Nothing p) = ppName p
 
 ppAnnotation :: ConnectAnnotation -> Doc
 ppAnnotation (ConnectAnnotation n es) =
-  ppName n <> parens (hcat (intersperse comma (map ppElement es)))
+  ppName n <> parens (hsep (punctuate comma (map ppElement es)))
 
 ppElement :: AnnotationElement -> Doc
 ppElement (AnnotationInt x) = text (show x)
