@@ -14,18 +14,19 @@ import Data.Monoid ((<>))
 import Lobster.Lexer (alexNoPos)
 import Lobster.Error
 import Lobster.JSON
+import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 import Snap
+
+import V3SPAObject
 
 import qualified Data.Text.Lazy           as T
 import qualified Data.Text.Lazy.Encoding  as E
 import qualified Data.Text.Lazy.IO        as TIO
-
 import qualified Data.Aeson.Encode.Pretty as AP
-
-import V3SPAObject
 
 import qualified Lobster.Policy           as P
 import qualified Version                  as V
+import qualified IptablesToLobster        as I
 
 conf :: AP.Config
 conf = AP.defConfig
@@ -72,10 +73,26 @@ handleParse = method POST $ do
                            , domain = Just dom
                            }
 
+-- | Import IPTables source and output Lobster source or errors.
+handleImportIptables :: Snap ()
+handleImportIptables = method POST $ do
+  modifyResponse $ setContentType "application/json"
+  body <- (T.unpack . E.decodeUtf8) <$> readRequestBody 10000000
+  case I.toLobster body of
+    Left e    -> sendError (MiscError (show e))
+    Right lsr -> do
+      let obj = object [ "version" .= V.version
+                       , "result"  .= (showLobster lsr)
+                       , "errors"  .= ([] :: [()])
+                       ]
+      writeLBS (AP.encodePretty obj)
+      writeLBS "\r\n"
+
 site :: Snap ()
 site = route
   [ ("/parse", handleParse)
   , ("/version", handleVersion)
+  , ("/import/iptables", handleImportIptables)
   ]
 
 main :: IO ()

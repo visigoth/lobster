@@ -14,6 +14,13 @@ executable v3spa-server
   main-is:             Main.hs
   other-modules:       V3SPAObject,
                        Version
-  build-depends:       base >=4.6 && <4.7, snap, lobster, text, aeson, aeson-pretty
+  build-depends:       base >=4.6 && <4.7,
+                       snap,
+                       lobster,
+                       iptables-lobster,
+                       scd,
+                       text,
+                       aeson,
+                       aeson-pretty
   hs-source-dirs:      src
   default-language:    Haskell2010
