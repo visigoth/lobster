@@ -6,11 +6,14 @@ import Lobster.JSON()
 import qualified Lobster.Policy as P
 import Lobster.Error (ErrorLoc(..))
 
+import qualified Version as V
+
 data V3SPAObject
   = V3SPAObject
     { errors       :: [(ErrorLoc, String)]
     , checkResults :: [Either String String]
     , domain       :: Maybe P.Domain
+    , version      :: Int
     }
 
 emptyVO :: V3SPAObject
@@ -19,12 +22,14 @@ emptyVO
     { errors       = []
     , checkResults = []
     , domain       = Nothing
+    , version      = V.version
     }
 
 instance ToJSON V3SPAObject where
   toJSON vo =
     object $ [ "errors"       .= toJSONMessages (errors vo)
              , "checkResults" .= toJSONMessages' (checkResults vo)
+             , "version"      .= (version vo)
              ] ++ case domain vo of
                     Just dom -> [ "domain"      .= toJSON dom ]
                     Nothing -> []

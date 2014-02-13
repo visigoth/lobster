@@ -8,6 +8,7 @@
 
 import Control.Applicative ((<$>))
 import Control.Exception
+import Data.Aeson ((.=), object)
 import Data.Monoid ((<>))
 
 import Lobster.Lexer (alexNoPos)
@@ -21,9 +22,10 @@ import qualified Data.Text.Lazy.IO        as TIO
 
 import qualified Data.Aeson.Encode.Pretty as AP
 
-import qualified Lobster.Policy           as P
-
 import V3SPAObject
+
+import qualified Lobster.Policy           as P
+import qualified Version                  as V
 
 conf :: AP.Config
 conf = AP.defConfig
@@ -47,6 +49,14 @@ buildError :: Error -> (ErrorLoc, String)
 buildError (LocError loc err) = (loc, errorMessage err)
 buildError err = (unknownLoc, errorMessage err)
 
+-- | URL handler for "/version".
+handleVersion :: Snap ()
+handleVersion = method GET $ do
+  modifyResponse $ setContentType "application/json"
+  let obj = object [ "version" .= V.version ]
+  writeLBS (AP.encodePretty obj)
+  writeLBS "\r\n"
+
 handleParse :: Snap ()
 handleParse = method POST $ do
   modifyResponse $ setContentType "application/json"
@@ -63,7 +73,10 @@ handleParse = method POST $ do
                            }
 
 site :: Snap ()
-site = route [("/parse", handleParse)]
+site = route
+  [ ("/parse", handleParse)
+  , ("/version", handleVersion)
+  ]
 
 main :: IO ()
 main = quickHttpServe site
