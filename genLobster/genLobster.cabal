@@ -6,7 +6,20 @@ License-file:        LICENSE
 Author:              Magnus Carlsson, Joe Hurd, Sigbjorn Finne, Joel Stanley, Brett Letner
 Maintainer:          magnus@galois.com, joe@galois.com, sof@galois.com, bletner@contractor.galois.com
 Build-Type:          Simple
-Cabal-Version:       >= 1.2
+Cabal-Version:       >= 1.10
+
+Library
+  hs-source-dirs:   src
+  exposed-modules:  M4ToLobster
+  ghc-options:      -Wall
+  Build-Depends:     base >= 4,
+                     pretty >= 1,
+                     directory >= 1,
+                     mtl >= 1,
+                     containers >= 0.1.0.0,
+                     lobster >= 0.1,
+                     scd >= 0.1,
+                     errors >= 1.4.5
 
 Executable genLobster
   Main-is:           Main.hs
@@ -34,11 +47,10 @@ Executable selinux-lobster
 Executable m4-lobster
   Main-is:           m4-lobster.hs
   ghc-options:       -rtsopts
-  Build-Depends:
-                     base >= 4,
-                     pretty >= 1,
+  Build-Depends:     base >= 4,
+                     scd >= 0.1,
+                     containers >= 0.1.0.0,
                      directory >= 1,
                      mtl >= 1,
-                     containers >= 0.1.0.0,
-                     lobster >= 0.1,
-                     scd >= 0.1
+                     errors >= 1.4.5,
+                     genLobster
