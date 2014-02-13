@@ -158,10 +158,10 @@ prettyPrintPosition position =
 -- Policy functions.
 --------------------------------------------------------------------------------
 
-empty :: Policy a
+empty :: Policy
 empty = Policy []
 
-append :: Policy a -> Policy a -> Policy a
+append :: Policy -> Policy -> Policy
 append (Policy s1) (Policy s2) = Policy (s1 ++ s2)
 
 --------------------------------------------------------------------------------
@@ -241,7 +241,7 @@ prettyPrintContextClass (ContextClass c cl) =
 --------------------------------------------------------------------------------
 
 data ClassConstructor a =
-    ClassConstructor [Identifier] [Statement a]
+    ClassConstructor [Identifier] [Statement]
   deriving (Eq, Show, Ord)
 
 nullClassConstructor :: ClassConstructor a -> Bool
@@ -317,22 +317,22 @@ addClassSignature sig cl insig clcon ann =
          return (sig {classes = Map.insert cl cs (classes sig)})
 
 addStatementSignature :: Signature a
-                      -> Statement a
+                      -> Statement
                       -> Annotation
                       -> Err (Signature a)
-addStatementSignature sig statement ann =
+addStatementSignature sig statement ann1 =
     case statement of
-      ClassDeclaration _ cl pl sts ->
+      ClassDeclaration cl pl sts ->
           do insig <- addStatementsSignature emptySignature sts
-             sig' <- addClassSignature sig cl insig (ClassConstructor pl sts) ann
+             sig' <- addClassSignature sig cl insig (ClassConstructor pl sts) ann1
              return sig'
-      Annotated ann s -> addStatementSignature sig s ann
+      Annotated ann2 s -> addStatementSignature sig s (ann1 <> ann2)
       _ -> return sig
 
-addStatementsSignature :: Signature a -> [Statement a] -> Err (Signature a)
+addStatementsSignature :: Signature a -> [Statement] -> Err (Signature a)
 addStatementsSignature = foldM (\a b -> addStatementSignature a b mempty)
 
-mkSignature :: [Statement a] -> Err (Signature a)
+mkSignature :: [Statement] -> Err (Signature a)
 mkSignature = addStatementsSignature emptySignature
 
 --------------------------------------------------------------------------------
@@ -885,13 +885,13 @@ evaluateExpressions sig env obj exprs =
              return (v : vs)
 
 -- this is now the same as "toDomain"
-interpretPolicy :: Policy a -> Err ([Either String String],Domain)
+interpretPolicy :: Policy -> Err ([Either String String],Domain)
 interpretPolicy = toDomain
 
-parsePolicy :: String -> Err (Policy Lex.Posn)
+parsePolicy :: String -> Err Policy
 parsePolicy s = Par.pPolicy (Lex.tokens s)
 
-parsePolicyFile :: FilePath -> ErrT IO (Policy Lex.Posn)
+parsePolicyFile :: FilePath -> ErrT IO Policy
 parsePolicyFile filename =
   do chars <- liftIO $ readFile filename
      hoistEither $ Par.pPolicy (Lex.tokens chars)
@@ -915,17 +915,17 @@ interpretStatement :: ContextSignature a
                    -> Environment
                    -> Domain
                    -> Annotation
-                   -> Statement a
+                   -> Statement
                    -> Err (Environment,Domain)
-interpretStatement sig env obj annot statement =
+interpretStatement sig env obj ann1 statement =
     case statement of
-      Assert _ connA connB flowPred -> do
+      Assert connA connB flowPred -> do
         a <- fromConnRE sig env obj connA
         b <- fromConnRE sig env obj connB
         c <- fromFlowPred sig env obj a b flowPred
         let ca = Assertion (trim (printTree statement)) c
         return (env, addAssertion obj ca)
-      DomainDeclaration _ n (ClassInstantiation cl el) ->
+      DomainDeclaration n (ClassInstantiation cl el) ->
           do (clsig, ccl, cs) <- getClassContextSignature sig cl
              let ClassConstructor ids sts = csConstructor cs
              let classAnn = csAnnotation cs
@@ -934,15 +934,15 @@ interpretStatement sig env obj annot statement =
              clenv <- mkEnvironment (zip ids args')
              let clobj = emptyDomain (Syntax.idString n) (ccl,args')
              let clobj_ann = annotateDomainInstantiation
-                               (annotateDomainClass clobj classAnn) annot
+                               (annotateDomainClass clobj classAnn) ann1
              (_,clobj') <- interpretStatements clsig clenv clobj_ann sts
              let (obj',clobjid) = addSubDomain obj clobj'
              let val = DomainValue clobjid
              env' <- addEnvironment env n val
              return (env', obj')
-      ClassDeclaration _ _ _ _ ->
+      ClassDeclaration _ _ _ ->
         return (env, obj)
-      PortDeclaration _ pid pty pconns ->
+      PortDeclaration pid pty pconns ->
           let ptce = Syntax.toConstraintsPortDeclarationType pty in
           do ptc <- evaluatePortTypeConstraints sig env obj ptce
              obj' <- addPortDomain obj pid ptc
@@ -958,26 +958,24 @@ interpretStatement sig env obj annot statement =
                           addConnectionsDomain obj' p conn mempty ps''
              env' <- addEnvironment env (Syntax.toId pid) (DomainPortValue p)
              return (env',obj'')
-      PortConnection _ ps1 conn ps2 ->
+      PortConnection ps1 conn ps2 ->
           do ps1' <- evaluateExpressions sig env obj ps1
              ps1'' <- toDomainPortsValue ps1'
              ps2' <- evaluateExpressions sig env obj ps2
              ps2'' <- toDomainPortsValue ps2'
-             obj' <- addPortConnectionsDomain obj ps1'' conn annot ps2''
+             obj' <- addPortConnectionsDomain obj ps1'' conn ann1 ps2''
              return (env,obj')
-      Assignment _ i expr ->
+      Assignment i expr ->
           do val <- evaluateExpression sig env obj expr
              env' <- addEnvironment env i val
              return (env',obj)
-      Annotated ann s ->
-        -- Nested annotations should never be created by the
-        -- parser, but combine them just in case.
-        interpretStatement sig env obj (annot <> ann) s
+      Annotated ann2 s ->
+        interpretStatement sig env obj (ann1 <> ann2) s
     -- I don't think this adds much, we'd rather have source position...
     -- `catchE` (\e -> throwE $ InStatement (trim $ printTree statement) e)
 
 interpretStatements ::
-    ContextSignature a -> Environment -> Domain -> [Statement a] ->
+    ContextSignature a -> Environment -> Domain -> [Statement] ->
     Err (Environment,Domain)
 interpretStatements sig env obj sts =
     case sts of
@@ -986,7 +984,7 @@ interpretStatements sig env obj sts =
           do (env',obj') <- interpretStatement sig env obj mempty st
              interpretStatements sig env' obj' sts'
 
-toDomain :: Policy a -> Err ([Either String String],Domain)
+toDomain :: Policy -> Err ([Either String String],Domain)
 toDomain (Policy sts) =
     do sig <- mkSignature sts
        let csig = mkContextSignature sig

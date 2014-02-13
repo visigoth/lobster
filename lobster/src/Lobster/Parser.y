@@ -90,7 +90,7 @@ String  :: { String }  : L_quoted {  $1 }
 LIdent    :: { LIdent} : L_LIdent { LIdent ($1)}
 UIdent    :: { UIdent} : L_UIdent { UIdent ($1)}
 
-Policy :: { Policy Annot }
+Policy :: { Policy }
 Policy : ListStatement { Policy (reverse $1) } 
 
 AnnotationElement :: { AnnotationElement  }
@@ -104,14 +104,24 @@ ListAnnotationElement : {- empty -} { [] }
 Annotation :: { Annotation }
 Annotation : ListAnnotationElement { Annotation $1 }
 
-Statement :: { Statement Annot }
-Statement : 'class' ClassId '(' ListIdentifier ')' '{' ListStatement '}' { ClassDeclaration (tokenPosn $1) $2 $4 (reverse $7) } 
-  | 'port' PortId PortDeclarationType PortDeclarationConnection ';' { PortDeclaration (tokenPosn $1) $2 $3 $4 }
-  | 'domain' Identifier '=' ClassInstantiation ';' { DomainDeclaration (tokenPosn $1) $2 $4 }
-  | Identifier '=' Expression ';' { Assignment (tokenPosn $2) $1 $3 }
-  | ListExpression Connection ListExpression ';' { PortConnection (tokenPosn $4) $1 $2 $3 }
-  | 'assert' ConnRE '->' ConnRE '::' FlowPred ';' { Assert (tokenPosn $1) $2 $4 $6 }
-  | '[' Annotation ']' Statement { Annotated $2 $4 }
+Statement :: { Statement }
+Statement
+  : 'class' ClassId '(' ListIdentifier ')' '{' ListStatement '}'
+    { annPos (tokenPosn $1) $ ClassDeclaration $2 $4 (reverse $7) }
+  | 'port' PortId PortDeclarationType PortDeclarationConnection ';'
+    { annPos (tokenPosn $1) $ PortDeclaration $2 $3 $4 }
+  | 'domain' Identifier '=' ClassInstantiation ';'
+    { annPos (tokenPosn $1) $ DomainDeclaration $2 $4 }
+  | Identifier '=' Expression ';'
+    -- XXX not ideal, would rather have start token
+    { annPos (tokenPosn $2) $ Assignment $1 $3 }
+  | ListExpression Connection ListExpression ';'
+    -- XXX not ideal, would rather have start token
+    { annPos (tokenPosn $4) $ PortConnection $1 $2 $3 }
+  | 'assert' ConnRE '->' ConnRE '::' FlowPred ';'
+    { annPos (tokenPosn $1) $ Assert $2 $4 $6 }
+  | '[' Annotation ']' Statement
+    { Annotated $2 $4 }
 
 ClassInstantiation :: { ClassInstantiation }
 ClassInstantiation : ClassId '(' ListExpression ')' { ClassInstantiation $1 $3 } 
@@ -229,7 +239,7 @@ ListExpression : {- empty -} { [] }
   | Expression ',' ListExpression { (:) $1 $3 }
 
 
-ListStatement :: { [Statement Annot] }
+ListStatement :: { [Statement] }
 ListStatement : {- empty -} { [] } 
   | ListStatement Statement { flip (:) $1 $2 }
 
@@ -242,7 +252,15 @@ ListPortTypeConstraint : {- empty -} { [] }
 
 
 {
-type Annot = Posn
+annPos :: Posn -> Statement -> Statement
+annPos pos stmt = Annotated ann stmt
+  where
+    ann = Annotation [(UIdent "SourcePos",
+                       [StringExpression filename,
+                        IntExpression (fromIntegral line),
+                        IntExpression (fromIntegral column)])]
+    filename = "unknown"
+    Pn _ line column = pos
 
 happyError :: [Token] -> Err a
 happyError ts =

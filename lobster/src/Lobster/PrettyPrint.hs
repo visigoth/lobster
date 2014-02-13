@@ -86,19 +86,19 @@ instance Print UIdent where
 
 
 
-instance Print (Policy a) where
+instance Print Policy where
   prt i e = case e of
    Policy statements -> prPrec i 0 (concatD [prt 0 statements])
 
 
-instance Print (Statement a) where
+instance Print Statement where
   prt i e = case e of
-   ClassDeclaration _ classid identifiers statements -> prPrec i 0 (concatD [doc (showString "class") , prt 0 classid , doc (showString "(") , prt 0 identifiers , doc (showString ")") , doc (showString "{") , prt 0 statements , doc (showString "}")])
-   PortDeclaration _ portid portdeclarationtype portdeclarationconnection -> prPrec i 0 (concatD [doc (showString "port") , prt 0 portid , prt 0 portdeclarationtype , prt 0 portdeclarationconnection , doc (showString ";")])
-   DomainDeclaration _ identifier classinstantiation -> prPrec i 0 (concatD [doc (showString "domain") , prt 0 identifier , doc (showString "=") , prt 0 classinstantiation , doc (showString ";")])
-   Assignment _ identifier expression -> prPrec i 0 (concatD [prt 0 identifier , doc (showString "=") , prt 0 expression , doc (showString ";")])
-   PortConnection _ expressions0 connection expressions -> prPrec i 0 (concatD [prt 0 expressions0 , prt 0 connection , prt 0 expressions , doc (showString ";")])
-   Assert _ connre0 connre flowpred -> prPrec i 0 (concatD [doc (showString "assert") , prt 0 connre0 , doc (showString "->") , prt 0 connre , doc (showString "::") , prt 0 flowpred , doc (showString ";")])
+   ClassDeclaration classid identifiers statements -> prPrec i 0 (concatD [doc (showString "class") , prt 0 classid , doc (showString "(") , prt 0 identifiers , doc (showString ")") , doc (showString "{") , prt 0 statements , doc (showString "}")])
+   PortDeclaration portid portdeclarationtype portdeclarationconnection -> prPrec i 0 (concatD [doc (showString "port") , prt 0 portid , prt 0 portdeclarationtype , prt 0 portdeclarationconnection , doc (showString ";")])
+   DomainDeclaration identifier classinstantiation -> prPrec i 0 (concatD [doc (showString "domain") , prt 0 identifier , doc (showString "=") , prt 0 classinstantiation , doc (showString ";")])
+   Assignment identifier expression -> prPrec i 0 (concatD [prt 0 identifier , doc (showString "=") , prt 0 expression , doc (showString ";")])
+   PortConnection expressions0 connection expressions -> prPrec i 0 (concatD [prt 0 expressions0 , prt 0 connection , prt 0 expressions , doc (showString ";")])
+   Assert connre0 connre flowpred -> prPrec i 0 (concatD [doc (showString "assert") , prt 0 connre0 , doc (showString "->") , prt 0 connre , doc (showString "::") , prt 0 flowpred , doc (showString ";")])
 
   prtList es = case es of
    [] -> (concatD [])

@@ -72,7 +72,7 @@ usage =
        putStrLn $ usageInfo header programOptions
        exitFailure
 
-parsePolicyFiles :: [String] -> ErrT IO (Policy Lex.Posn)
+parsePolicyFiles :: [String] -> ErrT IO Policy
 parsePolicyFiles filenames =
     case filenames of
       [] -> return empty

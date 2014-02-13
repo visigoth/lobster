@@ -86,8 +86,8 @@ toConstraintsPortDeclarationType pdt =
 -- Policy production in Parser.y.
 --------------------------------------------------------------------------------
 
-emptyPolicy :: Policy a
+emptyPolicy :: Policy
 emptyPolicy = Policy []
 
-appendPolicy :: Policy a -> Policy a -> Policy a
+appendPolicy :: Policy -> Policy -> Policy
 appendPolicy (Policy s1) (Policy s2) = Policy (s1 ++ s2)
