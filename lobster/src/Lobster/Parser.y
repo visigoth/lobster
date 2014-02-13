@@ -262,13 +262,19 @@ annPos pos stmt = Annotated ann stmt
     filename = "unknown"
     Pn _ line column = pos
 
+posError :: Posn -> Error -> Error
+posError pos err = LocError loc err
+  where
+    loc = ErrorLoc "unknown" (fromIntegral line) (fromIntegral column)
+    Pn _ line column = pos
+
 happyError :: [Token] -> Err a
 happyError ts =
   case ts of
     [] -> throwE $ SyntaxError "syntax error"
-    [Err p] -> throwE $ SyntaxError "syntax due to lexer error"
-    PT p _ : _ -> throwE $ SyntaxError $ "syntax error before " ++
-                          unwords (map (id . prToken) (take 4 ts))
+    [Err p] -> throwE $ posError p (SyntaxError "syntax error")
+    -- TODO: could show token here
+    PT p _ : _ -> throwE $ posError p (SyntaxError "syntax error")
 
 myLexer = tokens
 }

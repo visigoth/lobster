@@ -8,7 +8,18 @@
 module Lobster.Error where
 
 import Control.Error
+import Data.Maybe
 import Text.Printf
+
+import Lobster.AST as A
+
+-- | Location of an error in a source file.
+data ErrorLoc = ErrorLoc String Integer Integer
+  deriving (Eq, Ord, Show)
+
+-- | Special value for an unknown error location.
+unknownLoc :: ErrorLoc
+unknownLoc = ErrorLoc "unknown" (-1) (-1)
 
 -- | Errors thrown by functions in this module.
 data Error
@@ -27,6 +38,7 @@ data Error
   | DuplicateBinding String
   | BadArgument String          -- domain or port passed as arg
   | MiscError String
+  | LocError ErrorLoc Error     -- nested error with source location
   deriving Show
 
 -- | A pure computation that can fail with an error.
@@ -35,9 +47,13 @@ type Err a = Either Error a
 -- | A monadic computation that can fail with an error.
 type ErrT m a = EitherT Error m a
 
--- | Return a pretty error message for an Error object.
-errorMessage :: Error -> [String]
-errorMessage err =
+-- | Return a single string error message.
+errorMessage :: Error -> String
+errorMessage err = concatMap (++ "\n") (errorMessages err)
+
+-- | Return a list of error messages for an Error object.
+errorMessages :: Error -> [String]
+errorMessages err =
   case err of
     SyntaxError s ->
       ["syntax error"]
@@ -69,4 +85,29 @@ errorMessage err =
       [printf "cannot pass value of type '%s' as domain argument" s]
     MiscError s ->
       [s]
+    LocError (ErrorLoc _ line col) err ->
+      [printf "line %d, column %d:" line col] ++ errorMessages err
 
+errorLocFromAnnotation :: A.AnnotationElement -> Maybe ErrorLoc
+errorLocFromAnnotation ann =
+  case ann of
+    (A.UIdent "SourcePos",
+      [ A.StringExpression filename
+      , A.IntExpression line
+      , A.IntExpression column
+      ]) -> Just (ErrorLoc filename line column)
+    _ -> Nothing
+
+-- | Tag an error with a location if it isn't already.  This will get
+-- more complex if we add other nested error types.
+mkLocError :: ErrorLoc -> Error -> Error
+mkLocError _ err@(LocError _ _) = err
+mkLocError loc err = LocError loc err
+
+-- Note that for now we are taking the first source position and
+-- discarding the rest.
+annotateErrorLoc :: Annotation -> Error -> Err a
+annotateErrorLoc (Annotation ann) err =
+  case mapMaybe errorLocFromAnnotation ann of
+    (loc:_) -> throwE (mkLocError loc err)
+    []      -> throwE err

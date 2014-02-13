@@ -58,7 +58,7 @@ module Lobster.Policy
 
 where
 
-import Control.Error (catchE, throwE, hoistEither)
+import Control.Error (handleE, throwE, hoistEither)
 import Control.Monad (foldM)
 import Control.Monad.Trans (liftIO)
 import Control.DeepSeq
@@ -918,6 +918,7 @@ interpretStatement :: ContextSignature a
                    -> Statement
                    -> Err (Environment,Domain)
 interpretStatement sig env obj ann1 statement =
+  handleE (annotateErrorLoc ann1) $
     case statement of
       Assert connA connB flowPred -> do
         a <- fromConnRE sig env obj connA

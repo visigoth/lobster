@@ -51,7 +51,7 @@ conf = AP.defConfig
 
 handleError :: String -> Error -> IO ()
 handleError filename err = do
-  forM_ (errorMessage err) $ \s ->
+  forM_ (errorMessages err) $ \s ->
     hPutStrLn stderr $ filename ++ ": " ++ s
   exitFailure
 

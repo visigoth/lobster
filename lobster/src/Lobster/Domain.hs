@@ -60,7 +60,7 @@ module Lobster.Domain
   , checkAssertions_
   ) where
 
-import Control.Error (throwE)
+import Control.Error (handleE, throwE)
 import Control.Monad(liftM,foldM)
 import Control.DeepSeq
 
@@ -572,7 +572,9 @@ foldMConnections ::
 foldMConnections f =
     \x obj -> foldM f' x (Map.toList (connections obj))
     where
-      f' z ((p,q),c) = f p c q z
+      f' z ((p,q),c) =
+        handleE (annotateErrorLoc (ciAnnotation c)) $
+          f p c q z
 
 appConnections ::
     (DomainPort -> ConnInfo -> DomainPort -> Err ()) -> Domain a b -> Err ()

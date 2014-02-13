@@ -4,11 +4,11 @@ module V3SPAObject where
 import Data.Aeson.Types
 import Lobster.JSON()
 import qualified Lobster.Policy as P
-import Lobster.Lexer (Posn(..))
+import Lobster.Error (ErrorLoc(..))
 
 data V3SPAObject
   = V3SPAObject
-    { errors       :: [(Posn, String)]
+    { errors       :: [(ErrorLoc, String)]
     , checkResults :: [Either String String]
     , domain       :: Maybe P.Domain
     }
@@ -29,12 +29,15 @@ instance ToJSON V3SPAObject where
                     Just dom -> [ "domain"      .= toJSON dom ]
                     Nothing -> []
 
-toJSONMessages :: [(Posn, String)] -> Value
+toJSONMessages :: [(ErrorLoc, String)] -> Value
 toJSONMessages = toJSON . map toJSONMessage
-  where toJSONMessage (Pn _ l c, m) = object [ "message" .= toJSON m
-                                             , "line"    .= toJSON l
-                                             , "column"  .= toJSON c
-                                             ]
+  where
+    toJSONMessage (ErrorLoc file l c, m) =
+      object [ "filename" .= toJSON file
+             , "message"  .= toJSON m
+             , "line"     .= toJSON l
+             , "column"   .= toJSON c
+             ]
 
 toJSONMessages' :: [Either String String] -> Value
 toJSONMessages' = toJSON . map toJSONMessage

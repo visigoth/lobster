@@ -41,11 +41,11 @@ sendVO vo = do
   writeLBS "\r\n"
 
 sendError :: Error -> Snap ()
-sendError err = sendVO $ emptyVO { errors = buildErrors err }
+sendError err = sendVO $ emptyVO { errors = [buildError err] }
 
-buildErrors err = map go (errorMessage err)
-  where
-    go s = (alexNoPos, s)   -- FIXME: add position
+buildError :: Error -> (ErrorLoc, String)
+buildError (LocError loc err) = (loc, errorMessage err)
+buildError err = (unknownLoc, errorMessage err)
 
 handleParse :: Snap ()
 handleParse = method POST $ do
