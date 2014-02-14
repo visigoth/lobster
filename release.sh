@@ -12,6 +12,7 @@ set -e
 PROGS="lobster-json m4-lobster v3spa-server"
 
 IPTABLES_EXAMPLES="ftp.iptables example.iptables"
+SELINUX_EXAMPLES="test.json"
 
 d=`date +"%Y%m%d"`
 dir="lobster-tools-$d"
@@ -25,10 +26,17 @@ done
 
 mkdir "$dir/examples"
 mkdir "$dir/examples/iptables"
+mkdir "$dir/examples/selinux"
 
 for f in $IPTABLES_EXAMPLES; do
   cp "iptables-lobster/$f" "$dir/examples/iptables"
 done
+
+for f in $SELINUX_EXAMPLES; do
+  cp "v3spa-server/$f" "$dir/examples/selinux"
+done
+
+cp -a "v3spa-server/data/refpolicy" "$dir"
 
 zip -r "$dir.zip" "$dir"
 rm -rf "$dir"

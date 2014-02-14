@@ -1,7 +1,7 @@
 {-# OPTIONS -Wall #-}
 module M4ToLobster where
 
-import Control.Error (EitherT, eitherT, fmapLT, tryIO)
+import Control.Error
 import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Char
@@ -334,9 +334,14 @@ runIO f = fmapLT (Error . show) (tryIO f)
 --
 -- TODO: Return multiple errors if we can find them.
 -- TODO: Redefine "main" in terms of this.
-toLobster :: FilePath -> Options -> EitherT Error IO [L.Decl]
-toLobster iDir opts = do
+dirToLobster :: FilePath -> Options -> EitherT Error IO [L.Decl]
+dirToLobster iDir opts = do
   policy0 <- runIO $ readPolicy (ifdefDeclFile opts) iDir
+  hoistEither $ toLobster policy0
+
+-- | Convert a policy to Lobster.
+toLobster :: Policy -> Either Error [L.Decl]
+toLobster policy0 = do
   let patternMacros =
         Map.fromList
           [ (i, reverse stmts) | SupportDef i stmts <- supportDefs policy0 ]

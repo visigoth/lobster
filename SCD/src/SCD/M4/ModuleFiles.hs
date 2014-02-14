@@ -6,8 +6,15 @@ Copyright   : (c) Galois, Inc.
 SELinux policy module parsing and aggregation
 -}
 
-module SCD.M4.ModuleFiles(allDescendantFiles, readPolicyModule,
-  readAllPolicyModules, readPolicy) where
+module SCD.M4.ModuleFiles
+  ( ModuleSource(..)
+  , allDescendantFiles
+  , readPolicyModule
+  , readPolicyModuleSource
+  , readAllPolicyModules
+  , readPolicy
+  , addPolicyModule
+  ) where
 
 import SCD.M4.Syntax(PolicyModule(..), LayerModule, Policy(..),
   SupportDefs, ClassPermissionDefs, GlobalBooleans, 
@@ -81,6 +88,35 @@ readPolicyModule p = do
                      , fileContexts = f
                      , baseName = takeBaseName p'
                      }
+
+-- | In-memory source files for an SELinux policy module.
+data ModuleSource = ModuleSource
+  { moduleSourceName           :: String
+  , moduleSourceInterface      :: String
+  , moduleSourceImplementation :: String
+  , moduleSourceFileContexts   :: String
+  } deriving Show
+
+-- | Parse a policy module from in-memory source.
+--
+-- TODO: Better error reporting here than a string.
+readPolicyModuleSource :: ModuleSource -> Either String PolicyModule
+readPolicyModuleSource src = do
+  let name = moduleSourceName src
+  -- TODO: Is this even close to correct?
+  let lm = (mkId "contrib", mkId name)
+  i <- parseInterface (addExtension name interfaceExtension)
+                      (moduleSourceInterface src)
+  t <- parseImplementation (addExtension name implementationExtension)
+                           (moduleSourceImplementation src)
+  f <- parseFileContexts (addExtension name fileContextExtension)
+                         (moduleSourceFileContexts src)
+  return PolicyModule { layerModule    = lm
+                      , interface      = i
+                      , implementation = t
+                      , fileContexts   = f
+                      , baseName       = moduleSourceName src
+                      }
 
 -- | Extract the layer and the name from the filename prefix of a policy module
 getLayerModule :: String -> LayerModule
@@ -214,3 +250,7 @@ readPolicy mifdeffile pdtop = do
                , ifdefDecls = ifds
                }
 
+-- | Add a module to an existing policy.
+addPolicyModule :: PolicyModule -> Policy -> Policy
+addPolicyModule m p = p{ policyModules = m : ms }
+  where ms = policyModules p

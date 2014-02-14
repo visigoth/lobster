@@ -1,0 +1,9 @@
+{ "refpolicy": "minimal"
+, "modules":
+  [ { "name": "test"
+    , "if":   "## <summary></summary>\n"
+    , "te":   "policy_module(test, 1.0.0)\n"
+    , "fc":   ""
+    }
+  ]
+}

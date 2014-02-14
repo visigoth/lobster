@@ -15,9 +15,13 @@ executable v3spa-server
   other-modules:       V3SPAObject,
                        Version
   build-depends:       base >=4.6 && <4.7,
+                       transformers,
+                       filepath,
+                       errors,
                        snap,
                        lobster,
                        iptables-lobster,
+                       genLobster,
                        scd,
                        text,
                        aeson,

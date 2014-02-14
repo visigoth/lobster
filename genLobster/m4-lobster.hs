@@ -14,7 +14,7 @@ main :: IO ()
 main = do
   args <- getArgs
   (opts, iDir) <- checkOpt_ args
-  lsr <- runErr (toLobster iDir opts)
+  lsr <- runErr (dirToLobster iDir opts)
   putStrLn (showLobster lsr)
 
 ----------------------------------------------------------------------
