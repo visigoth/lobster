@@ -36,13 +36,10 @@ interface(`unconfined_domain_noaudit',`
 
 	kernel_unconfined($1)
 	corenet_unconfined($1)
-	dev_unconfined($1)
 	domain_unconfined($1)
 	domain_dontaudit_read_all_domains_state($1)
 	domain_dontaudit_ptrace_all_domains($1)
 	files_unconfined($1)
-	fs_unconfined($1)
-	selinux_unconfined($1)
 
 	tunable_policy(`allow_execheap',`
 		# Allow making the stack executable via mprotect.
@@ -60,41 +57,6 @@ interface(`unconfined_domain_noaudit',`
 		# execstack implies execmem;
 		allow $1 self:process { execstack execmem };
 #		auditallow $1 self:process execstack;
-	')
-
-	optional_policy(`
-		auth_unconfined($1)
-	')
-
-	optional_policy(`
-		# Communicate via dbusd.
-		dbus_system_bus_unconfined($1)
-	')
-
-	optional_policy(`
-		ipsec_setcontext_default_spd($1)
-		ipsec_match_default_spd($1)
-	')
-
-	optional_policy(`
-		nscd_unconfined($1)
-	')
-
-	optional_policy(`
-		postgresql_unconfined($1)
-	')
-
-	optional_policy(`
-		seutil_create_bin_policy($1)
-		seutil_relabelto_bin_policy($1)
-	')
-
-	optional_policy(`
-		storage_unconfined($1)
-	')
-
-	optional_policy(`
-		xserver_unconfined($1)
 	')
 ')
 

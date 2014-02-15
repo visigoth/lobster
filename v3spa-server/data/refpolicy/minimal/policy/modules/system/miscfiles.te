@@ -14,16 +14,6 @@ type cert_t;
 miscfiles_cert_type(cert_t)
 
 #
-# fonts_t is the type of various font
-# files in /usr
-#
-type fonts_t;
-files_type(fonts_t)
-
-type fonts_cache_t;
-files_type(fonts_cache_t)
-
-#
 # type for /usr/share/hwdata
 #
 type hwdata_t;
@@ -58,9 +48,3 @@ files_type(public_content_rw_t)
 #
 type test_file_t;
 files_type(test_file_t)
-
-#
-# for /var/{spool,lib}/texmf index files
-#
-type tetex_data_t;
-files_tmp_file(tetex_data_t)

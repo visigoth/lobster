@@ -631,7 +631,6 @@ interface(`apache_read_log',`
 		type httpd_log_t;
 	')
 
-	logging_search_logs($1)
 	allow $1 httpd_log_t:dir list_dir_perms;
 	read_files_pattern($1, httpd_log_t, httpd_log_t)
 	read_lnk_files_pattern($1, httpd_log_t, httpd_log_t)
@@ -652,7 +651,6 @@ interface(`apache_append_log',`
 		type httpd_log_t;
 	')
 
-	logging_search_logs($1)
 	allow $1 httpd_log_t:dir list_dir_perms;
 	append_files_pattern($1, httpd_log_t, httpd_log_t)
 ')
@@ -692,7 +690,6 @@ interface(`apache_manage_log',`
 		type httpd_log_t;
 	')
 
-	logging_search_logs($1)
 	manage_dirs_pattern($1, httpd_log_t, httpd_log_t)
 	manage_files_pattern($1, httpd_log_t, httpd_log_t)
 	read_lnk_files_pattern($1, httpd_log_t, httpd_log_t)
@@ -713,7 +710,6 @@ interface(`apache_write_log',`
 		type httpd_log_t;
 	')
 
-	logging_search_logs($1)
 	write_files_pattern($1, httpd_log_t, httpd_log_t)
 ')
 
@@ -789,7 +785,6 @@ interface(`apache_read_module_files',`
 		type httpd_modules_t;
 	')
 
-	libs_search_lib($1)
 	read_files_pattern($1, httpd_modules_t, httpd_modules_t)
 ')
 
@@ -1213,7 +1208,6 @@ interface(`apache_admin',`
 	files_search_etc($1)
 	admin_pattern($1, { httpd_config_t httpd_keytab_t })
 
-	logging_search_logs($1)
 	admin_pattern($1, httpd_log_t)
 
 	admin_pattern($1, httpd_modules_t)

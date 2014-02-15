@@ -74,6 +74,8 @@ attribute cron_job_domain;
 # SELinux identity and role change constraints
 attribute process_uncond_exempt;	# add userhelperdomain to this one
 
+# FIXME: Cross-module reference to "unlabeled_t" from "kernel.te".
+# FIXME: Use an interface in "kernel.if" instead.
 neverallow { domain unlabeled_t } ~{ domain unlabeled_t }:process *;
 neverallow ~{ domain unlabeled_t } *:process *;
 
@@ -96,11 +98,6 @@ kernel_dontaudit_link_key(domain)
 # create child processes in the domain
 allow domain self:process { fork sigchld };
 
-# Use trusted objects in /dev
-dev_rw_null(domain)
-dev_rw_zero(domain)
-term_use_controlling_term(domain)
-
 # list the root directory
 files_list_root(domain)
 
@@ -110,29 +107,6 @@ ifdef(`hide_broken_symptoms',`
 	# listen function is called, so bad calls
 	# to listen on UDP sockets should be silenced
 	dontaudit domain self:udp_socket listen;
-')
-
-tunable_policy(`global_ssp',`
-	# enable reading of urandom for all domains:
-	# this should be enabled when all programs
-	# are compiled with ProPolice/SSP
-	# stack smashing protection.
-	dev_read_urand(domain)
-')
-
-optional_policy(`
-	libs_use_ld_so(domain)
-	libs_use_shared_libs(domain)
-')
-
-optional_policy(`
-	setrans_translate_context(domain)
-')
-
-# xdm passes an open file descriptor to xsession-errors.log which is then audited by all confined domains.
-optional_policy(`
-	xserver_dontaudit_use_xdm_fds(domain)
-	xserver_dontaudit_rw_xdm_pipes(domain)
 ')
 
 ########################################

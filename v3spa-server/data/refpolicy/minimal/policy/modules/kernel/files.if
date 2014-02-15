@@ -635,10 +635,6 @@ interface(`files_read_all_files',`
 
 	allow $1 file_type:dir list_dir_perms;
 	read_files_pattern($1, file_type, file_type)
-
-	optional_policy(`
-		auth_read_shadow($1)
-	')
 ')
 
 ########################################
@@ -1077,9 +1073,6 @@ interface(`files_relabel_all_files',`
 	# device nodes with file types.
 	relabelfrom_blk_files_pattern($1, { file_type $2 }, { file_type $2 })
 	relabelfrom_chr_files_pattern($1, { file_type $2 }, { file_type $2 })
-
-	# satisfy the assertions:
-	seutil_relabelto_bin_policy($1)
 ')
 
 ########################################
@@ -1138,7 +1131,6 @@ interface(`files_manage_all_files',`
 	manage_sock_files_pattern($1, { file_type $2 }, { file_type $2 })
 
 	# satisfy the assertions:
-	seutil_create_bin_policy($1)
 	files_manage_kernel_modules($1)
 ')
 
@@ -1412,7 +1404,6 @@ interface(`files_manage_non_auth_files',`
 	manage_sock_files_pattern($1, non_auth_file_type, non_auth_file_type)
 
 	# satisfy the assertions:
-	seutil_create_bin_policy($1)
 	files_manage_kernel_modules($1)
 ')
 
@@ -1443,9 +1434,6 @@ interface(`files_relabel_non_auth_files',`
 	# device nodes with file types.
 	relabelfrom_blk_files_pattern($1, non_auth_file_type, non_auth_file_type)
 	relabelfrom_chr_files_pattern($1, non_auth_file_type, non_auth_file_type)
-
-	# satisfy the assertions:
-	seutil_relabelto_bin_policy($1)
 ')
 
 #############################################
@@ -6508,9 +6496,6 @@ interface(`files_polyinstantiate_all',`
 		type poly_t;
 	')
 
-	# Need to give access to /selinux/member
-	selinux_compute_member($1)
-
 	# Need sys_admin capability for mounting
 	allow $1 self:capability { chown fsetid sys_admin fowner };
 
@@ -6532,17 +6517,12 @@ interface(`files_polyinstantiate_all',`
 
 	# Default type for mountpoints
 	allow $1 poly_t:dir { create mounton };
-	fs_unmount_xattr_fs($1)
-
-	fs_mount_tmpfs($1)
-	fs_unmount_tmpfs($1)
 
 	ifdef(`distro_redhat',`
 		# namespace.init
 		files_search_tmp($1)
 		files_search_home($1)
 		corecmd_exec_bin($1)
-		seutil_domtrans_setfiles($1)
 	')
 ')
 

@@ -26,13 +26,11 @@ attribute unreserved_port_type;
 attribute corenet_unconfined_type;
 
 type ppp_device_t;
-dev_node(ppp_device_t)
 
 #
 # tun_tap_device_t is the type of /dev/net/tun/* and /dev/net/tap/*
 #
 type tun_tap_device_t;
-dev_node(tun_tap_device_t)
 
 ########################################
 #
@@ -644,9 +642,7 @@ typeattribute http_cache_port_t unreserved_port_type;
 portcon tcp 3128 gen_context(system_u:object_r:http_cache_port_t,s0)
 portcon udp 3130 gen_context(system_u:object_r:http_cache_port_t,s0)
 portcon tcp 8080 gen_context(system_u:object_r:http_cache_port_t,s0)
-portcon tcp 8118 gen_context(system_u:object_r:http_cache_port_t,s0)
 portcon tcp 10001-10010 gen_context(system_u:object_r:http_cache_port_t,s0)
- # 8118 is for privoxy
 
 type i18n_input_port_t, port_type, defined_port_type;
 type i18n_input_client_packet_t, packet_type, client_packet_type;
@@ -1805,16 +1801,6 @@ typeattribute zookeeper_leader_port_t unreserved_port_type;
 portcon tcp 2888 gen_context(system_u:object_r:zookeeper_leader_port_t,s0)
 
 
-type zebra_port_t, port_type, defined_port_type;
-type zebra_client_packet_t, packet_type, client_packet_type;
-type zebra_server_packet_t, packet_type, server_packet_type;
-typeattribute zebra_port_t unreserved_port_type;
-portcon tcp 2600-2604 gen_context(system_u:object_r:zebra_port_t,s0)
-portcon tcp 2606 gen_context(system_u:object_r:zebra_port_t,s0)
-portcon udp 2600-2604 gen_context(system_u:object_r:zebra_port_t,s0)
-portcon udp 2606 gen_context(system_u:object_r:zebra_port_t,s0)
-
-
 type zented_port_t, port_type, defined_port_type;
 type zented_client_packet_t, packet_type, client_packet_type;
 type zented_server_packet_t, packet_type, server_packet_type;
@@ -1872,6 +1858,8 @@ sid netif gen_context(system_u:object_r:netif_t,s0 - mls_systemhigh)
 ifdef(`enable_mls',`
 
 
+# FIXME: Cross-module reference to "unlabeled_t" from "kernel.te".
+# FIXME: Use an interface in "kernel.if" instead.
 gen_require(`type unlabeled_t;')
 type lo_netif_t alias netif_lo_t, netif_type;
 netifcon lo gen_context(system_u:object_r:lo_netif_t,s0 - mls_systemhigh) gen_context(system_u:object_r:unlabeled_t,s0 - mls_systemhigh)

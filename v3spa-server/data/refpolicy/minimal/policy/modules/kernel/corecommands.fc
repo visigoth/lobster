@@ -97,8 +97,6 @@ ifdef(`distro_redhat',`
 
 /etc/profile.d(/.*)?			gen_context(system_u:object_r:bin_t,s0)
 
-/etc/racoon/scripts(/.*)?		gen_context(system_u:object_r:bin_t,s0)
-
 /etc/rc\.d/init\.d/functions	--	gen_context(system_u:object_r:bin_t,s0)
 
 /etc/security/namespace.init	--	gen_context(system_u:object_r:bin_t,s0)

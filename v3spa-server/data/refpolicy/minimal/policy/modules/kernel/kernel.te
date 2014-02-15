@@ -36,18 +36,12 @@ role user_r;
 # here until order dependence is fixed:
 role unconfined_r;
 
-ifdef(`enable_mls',`
-	role secadm_r;
-	role auditadm_r;
-')
-
 #
 # kernel_t is the domain of kernel threads.
 # It is also the target type when checking permissions in the system class.
 #
 type kernel_t, can_load_kernmodule;
 domain_base_type(kernel_t)
-mls_rangetrans_source(kernel_t)
 role system_r types kernel_t;
 sid kernel gen_context(system_u:system_r:kernel_t,mls_systemhigh)
 
@@ -57,7 +51,6 @@ sid kernel gen_context(system_u:system_r:kernel_t,mls_systemhigh)
 
 type debugfs_t;
 files_mountpoint(debugfs_t)
-fs_type(debugfs_t)
 allow debugfs_t self:filesystem associate;
 genfscon debugfs / gen_context(system_u:object_r:debugfs_t,s0)
 
@@ -66,7 +59,6 @@ genfscon debugfs / gen_context(system_u:object_r:debugfs_t,s0)
 #
 
 type kvmfs_t;
-fs_type(kvmfs_t)
 genfscon kvmfs / gen_context(system_u:object_r:kvmfs_t,s0)
 
 #
@@ -75,7 +67,6 @@ genfscon kvmfs / gen_context(system_u:object_r:kvmfs_t,s0)
 
 type proc_t, proc_type;
 files_mountpoint(proc_t)
-fs_type(proc_t)
 genfscon proc / gen_context(system_u:object_r:proc_t,s0)
 genfscon proc /sysvipc gen_context(system_u:object_r:proc_t,s0)
 
@@ -163,7 +154,6 @@ genfscon proc /sys/dev gen_context(system_u:object_r:sysctl_dev_t,s0)
 # have labels that are no longer valid are treated as having this type.
 #
 type unlabeled_t;
-fs_associate(unlabeled_t)
 sid unlabeled gen_context(system_u:object_r:unlabeled_t,mls_systemhigh)
 
 # These initial sids are no longer used, and can be removed:
@@ -245,26 +235,6 @@ corenet_tcp_sendrecv_all_nodes(kernel_t)
 corenet_raw_send_generic_node(kernel_t)
 corenet_send_all_packets(kernel_t)
 
-dev_read_sysfs(kernel_t)
-dev_search_usbfs(kernel_t)
-# devtmpfs handling:
-dev_create_generic_dirs(kernel_t)
-dev_delete_generic_dirs(kernel_t)
-dev_create_generic_blk_files(kernel_t)
-dev_delete_generic_blk_files(kernel_t)
-dev_create_generic_chr_files(kernel_t)
-dev_delete_generic_chr_files(kernel_t)
-dev_mounton(kernel_t)
-
-# Mount root file system. Used when loading a policy
-# from initrd, then mounting the root filesystem
-fs_mount_all_fs(kernel_t)
-fs_unmount_all_fs(kernel_t)
-
-selinux_load_policy(kernel_t)
-
-term_use_console(kernel_t)
-
 corecmd_exec_shell(kernel_t)
 corecmd_list_bin(kernel_t)
 # /proc/sys/kernel/modprobe is set to /bin/true if not using modules.
@@ -277,108 +247,6 @@ files_list_root(kernel_t)
 files_list_etc(kernel_t)
 files_list_home(kernel_t)
 files_read_usr_files(kernel_t)
-
-mcs_process_set_categories(kernel_t)
-
-mls_process_read_up(kernel_t)
-mls_process_write_down(kernel_t)
-mls_file_write_all_levels(kernel_t)
-mls_file_read_all_levels(kernel_t)
-
-ifdef(`distro_redhat',`
-	# Bugzilla 222337
-	fs_rw_tmpfs_chr_files(kernel_t)
-')
-
-optional_policy(`
-	hotplug_search_config(kernel_t)
-')
-
-optional_policy(`
-	init_sigchld(kernel_t)
-')
-
-optional_policy(`
-	libs_use_ld_so(kernel_t)
-	libs_use_shared_libs(kernel_t)
-')
-
-optional_policy(`
-	logging_send_syslog_msg(kernel_t)
-')
-
-optional_policy(`
-	nis_use_ypbind(kernel_t)
-')
-
-optional_policy(`
-	# nfs kernel server needs kernel UDP access. It is less risky and painful
-	# to just give it everything.
-	allow kernel_t self:tcp_socket create_stream_socket_perms;
-	allow kernel_t self:udp_socket create_socket_perms;
-
-	# nfs kernel server needs kernel UDP access. It is less risky and painful
-	# to just give it everything.
-	corenet_udp_sendrecv_generic_if(kernel_t)
-	corenet_udp_sendrecv_generic_node(kernel_t)
-	corenet_udp_sendrecv_all_ports(kernel_t)
-	corenet_udp_bind_generic_node(kernel_t)
-	corenet_sendrecv_portmap_client_packets(kernel_t)
-	corenet_sendrecv_generic_server_packets(kernel_t)
-
-	fs_getattr_xattr_fs(kernel_t)
-
-	auth_dontaudit_getattr_shadow(kernel_t)
-
-	sysnet_read_config(kernel_t)
-
-	rpc_manage_nfs_ro_content(kernel_t)
-	rpc_manage_nfs_rw_content(kernel_t)
-	rpc_tcp_rw_nfs_sockets(kernel_t)
-	rpc_udp_rw_nfs_sockets(kernel_t)
-
-	tunable_policy(`nfs_export_all_ro',`
-		fs_getattr_noxattr_fs(kernel_t)
-		fs_list_noxattr_fs(kernel_t)
-		fs_read_noxattr_fs_files(kernel_t)
-		fs_read_noxattr_fs_symlinks(kernel_t)
-
-		files_list_non_auth_dirs(kernel_t)
-		files_read_non_auth_files(kernel_t)
-		files_read_non_auth_symlinks(kernel_t)
-	')
-
-	tunable_policy(`nfs_export_all_rw',`
-		fs_getattr_noxattr_fs(kernel_t)
-		fs_list_noxattr_fs(kernel_t)
-		fs_read_noxattr_fs_files(kernel_t)
-		fs_read_noxattr_fs_symlinks(kernel_t)
-
-		files_manage_non_auth_files(kernel_t)
-	')
-')
-
-optional_policy(`
-	seutil_read_config(kernel_t)
-	seutil_read_bin_policy(kernel_t)
-')
-
-optional_policy(`
-	unconfined_domain_noaudit(kernel_t)
-')
-
-########################################
-#
-# Unlabeled process local policy
-#
-
-optional_policy(`
-	# If you load a new policy that removes active domains, processes can
-	# get stuck if you do not allow unlabeled processes to signal init.
-	# If you load an incompatible policy, you should probably reboot,
-	# since you may have compromised system security.
-	init_sigchld(unlabeled_t)
-')
 
 ########################################
 #
