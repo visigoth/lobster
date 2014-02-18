@@ -689,13 +689,10 @@ liftConnectionPortTypeDomain unify connectable pp p1 conn p2 obj =
                   prettyPrintPortType pp t1 ++ "' and '" ++
                   prettyPrintPortType pp t2 ++ "' for connection type '" ++
                   prettyPrintConnection (ciConnection conn) ++ "'")
-      (True,True) -> throwE $ BadConnection (prettyPrintDomainPort obj p1)
-                                            (prettyPrintDomainPort obj p2)
-                                            "invalid internal connection"
       (True,False) ->
           let conn' = reverseConnInfo conn in
           liftConnectionPortTypeDomain unify connectable pp p2 conn' p1 obj
-      (False,True) ->
+      (_, True) ->
           do t1 <- getPortType obj p1
              t2 <- getPortType obj p2
              let t = unifyPortType unify t1 t2
