@@ -37,6 +37,7 @@ module SCD.Lobster.Gen.CoreSyn
        , dirPort
 
        , domPort
+       , extPort
        , left
        , right
        , neutral
@@ -134,6 +135,9 @@ newDomain binder ctor args = Domain binder ctor args
 
 domPort :: Name -> Name -> DomPort
 domPort a b = DomPort { portDomain = Just a, portLabel = b }
+
+extPort :: Name -> DomPort
+extPort b = DomPort { portDomain = Nothing, portLabel = b }
 
 left :: DomPort -> DomPort -> Decl
 left = connect L
