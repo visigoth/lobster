@@ -128,7 +128,7 @@ data PortConstraint
 
 data ConnectAnnotation = ConnectAnnotation Name [AnnotationElement]
 
-data AnnotationElement = AnnotationInt Int | AnnotationString String
+data AnnotationElement = AnnotationInt Int | AnnotationString String | AnnotationVar Name
 
 newDomain :: Name -> Name -> [Param] -> Decl
 newDomain binder ctor args = Domain binder ctor args

@@ -103,3 +103,4 @@ ppAnnotation (ConnectAnnotation n es) =
 ppElement :: AnnotationElement -> Doc
 ppElement (AnnotationInt x) = text (show x)
 ppElement (AnnotationString s) = text (show s)
+ppElement (AnnotationVar n) = text (show n)
