@@ -58,6 +58,7 @@ data St = St
   , attrib_members   :: !(Map S.TypeId (Set S.AttributeId))
   , allow_rules      :: !(Map AllowRule (Set P.Pos))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
+  , domtrans_macros  :: !(Set (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId))
   }
 
 processClassId :: S.ClassId
@@ -74,6 +75,7 @@ initSt = St
   --, attrib_members = Set.empty
   , allow_rules      = Map.empty
   , type_transitions = Set.empty
+  , domtrans_macros  = Set.empty
   }
 
 type M a = ReaderT [P.Pos] (State St) a
@@ -104,7 +106,7 @@ addAllow subject object cls perms = do
   modify (f (Set.fromList (take 1 (reverse ps))))
   where
     rules = [ AllowRule subject object cls perm | perm <- Set.toList perms ]
-    f ps st = St
+    f ps st = st
       { object_classes =
           insertMapSet subject processClassId $
           insertMapSet object cls $
@@ -118,7 +120,7 @@ addAllow subject object cls perms = do
 addAttribs :: S.TypeId -> [S.AttributeId] -> M ()
 addAttribs typeId attrIds = modify f
   where
-    f st = St
+    f st = st
       { object_classes = object_classes st
       , class_perms = class_perms st
       , attrib_members =
@@ -131,7 +133,7 @@ addAttribs typeId attrIds = modify f
 addTypeTransition :: S.TypeId -> S.TypeId -> S.ClassId -> S.TypeId -> M ()
 addTypeTransition subj rel cls new = modify f
   where
-    f st = St
+    f st = st
       { object_classes =
           insertMapSet (S.fromId (S.toId subj)) processClassId $
           insertMapSet (S.fromId (S.toId new)) cls $
@@ -140,6 +142,24 @@ addTypeTransition subj rel cls new = modify f
       , attrib_members = attrib_members st
       , allow_rules = allow_rules st
       , type_transitions = Set.insert (subj, rel, cls, new) (type_transitions st)
+      }
+
+addDomtransMacro :: S.TypeOrAttributeId -> S.TypeOrAttributeId -> S.TypeOrAttributeId -> M ()
+addDomtransMacro d1 d2 d3 = modify f
+  where
+    f st = st
+      { object_classes =
+          insertMapSet d1 processClassId $
+          insertMapSet d1 (S.mkId "fd") $
+          insertMapSet d1 (S.mkId "fifo_file") $
+          insertMapSet d2 (S.mkId "file") $
+          insertMapSet d3 processClassId $
+          object_classes st
+      , class_perms =
+          insertMapSet (S.mkId "file") (S.mkId "x_file_perms") $
+          class_perms st
+      , attrib_members = attrib_members st
+      , domtrans_macros = Set.insert (d1, d2, d3) (domtrans_macros st)
       }
 
 isDefined :: M4.IfdefId -> Bool
@@ -174,6 +194,13 @@ processStmt stmt =
         , let perms = Set.fromList $ toList dl
         ]
     StmtPosition stmt1 pos -> local (pos :) $ processStmt stmt1
+    Call m4id [al, bl, cl] | m4id == S.mkId "domtrans_pattern" ->
+      sequence_ $
+        [ addDomtransMacro a b c
+        | a <- map (S.fromId . S.toId) $ filterSignedId $ toList al
+        , b <- map (S.fromId . S.toId) $ filterSignedId $ toList bl
+        , c <- map (S.fromId . S.toId) $ filterSignedId $ toList cl
+        ]
     _ -> return ()
 
 processImplementation :: M4.Implementation -> M ()
@@ -281,9 +308,47 @@ outputTypeTransition (subj, rel, cls, new) =
     transitionPort :: L.Name
     transitionPort = L.Name "type_transition"
 
+outputDomtransMacro ::
+  Int -> (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId) -> [L.Decl]
+outputDomtransMacro n (d1, d2, d3) =
+  [ L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString d2))]
+  , L.neutral
+      (L.domPort (toId d1 "process") (L.Name "active"))
+      (L.domPort d (L.Name "d1_active"))
+  , L.neutral
+      (L.domPort (toId d1 "fd") (L.Name "use"))
+      (L.domPort d (L.Name "d1_fd_use"))
+  , L.neutral
+      (L.domPort (toId d1 "fifo_file") (L.Name "rw_fifo_file_perms"))
+      (L.domPort d (L.Name "d1_fifo"))
+  , L.neutral
+      (L.domPort (toId d1 "process") (L.Name "sigchld"))
+      (L.domPort d (L.Name "d1_sigchld"))
+  , L.neutral
+      (L.domPort (toId d2 "file") (L.Name "x_file_perms"))
+      (L.domPort d (L.Name "d2"))
+  , L.neutral
+      (L.domPort (toId d3 "process") (L.Name "active"))
+      (L.domPort d (L.Name "d3_active"))
+  , L.neutral
+      (L.domPort (toId d3 "process") (L.Name "transition"))
+      (L.domPort d (L.Name "d3_transition"))
+  , L.neutral
+      (L.domPort (toId d3 "process") (L.Name "type_transition"))
+      (L.domPort d (L.Name "d3_type_transition"))
+  ]
+  where
+    toId :: S.TypeOrAttributeId -> String -> L.Name
+    toId typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ classId))
+
+    d :: L.Name
+    d = L.Name ("domtrans" ++ show n)
+
 outputLobster :: M4.Policy -> St -> [L.Decl]
 outputLobster policy st =
+  domtransDecl :
   classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls ++ transitionDecls
+    ++ domtransDecls
   where
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
@@ -309,6 +374,40 @@ outputLobster policy st =
 
     transitionDecls :: [L.Decl]
     transitionDecls = map outputTypeTransition (Set.toList (type_transitions st))
+
+    domtransDecls :: [L.Decl]
+    domtransDecls = concat $ zipWith outputDomtransMacro [1..] (Set.toList (domtrans_macros st))
+
+    domtransDecl :: L.Decl
+    domtransDecl =
+      L.Class (L.Name "Domtrans_pattern") [d2_name]
+        [ L.newPort d1_active
+        , L.newPort d1_fd_use
+        , L.newPort d1_fifo
+        , L.newPort d1_sig
+        , L.newPort d2
+        , L.newPort d3_active
+        , L.newPort d3_trans
+        , L.newPort d3_tt
+        , L.neutral (L.extPort d1_active) (L.extPort d2)
+        , L.neutral (L.extPort d1_active) (L.extPort d3_trans)
+        , L.connect' L.N (L.extPort d1_active) (L.extPort d3_tt)
+            [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationVar d2_name]]
+
+        , L.neutral (L.extPort d3_active) (L.extPort d1_fd_use)
+        , L.neutral (L.extPort d3_active) (L.extPort d1_fifo)
+        , L.neutral (L.extPort d3_active) (L.extPort d1_sig)
+        ]
+      where
+        d1_active = L.Name "d1_active"
+        d1_fd_use = L.Name "d1_fd_use"
+        d1_fifo   = L.Name "d1_fifo"
+        d1_sig    = L.Name "d1_sigchld"
+        d2        = L.Name "d2"
+        d3_active = L.Name "d3_active"
+        d3_trans  = L.Name "d3_transition"
+        d3_tt     = L.Name "d3_type_transition"
+        d2_name   = L.Name "d2_name"
 
 ----------------------------------------------------------------------
 
@@ -351,6 +450,8 @@ dirToLobster iDir opts = do
 toLobster :: Policy -> Either Error [L.Decl]
 toLobster policy0 = do
   let patternMacros =
+        -- We handle domtrans_pattern macro as a special case, for now
+        Map.delete (S.mkId "domtrans_pattern") $
         Map.fromList
           [ (i, reverse stmts) | SupportDef i stmts <- supportDefs policy0 ]
         -- ^ Policy pattern macros are parsed with statements in reverse order
