@@ -207,6 +207,7 @@ readIfdefDecls mifdeffile =
                   return [ known "enable_mls"
                          , known "enable_mcs"
                          , known "distro_rhel4"
+                         , known "distro_rhel5"
                          , known "distro_redhat"
                          , known "distro_debian"
                          , known "distro_gentoo"
