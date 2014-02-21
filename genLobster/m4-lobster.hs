@@ -8,7 +8,7 @@ import System.Exit
 
 import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 
-import M4ToLobster
+import M4ToLobster2
 
 main :: IO ()
 main = do
