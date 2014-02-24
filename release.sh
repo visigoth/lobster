@@ -14,10 +14,14 @@ PROGS="lobster-json m4-lobster v3spa-server"
 IPTABLES_EXAMPLES="ftp.iptables example.iptables"
 SELINUX_EXAMPLES="test.json"
 
-d=`date +"%Y%m%d"`
-dir="lobster-tools-$d"
+if [ -z "$1" ]; then
+  d=`date +"%Y%m%d"`
+  dir="lobster-tools-$d"
+else
+  dir="$1"
+fi
 
-echo "Preparing release in $d ..."
+echo "Preparing release in $dir ..."
 mkdir "$dir"
 
 for f in $PROGS; do
