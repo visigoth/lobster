@@ -23,13 +23,14 @@ Library {
     process >= 1,
     regex-compat >= 0.71.0.1,
     regex-posix >= 0.71,
-    scd >= 0.1
+    scd >= 0.1,
+    errors
 
   Exposed-modules:
 -- Lobster abstract syntax, parsing, and compilation into native policy
     Lobster.SELinux.SELinux
 -- Testing
-    Lobster.SELinux.Test.SELinux
+--    Lobster.SELinux.Test.SELinux
 
 -- This is a sledgehammer: not all modules use CPP, but this appears to be
 -- necessary to get any module CPP:ed before shipping it to haddock.
@@ -45,9 +46,9 @@ Executable lobster-selinux {
   ghc-options: -idist/build
 }
 
-Executable lobster-selinux-test {
-  extensions: CPP
-  hs-source-dirs: src
-  Main-is: Lobster/SELinux/Test/Main.hs
-  ghc-options: -idist/build
-}
+--Executable lobster-selinux-test {
+--  extensions: CPP
+--  hs-source-dirs: src
+--  Main-is: Lobster/SELinux/Test/Main.hs
+--  ghc-options: -idist/build
+--}

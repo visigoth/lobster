@@ -22,6 +22,7 @@ module Lobster.SELinux.SELinux
 
 where
 
+import Control.Error (throwE)
 import qualified Data.Char as Char
 import Data.NonEmptyList(singleton)
 import qualified SCD.SELinux.Syntax as SS
@@ -31,7 +32,7 @@ import Text.PrettyPrint.HughesPJ(render, text)
 import qualified Text.PrettyPrint.Pp as Pp
 import Text.Regex.Posix((=~))
 
-import Lobster.Monad
+import Lobster.Error
 import qualified Lobster.AST as AST
 import Lobster.AST (
   Connection(..),
@@ -58,11 +59,11 @@ fileContextClass = Policy.mkContextClass Syntax.fileClass
 typeContextClass :: ContextClass
 typeContextClass = Policy.mkContextClass Syntax.typeClass
 
-toSELinuxContextClass :: ContextClass -> P String
+toSELinuxContextClass :: ContextClass -> Err String
 toSELinuxContextClass (ccl @ (ContextClass ctxt cl)) =
     if Policy.nullContext ctxt
       then return (map Char.toLower (Syntax.idString cl))
-      else throwError $ "bad primitive class " ++ show ccl ++ "\n" ++
+      else throwE $ MiscError $ "bad primitive class " ++ show ccl ++ "\n" ++
                         "primitive classes must be declared at the top level"
 
 --------------------------------------------------------------------------------
@@ -76,7 +77,7 @@ data SELinux =
       }
   deriving (Eq, Show)
 
-toSELinux :: String -> Domain -> P SELinux
+toSELinux :: String -> Domain -> Err SELinux
 toSELinux pref obj = do
        te <- Policy.foldMSubDomain addTypeDeclaration [] obj
        te' <- Policy.foldMConnectionsDomain addTypeEnforcement te obj
@@ -92,24 +93,24 @@ toSELinux pref obj = do
     where
       domainToType o = Policy.nameDomain o ++ "_t"
 
-      domainToClass :: Domain -> P String
+      domainToClass :: Domain -> Err String
       domainToClass o =
           let (ccl,_) = Policy.provenanceDomain o in
           toSELinuxContextClass ccl
 
-      portToSubDomain :: DomainPort -> P Domain
+      portToSubDomain :: DomainPort -> Err Domain
       portToSubDomain p = case Domain.domainDomainPort p of
                             Just i  -> Policy.getSubDomain obj i
-                            Nothing -> throwError "connection to System port"
+                            Nothing -> throwE $ MiscError "connection to System port"
 
       portToType p = domainToType `fmap` portToSubDomain p
 
-      portToClass :: DomainPort -> P String
+      portToClass :: DomainPort -> Err String
       portToClass p = domainToClass =<< portToSubDomain p
 
       portToPermission p = Syntax.idString (Domain.portDomainPort p)
 
-      addTypeDeclaration :: DomainId -> Domain -> M4.Stmts -> P M4.Stmts
+      addTypeDeclaration :: DomainId -> Domain -> M4.Stmts -> Err M4.Stmts
       addTypeDeclaration _ o tes =
           let (ccl,vs) = Policy.provenanceDomain o in
           if ccl == typeContextClass
@@ -118,14 +119,14 @@ toSELinux pref obj = do
                    return (M4.Require
                              (singleton (M4.RequireType
                                            (singleton (SS.mkId t)))) : tes )
-                 _ -> throwError $ "Bad arguments to "++
+                 _ -> throwE $ MiscError $ "Bad arguments to "++
                                    Syntax.idString Syntax.typeClass++
                                    ": "++show vs
           else return (M4.Type (SS.mkId (domainToType o)) [] [] : tes)
 
       addTypeEnforcement ::
-          DomainPort -> Connection -> DomainPort -> M4.Stmts -> P M4.Stmts
-      addTypeEnforcement p1 _ p2 tes =
+          DomainPort -> Connection -> AST.Annotation -> DomainPort -> M4.Stmts -> Err M4.Stmts
+      addTypeEnforcement p1 _ _ p2 tes =
           do pt1 <- Policy.getPortTypeDomain obj p1
              pt2 <- Policy.getPortTypeDomain obj p2
              let pos1 = case Policy.positionPortType pt2 of
@@ -134,7 +135,7 @@ toSELinux pref obj = do
              case pos1 of
                Just SubjectPosition -> addTE p1 p2 tes
                Just ObjectPosition -> addTE p2 p1 tes
-               Nothing -> throwError
+               Nothing -> throwE $ MiscError
                             ("couldn't establish subject/object " ++
                              "relationship:\n  " ++
                              Policy.prettyPrintDomainPort obj p1 ++ " : " ++
@@ -142,7 +143,7 @@ toSELinux pref obj = do
                              Policy.prettyPrintDomainPort obj p2 ++ " : " ++
                              Policy.prettyPrintPortType pt2)
 
-      addTE :: DomainPort -> DomainPort -> M4.Stmts -> P M4.Stmts
+      addTE :: DomainPort -> DomainPort -> M4.Stmts -> Err M4.Stmts
       addTE ps po tes =
           do ns <- portToType ps
              no <- portToType po
@@ -166,7 +167,7 @@ toSELinux pref obj = do
                             me = reverse (drop 3 (reverse no))
                         return (mkTypeTransitionRule s (me++ti) (me++ni) p :
                                 mkRoleRule defaultRole (me++ni) : tes)
-                      _ -> throwError $
+                      _ -> throwE $ MiscError $
                              "Bad arguments to "++
                              Syntax.idString typeTransitionClass++
                              ": "++show vs
@@ -185,7 +186,7 @@ toSELinux pref obj = do
                            (Just (M4.GenContext fc_user fc_role
                                      (SS.mkId (domainToType o))
                                      fc_mlsRange)) : fc
-              _ -> throwError "bad File arguments"
+              _ -> throwE $ MiscError "bad File arguments"
           else return fc
 
 
@@ -261,9 +262,9 @@ typeClassPermissionSeparator = "__"
 
 flattenDomain :: Domain -> Domain
 flattenDomain domain =
-    case runP (Policy.flattenDomain domain) of
+    case Policy.flattenDomain domain of
       Left err ->
-          error ("ERROR: couldn't flatten the Lobster policy file:\n" ++ err)
+          error ("ERROR: couldn't flatten the Lobster policy file:\n" ++ show err)
       Right domain' -> domain'
 
 compileDomain :: String -> Domain -> SELinux
@@ -273,8 +274,8 @@ compileDomain output domain =
 
 domainToSELinux :: String -> Domain -> SELinux
 domainToSELinux moduleName domain =
-    case runP (toSELinux moduleName domain) of
+    case toSELinux moduleName domain of
       Left err ->
           error ("ERROR: couldn't generate native SELinux from the " ++
-                 "Lobster policy file:\n" ++ err)
+                 "Lobster policy file:\n" ++ show err)
       Right selinux -> selinux
