@@ -16,6 +16,7 @@ import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.MapSet as MapSet
 
 import SCD.M4.ModuleFiles
 import SCD.M4.PrettyPrint ()
@@ -213,6 +214,39 @@ processPolicy :: M4.Policy -> M ()
 processPolicy policy = mapM_ processPolicyModule (M4.policyModules policy)
 
 ----------------------------------------------------------------------
+-- Sub-attributes
+
+-- TODO: read these in from a file
+subattributes :: [(S.AttributeId, S.AttributeId)]
+subattributes = [ (S.mkId a, S.mkId b) | (a, b) <- attrs ]
+  where
+    attrs =
+      [ ("client_packet_type", "packet_type")
+      , ("server_packet_type", "packet_type")
+      , ("defined_port_type", "port_type")
+      , ("reserved_port_type", "port_type")
+      , ("unreserved_port_type", "port_type")
+      , ("rpc_port_type", "reserved_port_type")
+      ]
+
+-- Checking and removal of redundant edges for sub-attribute membership
+processSubAttributes :: [(S.AttributeId, S.AttributeId)] -> M Bool
+processSubAttributes subs = do
+  st <- get
+  let m0 = attrib_members st
+  -- TODO: use error monad instead of returning Bool.
+  let check (a, b) (m, ok) = (m', ok')
+        where
+          xs = MapSet.lookup a m0
+          ys = MapSet.lookup b m0
+          m' = Map.insert b (Set.difference (MapSet.lookup b m) xs) m
+          ok' = ok && Set.isSubsetOf xs ys
+  let (mf, ok) = foldr check (m0, True) subs
+  put $ st { attrib_members = mf }
+  return ok
+
+
+----------------------------------------------------------------------
 -- Generation of Lobster code
 
 type Port = L.Name
@@ -246,6 +280,12 @@ outputAllowRule (AllowRule subject object cls, (perms, ps)) =
 
 outputAttribute :: S.TypeId -> S.AttributeId -> L.Decl
 outputAttribute ty attr =
+  L.neutral
+    (L.domPort (toPort ty) memberPort)
+    (L.domPort (toPort attr) attributePort)
+
+outputSubAttribute :: S.AttributeId -> S.AttributeId -> L.Decl
+outputSubAttribute ty attr =
   L.neutral
     (L.domPort (toPort ty) memberPort)
     (L.domPort (toPort attr) attributePort)
@@ -290,8 +330,8 @@ outputDomtransMacro n (d1, d2, d3) =
 outputLobster :: St -> [L.Decl]
 outputLobster st =
   domtransDecl :
-  domainDecls ++ connectionDecls ++ attributeDecls ++ transitionDecls
-    ++ domtransDecls
+  domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
+    ++ transitionDecls ++ domtransDecls
   where
     domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> [L.Decl]
     domainDecl (ty, classes) =
@@ -313,6 +353,10 @@ outputLobster st =
     attributeDecls = do
       (attr, tys) <- Map.assocs (attrib_members st)
       [ outputAttribute ty attr | ty <- Set.toList tys ]
+
+    subAttributeDecls :: [L.Decl]
+    subAttributeDecls =
+      [ outputSubAttribute sub sup | (sub, sup) <- subattributes ]
 
     transitionDecls :: [L.Decl]
     transitionDecls = map outputTypeTransition (Set.toList (type_transitions st))
@@ -415,8 +459,11 @@ toLobster policy0 = do
           , "_class_set" `isSuffixOf` S.idString i ]
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
-  let finalSt = execState (runReaderT (processPolicy policy) []) initSt
-  return (outputLobster finalSt)
+  let action = processPolicy policy >> processSubAttributes subattributes
+  let (ok, finalSt) = runState (runReaderT action []) initSt
+  if ok
+    then return (outputLobster finalSt)
+    else Left (Error "subattribute check failed")
 
 lowercase :: String -> String
 lowercase "domain" = "domain_type" -- FIXME: ugly hack
