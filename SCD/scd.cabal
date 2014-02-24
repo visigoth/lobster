@@ -86,6 +86,9 @@ Library
                      SCD.M4.Syntax
                      SCD.M4.Parser
 
+      -- Macro expansion and substitution on M4 terms
+                     SCD.M4.Subst
+
       -- Global configuration options shared by HTML generator and kind checker.
                      SCD.M4.Options
                      SCD.M4.PrettyPrint
