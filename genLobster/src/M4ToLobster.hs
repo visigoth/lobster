@@ -250,6 +250,9 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
 
+toIdentifier :: S.IsIdentifier i => i -> S.ClassId -> L.Name
+toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
+
 outputPos :: P.Pos -> L.ConnectAnnotation
 outputPos (P.Pos fname _ l c) =
   L.ConnectAnnotation (L.Name "SourcePos")
@@ -262,9 +265,6 @@ outputAllowRule (AllowRule subject object cls perm, ps) =
     (L.domPort (toIdentifier object cls) (toPortId perm))
     (map outputPos (Set.toList ps))
   where
-    toIdentifier :: S.TypeOrAttributeId -> S.ClassId -> L.Name
-    toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
-
     activePort :: L.Name
     activePort = L.Name "active"
 
@@ -277,9 +277,6 @@ outputAttribute ty attr cls =
     (L.domPort (toIdentifier ty cls) memberPort)
     (L.domPort (toIdentifier attr cls) attributePort)
   where
-    toIdentifier :: S.TypeOrAttributeId -> S.ClassId -> L.Name
-    toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
-
     memberPort :: L.Name
     memberPort = L.Name "member"
 
@@ -299,9 +296,6 @@ outputTypeTransition (subj, rel, cls, new) =
     (L.domPort (toIdentifier new cls) transitionPort)
     [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
   where
-    toIdentifier :: S.TypeId -> S.ClassId -> L.Name
-    toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
-
     activePort :: L.Name
     activePort = L.Name "active"
 
@@ -352,9 +346,6 @@ outputLobster policy st =
   where
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
-
-    toIdentifier :: S.TypeOrAttributeId -> S.ClassId -> L.Name
-    toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
 
     domainDecls :: [L.Decl]
     domainDecls =
