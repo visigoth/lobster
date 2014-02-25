@@ -289,15 +289,17 @@ outputAllowRule (AllowRule subject object cls, (perms, ps)) =
 
 outputAttribute :: S.TypeId -> S.AttributeId -> L.Decl
 outputAttribute ty attr =
-  L.neutral
+  L.connect' L.N
     (L.domPort (toDom ty) memberPort)
     (L.domPort (toDom attr) attributePort)
+    [L.ConnectAnnotation (L.Name "Attribute") []]
 
 outputSubAttribute :: S.AttributeId -> S.AttributeId -> L.Decl
 outputSubAttribute ty attr =
-  L.neutral
+  L.connect' L.N
     (L.domPort (toDom ty) memberPort)
     (L.domPort (toDom attr) attributePort)
+    [L.ConnectAnnotation (L.Name "SubAttribute") []]
 
 outputTypeTransition :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
 outputTypeTransition (subj, rel, cls, new) =
@@ -310,31 +312,34 @@ outputDomtransMacro ::
   Int -> (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId) -> [L.Decl]
 outputDomtransMacro n (d1, d2, d3) =
   [ L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString d2))]
-  , L.neutral
+  , connect
       (L.domPort (toDom d1) activePort)
       (L.domPort d (L.Name "d1_active"))
-  , L.neutral
+  , connect
       (L.domPort (toDom d1) (L.Name "fd"))
       (L.domPort d (L.Name "d1_fd"))
-  , L.neutral
+  , connect
       (L.domPort (toDom d1) (L.Name "fifo_file"))
       (L.domPort d (L.Name "d1_fifo_file"))
-  , L.neutral
+  , connect
       (L.domPort (toDom d1) (L.Name "process"))
       (L.domPort d (L.Name "d1_process"))
-  , L.neutral
+  , connect
       (L.domPort (toDom d2) (L.Name "file"))
       (L.domPort d (L.Name "d2_file"))
-  , L.neutral
+  , connect
       (L.domPort (toDom d3) activePort)
       (L.domPort d (L.Name "d3_active"))
-  , L.neutral
+  , connect
       (L.domPort (toDom d3) (L.Name "process"))
       (L.domPort d (L.Name "d3_process"))
   ]
   where
     d :: Dom
     d = L.Name ("domtrans" ++ show n)
+
+    connect :: L.DomPort -> L.DomPort -> L.Decl
+    connect x y = L.connect' L.N x y [L.ConnectAnnotation (L.Name "MacroArg") []]
 
 outputLobster :: St -> [L.Decl]
 outputLobster st =
