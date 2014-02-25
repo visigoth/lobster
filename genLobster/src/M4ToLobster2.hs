@@ -254,6 +254,7 @@ processSubAttributes subs = do
 ----------------------------------------------------------------------
 -- Generation of Lobster code
 
+type Dom = L.Name
 type Port = L.Name
 
 activePort :: Port
@@ -264,6 +265,9 @@ memberPort = L.Name "member"
 
 attributePort :: Port
 attributePort = L.Name "attribute"
+
+toDom :: S.IsIdentifier i => i -> Dom
+toDom = L.Name . lowercase . S.idString
 
 toPort :: S.IsIdentifier i => i -> Port
 toPort = L.Name . lowercase . S.idString
@@ -279,27 +283,27 @@ outputPos (P.Pos fname _ l c) =
 outputAllowRule :: (AllowRule, (Set S.PermissionId, Set P.Pos)) -> L.Decl
 outputAllowRule (AllowRule subject object cls, (perms, ps)) =
   L.connect' L.N
-    (L.domPort (toPort subject) activePort)
-    (L.domPort (toPort object) (toPort cls))
+    (L.domPort (toDom subject) activePort)
+    (L.domPort (toDom object) (toPort cls))
     (map outputPerm (Set.toList perms) ++ map outputPos (Set.toList ps))
 
 outputAttribute :: S.TypeId -> S.AttributeId -> L.Decl
 outputAttribute ty attr =
   L.neutral
-    (L.domPort (toPort ty) memberPort)
-    (L.domPort (toPort attr) attributePort)
+    (L.domPort (toDom ty) memberPort)
+    (L.domPort (toDom attr) attributePort)
 
 outputSubAttribute :: S.AttributeId -> S.AttributeId -> L.Decl
 outputSubAttribute ty attr =
   L.neutral
-    (L.domPort (toPort ty) memberPort)
-    (L.domPort (toPort attr) attributePort)
+    (L.domPort (toDom ty) memberPort)
+    (L.domPort (toDom attr) attributePort)
 
 outputTypeTransition :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
 outputTypeTransition (subj, rel, cls, new) =
   L.connect' L.N
-    (L.domPort (toPort subj) activePort)
-    (L.domPort (toPort new) (toPort cls))
+    (L.domPort (toDom subj) activePort)
+    (L.domPort (toDom new) (toPort cls))
     [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
 
 outputDomtransMacro ::
@@ -307,29 +311,29 @@ outputDomtransMacro ::
 outputDomtransMacro n (d1, d2, d3) =
   [ L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString d2))]
   , L.neutral
-      (L.domPort (toPort d1) activePort)
+      (L.domPort (toDom d1) activePort)
       (L.domPort d (L.Name "d1_active"))
   , L.neutral
-      (L.domPort (toPort d1) (L.Name "fd"))
+      (L.domPort (toDom d1) (L.Name "fd"))
       (L.domPort d (L.Name "d1_fd"))
   , L.neutral
-      (L.domPort (toPort d1) (L.Name "fifo_file"))
+      (L.domPort (toDom d1) (L.Name "fifo_file"))
       (L.domPort d (L.Name "d1_fifo_file"))
   , L.neutral
-      (L.domPort (toPort d1) (L.Name "process"))
+      (L.domPort (toDom d1) (L.Name "process"))
       (L.domPort d (L.Name "d1_process"))
   , L.neutral
-      (L.domPort (toPort d2) (L.Name "file"))
+      (L.domPort (toDom d2) (L.Name "file"))
       (L.domPort d (L.Name "d2_file"))
   , L.neutral
-      (L.domPort (toPort d3) activePort)
+      (L.domPort (toDom d3) activePort)
       (L.domPort d (L.Name "d3_active"))
   , L.neutral
-      (L.domPort (toPort d3) (L.Name "process"))
+      (L.domPort (toDom d3) (L.Name "process"))
       (L.domPort d (L.Name "d3_process"))
   ]
   where
-    d :: L.Name
+    d :: Dom
     d = L.Name ("domtrans" ++ show n)
 
 outputLobster :: St -> [L.Decl]
@@ -341,7 +345,7 @@ outputLobster st =
     domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> [L.Decl]
     domainDecl (ty, classes) =
       [ L.Class className [] (header ++ stmts)
-      , L.Domain (toPort ty) className [] ]
+      , L.Domain (toDom ty) className [] ]
         -- TODO: Add support for anonymous domains to lobster language
       where
         className = L.Name ("Type_" ++ S.idString ty)
