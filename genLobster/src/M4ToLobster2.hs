@@ -227,6 +227,11 @@ subattributes = [ (S.mkId a, S.mkId b) | (a, b) <- attrs ]
       , ("reserved_port_type", "port_type")
       , ("unreserved_port_type", "port_type")
       , ("rpc_port_type", "reserved_port_type")
+      , ("non_auth_file_type", "file_type")
+      , ("non_security_file_type", "non_auth_file_type")
+      , ("httpdcontent", "non_security_file_type")
+      , ("lockfile", "non_security_file_type")
+      , ("pidfile", "non_security_file_type")
       ]
 
 -- Checking and removal of redundant edges for sub-attribute membership
