@@ -7,6 +7,7 @@
 
 module Lobster.Dot where
 
+import Data.Monoid
 import Data.Traversable
 import Control.Applicative
 import Control.Error (runEitherT, hoistEither)
@@ -29,6 +30,12 @@ instance Functor Dot.Dot where
 instance Applicative Dot.Dot where
   pure = return
   (<*>) = ap
+
+instance Eq Dot.NodeId where
+  x == y = show x == show y
+
+instance Ord Dot.NodeId where
+  compare x y = compare (show x) (show y)
 --
 
 
@@ -52,12 +59,14 @@ dotConnection :: (PortNodes, Map.Map DomainId PortNodes)
               -> ((DomainPort, DomainPort), ConnInfo) -> Dot.Dot ()
 dotConnection (env, envs) ((dp1, dp2), ci) = do
   let conn = ciConnection ci
+  let ann = ciAnnotation ci
   let idOf dp =
         case domain dp of
           Nothing -> Map.lookup (port dp) env
           Just di -> Map.lookup di envs >>= Map.lookup (port dp)
   case (idOf dp1, idOf dp2) of
-    (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection conn)]
+    (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection conn),
+                                          ("color", colorAnnotation ann)]
     _                  -> fail "invalid DomainPort"
 
 dirConnection :: Connection -> String
@@ -67,6 +76,16 @@ dirConnection conn =
     LeftToRightConnection -> "forward"
     RightToLeftConnection -> "back"
     BidirectionalConnection -> "both"
+
+colorAnnotation :: Annotation -> String
+colorAnnotation (Annotation elts) = go elts
+  where
+    go ((UIdent "Perm", _) : _) = "black"
+    go ((UIdent "Attribute", _) : _) = "red"
+    go ((UIdent "SubAttribute", _) : _) = "blue"
+    go ((UIdent "MacroArg", _) : _) = "green"
+    go (_ : xs) = go xs
+    go [] = "black"
 
 -- | Read domain from .lsr file.
 parseDomainFile :: FilePath -> IO P.Domain
@@ -106,3 +125,44 @@ writePdfOfDomainFile infile outfile = do
   hClose inh -- done with stdin
   ex <- waitForProcess pid
   ex `seq` hClose outh
+
+------------------------------------------------------------
+
+mergeConnection :: Connection -> Connection -> Connection
+mergeConnection NeutralConnection y = y
+mergeConnection x NeutralConnection = x
+mergeConnection x y = if x == y then x else BidirectionalConnection
+
+mergeConnInfo :: ConnInfo -> ConnInfo -> ConnInfo
+mergeConnInfo (ConnInfo c1 a1) (ConnInfo c2 a2) =
+  ConnInfo (mergeConnection c1 c2) (mappend a1 a2)
+
+simpleDotDomain :: Domain a b -> Dot.Dot PortNodes
+simpleDotDomain dom
+  | Map.null (subDomains dom) = do
+      nodeId <- Dot.node [("label", name dom), ("shape", "rectangle")]
+      return (fmap (const nodeId) (ports dom))
+  | otherwise = (fmap snd . Dot.cluster) $ do
+      Dot.attribute ("label", name dom)
+      env <- Map.traverseWithKey dotPortType (ports dom)
+      envs <- traverse simpleDotDomain (subDomains dom)
+      let idOf dp =
+            case domain dp of
+              Nothing -> Map.lookup (port dp) env
+              Just di -> Map.lookup di envs >>= Map.lookup (port dp)
+      let deref (dp1, dp2) =
+            case (idOf dp1, idOf dp2) of
+              (Just i1, Just i2) -> (i1, i2)
+              _                  -> error "invalid DomainPort"
+      let conns' = Map.mapKeysWith mergeConnInfo deref (connections dom)
+      let mkEdge ((i1, i2), c) =
+            Dot.edge i1 i2 [ ("dir", dirConnection (ciConnection c))
+                           , ("color", colorAnnotation (ciAnnotation c)) ]
+      _ <- traverse mkEdge (Map.assocs conns')
+      return env
+
+-- | Read .lsr input file, return .dot code as a string.
+simpleDotDomainFile :: FilePath -> IO String
+simpleDotDomainFile filename = do
+  P.Domain dom <- parseDomainFile filename
+  return $ Dot.showDot (simpleDotDomain dom)
