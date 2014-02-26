@@ -9,9 +9,11 @@ Build-Type:          Simple
 Cabal-Version:       >= 1.10
 
 Library
-  hs-source-dirs:   src
-  exposed-modules:  M4ToLobster, M4ToLobster2
-  ghc-options:      -Wall
+  hs-source-dirs:    src
+  exposed-modules:   M4ToLobster
+                     M4ToLobster2
+                     M4ToLobster.Error
+  ghc-options:       -Wall
   Build-Depends:     base >= 4,
                      pretty >= 1,
                      directory >= 1,

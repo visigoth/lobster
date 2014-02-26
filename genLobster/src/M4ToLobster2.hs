@@ -1,4 +1,4 @@
-{-# OPTIONS -Wall #-}
+{-# OPTIONS -Wall -Werror #-}
 -- | A variation of M4ToLobster where we only generate one Lobster
 -- domain per SELinux security type; the domain includes one port for
 -- each SELinux class used with that type. Permission sets are
@@ -18,7 +18,6 @@ import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.MapSet as MapSet
 
-import SCD.M4.ModuleFiles
 import SCD.M4.PrettyPrint ()
 import SCD.M4.Syntax hiding (avPerms)
 import qualified SCD.M4.Syntax as M4
@@ -30,23 +29,7 @@ import qualified SCD.Lobster.Gen.CoreSyn as L
 
 import SCD.M4.Subst (Macros(..), expandPolicyModule)
 
-data Options = Options
-  { path :: FilePath
-  , isDir :: Bool
-  , ifdefDeclFile :: Maybe FilePath
-  , inferMissing :: Bool
---   , kindErrors :: Bool
-  } deriving Show
-
--- | Default options for reference policy processing
-defaultOptions :: Options
-defaultOptions = Options
-  { path = "Gen_Lobster_Dir"
-  , isDir = True
-  , ifdefDeclFile = Nothing
-  , inferMissing = False
---   , kindErrors = False
-  }
+import M4ToLobster.Error
 
 ----------------------------------------------------------------------
 -- State monad
@@ -411,41 +394,6 @@ outputLobster st =
         d2_name   = L.Name "d2_name"
 
 ----------------------------------------------------------------------
-
--- | Placeholder error type.  This should be split out into
--- a different module and have multiple constructors for each
--- type of error.
-data Error = Error String
-  deriving (Eq, Ord, Show)
-
--- | Handle an error in the I/O monad when running the command line
--- program.
-handleError :: Error -> IO a
-handleError (Error s) = error s
-
--- | Run an "EitherT Error IO a" action, handling errors with
--- "handleError", otherwise returning the "a" in the IO monad.
---
--- This is a convenience wrapper around "runEitherT"
--- for use in the command line tool.
-runErr :: EitherT Error IO a -> IO a
-runErr = eitherT handleError return
-
--- | Run an IO action, catching exceptions and returning them
--- as an "Error".  Use this instead of "liftIO".
-runIO :: IO a -> EitherT Error IO a
-runIO f = fmapLT (Error . show) (tryIO f)
-
--- | Parse a directory containing an SELinux reference policy
--- into Lobster.  If we encounter an error along the way,
--- discard the translation and return the error.
---
--- TODO: Return multiple errors if we can find them.
--- TODO: Redefine "main" in terms of this.
-dirToLobster :: FilePath -> Options -> EitherT Error IO [L.Decl]
-dirToLobster iDir opts = do
-  policy0 <- runIO $ readPolicy (ifdefDeclFile opts) iDir
-  hoistEither $ toLobster policy0
 
 -- | Convert a policy to Lobster.
 toLobster :: Policy -> Either Error [L.Decl]
