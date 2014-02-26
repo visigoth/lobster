@@ -1,6 +1,7 @@
 {-# OPTIONS_GHC -Wall -Werror #-}
 module Main(main) where
 
+import Control.Error (runEitherT)
 import System.IO
 import Text.PrettyPrint.Pp(
   render,
@@ -13,7 +14,7 @@ import Lobster.Common
 main :: IO ()
 main = do
   (options,fns) <- processOptions
-  domain <- parseAndInterpretPolicyFiles_ options fns
+  Right domain <- runEitherT $ parseAndInterpretPolicyFiles_ options fns
   let output = outputFile options
   let selinux = SELinux.compileDomain output domain
   System.IO.writeFile (output ++ ".te")

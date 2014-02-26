@@ -842,6 +842,7 @@ evaluateQualNameExpression sig env obj qn = case qn of
           do let e2 = QualNameExpression $ UnQual n2
              v1 <- evaluateQualNameExpression sig env obj n1
              case v1 of
+               -- case 1: <class>.x --- 'x' must also be a class
                ClassValue c1 ->
                    do (sig',_) <- getContextClassContextSignature sig c1
                       v2 <- evaluateExpression sig' emptyEnvironment obj e2
@@ -851,6 +852,7 @@ evaluateQualNameExpression sig env obj qn = case qn of
                         -- XXX error for these?  punting for now.
                         _ -> throwE $ MiscError $ "bad value in a class context: (" ++
                                           show v1 ++ ") . (" ++ show v2 ++ ")"
+               -- case 2: <domain>.x --- 'x' must also be a domain
                DomainValue o1 ->
                    do env' <- fromSubDomainEnvironment obj o1
                       v2 <- evaluateExpression sig env' obj e2
@@ -860,8 +862,7 @@ evaluateQualNameExpression sig env obj qn = case qn of
                         -- XXX error for these?  punting for now.
                         _ -> throwE $ MiscError $ "bad value in an domain context: (" ++
                                           show v1 ++ ") . (" ++ show v2 ++ ")"
-               _ -> throwE $ MiscError $ "bad context value: (" ++
-                                 show v1 ++ ") . _"
+               _ -> throwE $ TypeMismatch (prettyPrintValue v1) "class or domain"
 
 evaluateNameExpression :: ContextSignature a -> Environment -> Name -> Err Value
 evaluateNameExpression sig env n = case n of
