@@ -38,7 +38,7 @@ data AllowRule = AllowRule
 data St = St
   { object_classes   :: !(Map S.TypeOrAttributeId (Set S.ClassId))
   , class_perms      :: !(Map S.ClassId (Set S.PermissionId))
-  , attrib_members   :: !(Map S.TypeId (Set S.AttributeId))
+  , attrib_members   :: !(Map S.AttributeId (Set S.TypeId))
   , allow_rules      :: !(Map AllowRule (Set P.Pos))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
   , domtrans_macros  :: !(Set (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId))
@@ -79,6 +79,9 @@ fromSelf _ (S.NotSelf x) = x
 insertMapSet :: (Ord k, Ord a) => k -> a -> Map k (Set a) -> Map k (Set a)
 insertMapSet k x = Map.insertWith (flip Set.union) k (Set.singleton x)
 
+addkeyMapSet :: (Ord k, Ord a) => k -> Map k (Set a) -> Map k (Set a)
+addkeyMapSet = Map.alter (maybe (Just Set.empty) Just)
+
 addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
 addAllow subject object cls perms = do
@@ -98,15 +101,16 @@ addAllow subject object cls perms = do
       , type_transitions = type_transitions st
       }
 
-addAttribs :: S.TypeId -> [S.AttributeId] -> M ()
-addAttribs typeId attrIds = modify f
+addAttrib :: S.TypeId -> S.AttributeId -> M ()
+addAttrib ty attr = modify f
   where
     f st = st
-      { object_classes = object_classes st
-      , attrib_members =
-          Map.insertWith (flip Set.union) typeId (Set.fromList attrIds) $
-          attrib_members st
+      { object_classes = addkeyMapSet (S.fromId (S.toId attr)) (object_classes st)
+      , attrib_members = insertMapSet attr ty (attrib_members st)
       }
+
+addAttribs :: S.TypeId -> [S.AttributeId] -> M ()
+addAttribs ty attrs = mapM_ (addAttrib ty) attrs
 
 addTypeTransition :: S.TypeId -> S.TypeId -> S.ClassId -> S.TypeId -> M ()
 addTypeTransition subj rel cls new = modify f
@@ -333,8 +337,8 @@ outputLobster policy st =
 
     attributeDecls :: [L.Decl]
     attributeDecls = do
-      (ty, attrs) <- Map.assocs (attrib_members st)
-      attr <- Set.toList attrs
+      (attr, tys) <- Map.assocs (attrib_members st)
+      ty <- Set.toList tys
       outputAttributes st (S.fromId (S.toId ty)) (S.fromId (S.toId attr))
 
     transitionDecls :: [L.Decl]
