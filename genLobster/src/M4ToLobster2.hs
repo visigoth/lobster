@@ -42,9 +42,8 @@ data AllowRule = AllowRule
 
 data St = St
   { object_classes   :: !(Map S.TypeOrAttributeId (Set S.ClassId))
-  --, attrib_members   :: !(Map S.TypeId (Set S.AttributeId))
   , attrib_members   :: !(Map S.AttributeId (Set S.TypeId))
-  , allow_rules      :: !(Map AllowRule (Set S.PermissionId, Set P.Pos))
+  , allow_rules      :: !(Map AllowRule (Map S.PermissionId (Set P.Pos)))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
   , domtrans_macros  :: !(Set (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId))
   }
@@ -89,19 +88,19 @@ addkeyMapSet = Map.alter (maybe (Just Set.empty) Just)
 addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
 addAllow subject object cls perms = do
-  ps <- ask
   -- discard all but the outermost enclosing source position
   -- so that we only get the position of the top-level macro
-  modify (f (Set.fromList (take 1 (reverse ps))))
+  ps <- asks (Set.fromList . take 1 . reverse)
+  let m = Map.fromSet (const ps) perms
+  modify (f m)
   where
     rule = AllowRule subject object cls
-    union2 (a, b) (c, d) = (Set.union c a, Set.union d b)
-    f ps st = st
+    f m st = st
       { object_classes =
-          addkeyMapSet subject $
+          insertMapSet subject processClassId $
           insertMapSet object cls $
           object_classes st
-      , allow_rules = Map.insertWith union2 rule (perms, ps) (allow_rules st)
+      , allow_rules = Map.insertWith (Map.unionWith Set.union) rule m (allow_rules st)
       }
 
 addType :: S.TypeId -> M ()
@@ -263,12 +262,15 @@ outputPos (P.Pos fname _ l c) =
   L.ConnectAnnotation (L.Name "SourcePos")
     [L.AnnotationString fname, L.AnnotationInt l, L.AnnotationInt c]
 
-outputAllowRule :: (AllowRule, (Set S.PermissionId, Set P.Pos)) -> L.Decl
-outputAllowRule (AllowRule subject object cls, (perms, ps)) =
+outputAllowRule :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> L.Decl
+outputAllowRule (AllowRule subject object cls, m) =
   L.connect' L.N
     (L.domPort (toDom subject) activePort)
     (L.domPort (toDom object) (toPort cls))
-    (map outputPerm (Set.toList perms) ++ map outputPos (Set.toList ps))
+    (map outputPerm perms ++ map outputPos ps)
+  where
+    perms = Map.keys m
+    ps = Set.toList (Set.unions (Map.elems m))
 
 outputAttribute :: S.TypeId -> S.AttributeId -> L.Decl
 outputAttribute ty attr =
