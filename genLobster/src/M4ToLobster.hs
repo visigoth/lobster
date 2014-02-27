@@ -55,7 +55,6 @@ initSt = St
   { object_classes   = Map.empty
   , class_perms      = Map.singleton processClassId (Set.singleton activePermissionId)
   , attrib_members   = Map.empty
-  --, attrib_members = Set.empty
   , allow_rules      = Map.empty
   , type_transitions = Set.empty
   , domtrans_macros  = Set.empty
@@ -95,7 +94,6 @@ addAllow subject object cls perms = do
           insertMapSet object cls $
           object_classes st
       , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
-      , attrib_members = attrib_members st
       , allow_rules = foldr (\r -> Map.insertWith (flip Set.union) r ps) (allow_rules st) rules
       , type_transitions = type_transitions st
       }
@@ -105,12 +103,9 @@ addAttribs typeId attrIds = modify f
   where
     f st = st
       { object_classes = object_classes st
-      , class_perms = class_perms st
       , attrib_members =
           Map.insertWith (flip Set.union) typeId (Set.fromList attrIds) $
           attrib_members st
-      , allow_rules = allow_rules st
-      , type_transitions = type_transitions st
       }
 
 addTypeTransition :: S.TypeId -> S.TypeId -> S.ClassId -> S.TypeId -> M ()
@@ -121,9 +116,6 @@ addTypeTransition subj rel cls new = modify f
           insertMapSet (S.fromId (S.toId subj)) processClassId $
           insertMapSet (S.fromId (S.toId new)) cls $
           object_classes st
-      , class_perms = class_perms st
-      , attrib_members = attrib_members st
-      , allow_rules = allow_rules st
       , type_transitions = Set.insert (subj, rel, cls, new) (type_transitions st)
       }
 
@@ -141,7 +133,6 @@ addDomtransMacro d1 d2 d3 = modify f
       , class_perms =
           insertMapSet (S.mkId "file") (S.mkId "x_file_perms") $
           class_perms st
-      , attrib_members = attrib_members st
       , domtrans_macros = Set.insert (d1, d2, d3) (domtrans_macros st)
       }
 
