@@ -2,6 +2,7 @@
 # Libraries to add with "cabal sandbox add-source".
 SUBPROJECTS :=                 \
   lobster                      \
+  lobster-validate             \
   SCD                          \
   genLobster                   \
   v3spa-server                 \
@@ -11,7 +12,7 @@ SUBPROJECTS :=                 \
 
 .PHONY: all
 all: .cabal-sandbox
-	@cabal install genLobster v3spa-server iptables-lobster lobster-selinux
+	@cabal install genLobster v3spa-server iptables-lobster lobster-selinux lobster-validate
 
 .PHONY: clean
 clean:
