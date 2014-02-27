@@ -32,14 +32,13 @@ data AllowRule = AllowRule
   { allowSubject    :: S.TypeOrAttributeId
   , allowObject     :: S.TypeOrAttributeId
   , allowClass      :: S.ClassId
-  , allowPerm       :: S.PermissionId
   } deriving (Eq, Ord, Show)
 
 data St = St
   { object_classes   :: !(Map S.TypeOrAttributeId (Set S.ClassId))
   , class_perms      :: !(Map S.ClassId (Set S.PermissionId))
   , attrib_members   :: !(Map S.AttributeId (Set S.TypeId))
-  , allow_rules      :: !(Map AllowRule (Set P.Pos))
+  , allow_rules      :: !(Map AllowRule (Map S.PermissionId (Set P.Pos)))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
   , domtrans_macros  :: !(Set (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId))
   }
@@ -85,20 +84,20 @@ addkeyMapSet = Map.alter (maybe (Just Set.empty) Just)
 addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
 addAllow subject object cls perms = do
-  ps <- ask
   -- discard all but the outermost enclosing source position
   -- so that we only get the position of the top-level macro
-  modify (f (Set.fromList (take 1 (reverse ps))))
+  ps <- asks (Set.fromList . take 1 . reverse)
+  let m = Map.fromSet (const ps) perms
+  modify (f m)
   where
-    rules = [ AllowRule subject object cls perm | perm <- Set.toList perms ]
-    f ps st = st
+    rule = AllowRule subject object cls
+    f m st = st
       { object_classes =
           insertMapSet subject processClassId $
           insertMapSet object cls $
           object_classes st
       , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
-      , allow_rules = foldr (\r -> Map.insertWith (flip Set.union) r ps) (allow_rules st) rules
-      , type_transitions = type_transitions st
+      , allow_rules = Map.insertWith (Map.unionWith Set.union) rule m (allow_rules st)
       }
 
 addAttrib :: S.TypeId -> S.AttributeId -> M ()
@@ -236,8 +235,8 @@ outputPos (P.Pos fname _ l c) =
   L.ConnectAnnotation (L.Name "SourcePos")
     [L.AnnotationString fname, L.AnnotationInt l, L.AnnotationInt c]
 
-outputAllowRule :: (AllowRule, Set P.Pos) -> L.Decl
-outputAllowRule (AllowRule subject object cls perm, ps) =
+outputAllowRule :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
+outputAllowRule (AllowRule subject object cls) (perm, ps) =
   L.connect' L.N
     (L.domPort (toIdentifier subject processClassId) activePort)
     (L.domPort (toIdentifier object cls) (toPortId perm))
@@ -248,6 +247,9 @@ outputAllowRule (AllowRule subject object cls perm, ps) =
 
     toPortId :: S.PermissionId -> L.Name
     toPortId = L.Name . lowercase . S.idString
+
+outputAllowRules :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> [L.Decl]
+outputAllowRules (rule, m) = map (outputAllowRule rule) (Map.assocs m)
 
 outputAttribute :: S.TypeOrAttributeId -> S.TypeOrAttributeId -> S.ClassId -> L.Decl
 outputAttribute ty attr cls =
@@ -333,7 +335,7 @@ outputLobster policy st =
       ]
 
     connectionDecls :: [L.Decl]
-    connectionDecls = map outputAllowRule (Map.assocs (allow_rules st))
+    connectionDecls = concatMap outputAllowRules (Map.assocs (allow_rules st))
 
     attributeDecls :: [L.Decl]
     attributeDecls = do
