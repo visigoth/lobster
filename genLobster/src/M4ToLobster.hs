@@ -11,6 +11,7 @@ import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import qualified Data.MapSet as MapSet
 
 import SCD.M4.PrettyPrint ()
 import SCD.M4.Syntax hiding (avPerms)
@@ -190,7 +191,96 @@ processPolicy :: M4.Policy -> M ()
 processPolicy policy = mapM_ processPolicyModule (M4.policyModules policy)
 
 ----------------------------------------------------------------------
+-- Sub-attributes
+
+-- TODO: read these in from a file
+subattributes :: [(S.AttributeId, S.AttributeId)]
+subattributes = [ (S.mkId a, S.mkId b) | (a, b) <- attrs ]
+  where
+    attrs =
+      [ ("client_packet_type", "packet_type")
+      , ("server_packet_type", "packet_type")
+      , ("defined_port_type", "port_type")
+      , ("reserved_port_type", "port_type")
+      , ("unreserved_port_type", "port_type")
+      , ("rpc_port_type", "reserved_port_type")
+      , ("non_auth_file_type", "file_type")
+      , ("non_security_file_type", "non_auth_file_type")
+      , ("httpdcontent", "non_security_file_type")
+      , ("lockfile", "non_security_file_type")
+      , ("logfile", "non_security_file_type")
+      , ("pidfile", "non_security_file_type")
+      ]
+
+-- | Requirement: isTopSorted subattributes
+isTopSorted :: Eq a => [(a, a)] -> Bool
+isTopSorted [] = True
+isTopSorted (x : xs) = isTopSorted xs && snd x `notElem` map fst xs
+
+-- | For each type t in attribute a, and class c used with a, note
+-- that c is also used with t.
+processAttributes :: M ()
+processAttributes = do
+  st <- get
+  let new = Map.fromListWith Set.union
+        [ (S.fromId (S.toId t), cs)
+        | (attr, ts) <- Map.assocs (attrib_members st)
+        , let cs = MapSet.lookup (S.fromId (S.toId attr)) (object_classes st)
+        , t <- Set.toList ts ]
+  put $ st { object_classes = Map.unionWith Set.union new (object_classes st) }
+
+-- | Checking of sub-attribute membership: Ensure that all types t in
+-- attribute x are also in attribute y.
+checkSubAttribute :: (S.AttributeId, S.AttributeId) -> M Bool
+checkSubAttribute (x, y) = do
+  m <- gets attrib_members
+  return (Set.isSubsetOf (MapSet.lookup x m) (MapSet.lookup y m))
+  -- TODO: use error monad with a decent error message instead of returning Bool.
+
+-- | For each pair (x, y) (indicating that x is a sub-attribute of y)
+-- we 1) for any class c used with y, note that c is also used with x;
+-- 2) drop the explicit membership of t in y for any type t in x.
+processSubAttribute :: (S.AttributeId, S.AttributeId) -> M ()
+processSubAttribute (x, y) = do
+  st <- get
+  let oc = object_classes st
+  let oc' = Map.insertWith Set.union (S.fromId (S.toId x)) (MapSet.lookup (S.fromId (S.toId y)) oc) oc
+  let am = attrib_members st
+  let am' = Map.insertWith (flip Set.difference) y (MapSet.lookup x am) am
+  put $ st { object_classes = oc', attrib_members = am' }
+
+processSubAttributes :: [(S.AttributeId, S.AttributeId)] -> M Bool
+processSubAttributes subs = do
+  oks <- mapM checkSubAttribute subs
+  mapM_ processSubAttribute subs
+  return (isTopSorted subs && and oks)
+
+----------------------------------------------------------------------
 -- Generation of Lobster code
+
+data OutputMode = Mode1 | Mode2 -- TODO: more sensible names
+  deriving (Eq, Ord, Show)
+
+type Dom = L.Name
+type Port = L.Name
+
+activePort :: Port
+activePort = L.Name "active"
+
+memberPort :: Port
+memberPort = L.Name "member"
+
+attributePort :: Port
+attributePort = L.Name "attribute"
+
+toDom :: S.IsIdentifier i => i -> Dom
+toDom = L.Name . lowercase . S.idString
+
+toPort :: S.IsIdentifier i => i -> Port
+toPort = L.Name . lowercase . S.idString
+
+toIdentifier :: S.IsIdentifier i => i -> S.ClassId -> Dom
+toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
 
 classPermissions :: Policy -> Map S.ClassId (Set S.PermissionId)
 classPermissions policy =
@@ -212,12 +302,6 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
         header = map L.newPort [memberPort, attributePort, transitionPort]
         stmts = [ L.newPort (toPortId p) | p <- Set.toList perms ]
 
-    memberPort :: L.Name
-    memberPort = L.Name "member"
-
-    attributePort :: L.Name
-    attributePort = L.Name "attribute"
-
     transitionPort :: L.Name
     transitionPort = L.Name "type_transition"
 
@@ -227,64 +311,104 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
 
-toIdentifier :: S.IsIdentifier i => i -> S.ClassId -> L.Name
-toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
+outputPerm :: S.PermissionId -> L.ConnectAnnotation
+outputPerm p =
+  L.ConnectAnnotation (L.Name "Perm")
+    [L.AnnotationString (S.idString p)]
 
 outputPos :: P.Pos -> L.ConnectAnnotation
 outputPos (P.Pos fname _ l c) =
   L.ConnectAnnotation (L.Name "SourcePos")
     [L.AnnotationString fname, L.AnnotationInt l, L.AnnotationInt c]
 
-outputAllowRule :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
-outputAllowRule (AllowRule subject object cls) (perm, ps) =
+-- | Mode 1
+outputAllowRule1 :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
+outputAllowRule1 (AllowRule subject object cls) (perm, ps) =
   L.connect' L.N
     (L.domPort (toIdentifier subject processClassId) activePort)
     (L.domPort (toIdentifier object cls) (toPortId perm))
     (map outputPos (Set.toList ps))
   where
-    activePort :: L.Name
-    activePort = L.Name "active"
-
     toPortId :: S.PermissionId -> L.Name
     toPortId = L.Name . lowercase . S.idString
 
-outputAllowRules :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> [L.Decl]
-outputAllowRules (rule, m) = map (outputAllowRule rule) (Map.assocs m)
+outputAllowRule2 :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> L.Decl
+outputAllowRule2 (AllowRule subject object cls, m) =
+  L.connect' L.N
+    (L.domPort (toDom subject) activePort)
+    (L.domPort (toDom object) (toPort cls))
+    (map outputPerm perms ++ map outputPos ps)
+  where
+    perms = Map.keys m
+    ps = Set.toList (Set.unions (Map.elems m))
 
-outputAttribute :: S.TypeOrAttributeId -> S.TypeOrAttributeId -> S.ClassId -> L.Decl
-outputAttribute ty attr cls =
-  L.neutral
+outputAllowRules1 :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> [L.Decl]
+outputAllowRules1 (rule, m) = map (outputAllowRule1 rule) (Map.assocs m)
+
+outputAttribute1 :: S.TypeOrAttributeId -> S.TypeOrAttributeId -> S.ClassId -> L.Decl
+outputAttribute1 ty attr cls =
+  L.connect' L.N
     (L.domPort (toIdentifier ty cls) memberPort)
     (L.domPort (toIdentifier attr cls) attributePort)
-  where
-    memberPort :: L.Name
-    memberPort = L.Name "member"
+    [L.ConnectAnnotation (L.Name "Attribute") []]
 
-    attributePort :: L.Name
-    attributePort = L.Name "attribute"
-
-outputAttributes :: St -> S.TypeOrAttributeId -> S.TypeOrAttributeId -> [L.Decl]
-outputAttributes st ty attr = [ outputAttribute ty attr cls | cls <- classes ]
+outputAttributes1 :: St -> S.TypeOrAttributeId -> S.TypeOrAttributeId -> [L.Decl]
+outputAttributes1 st ty attr = [ outputAttribute1 ty attr cls | cls <- classes ]
   where
     classesOf t = Map.findWithDefault Set.empty t (object_classes st)
     classes = Set.toList $ Set.intersection (classesOf ty) (classesOf attr)
+-- FIXME: Don't do this intersection. We should output the attribute
+-- membership edge at all classes for which the attribute has allow
+-- rules (i.e. 'classesOf attr'). We must separately ensure that the
+-- type is instantiated for (at least) those classes.
 
-outputTypeTransition :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
-outputTypeTransition (subj, rel, cls, new) =
+outputSubAttribute1 :: S.AttributeId -> S.AttributeId -> S.ClassId -> L.Decl
+outputSubAttribute1 sub sup cls =
+  L.connect' L.N
+    (L.domPort (toIdentifier sub cls) memberPort)
+    (L.domPort (toIdentifier sup cls) attributePort)
+    [L.ConnectAnnotation (L.Name "SubAttribute") []]
+
+outputSubAttributes1 :: St -> (S.AttributeId, S.AttributeId) -> [L.Decl]
+outputSubAttributes1 st (sub, sup) = [ outputSubAttribute1 sub sup cls | cls <- classes ]
+  where
+    classesOf t = Map.findWithDefault Set.empty (S.fromId (S.toId t)) (object_classes st)
+    classes = Set.toList $ Set.intersection (classesOf sub) (classesOf sup)
+
+outputAttribute2 :: S.TypeId -> S.AttributeId -> L.Decl
+outputAttribute2 ty attr =
+  L.connect' L.N
+    (L.domPort (toDom ty) memberPort)
+    (L.domPort (toDom attr) attributePort)
+    [L.ConnectAnnotation (L.Name "Attribute") []]
+
+outputSubAttribute2 :: S.AttributeId -> S.AttributeId -> L.Decl
+outputSubAttribute2 ty attr =
+  L.connect' L.N
+    (L.domPort (toDom ty) memberPort)
+    (L.domPort (toDom attr) attributePort)
+    [L.ConnectAnnotation (L.Name "SubAttribute") []]
+
+outputTypeTransition1 :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
+outputTypeTransition1 (subj, rel, cls, new) =
   L.connect' L.N
     (L.domPort (toIdentifier subj processClassId) activePort)
     (L.domPort (toIdentifier new cls) transitionPort)
     [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
   where
-    activePort :: L.Name
-    activePort = L.Name "active"
-
     transitionPort :: L.Name
     transitionPort = L.Name "type_transition"
 
-outputDomtransMacro ::
+outputTypeTransition2 :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
+outputTypeTransition2 (subj, rel, cls, new) =
+  L.connect' L.N
+    (L.domPort (toDom subj) activePort)
+    (L.domPort (toDom new) (toPort cls))
+    [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
+
+outputDomtransMacro1 ::
   Int -> (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId) -> [L.Decl]
-outputDomtransMacro n (d1, d2, d3) =
+outputDomtransMacro1 n (d1, d2, d3) =
   [ L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString d2))]
   , L.neutral
       (L.domPort (toId d1 "process") (L.Name "active"))
@@ -318,11 +442,44 @@ outputDomtransMacro n (d1, d2, d3) =
     d :: L.Name
     d = L.Name ("domtrans" ++ show n)
 
-outputLobster :: M4.Policy -> St -> [L.Decl]
-outputLobster policy st =
+outputDomtransMacro2 ::
+  Int -> (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId) -> [L.Decl]
+outputDomtransMacro2 n (d1, d2, d3) =
+  [ L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString d2))]
+  , connect
+      (L.domPort (toDom d1) activePort)
+      (L.domPort d (L.Name "d1_active"))
+  , connect
+      (L.domPort (toDom d1) (L.Name "fd"))
+      (L.domPort d (L.Name "d1_fd"))
+  , connect
+      (L.domPort (toDom d1) (L.Name "fifo_file"))
+      (L.domPort d (L.Name "d1_fifo_file"))
+  , connect
+      (L.domPort (toDom d1) (L.Name "process"))
+      (L.domPort d (L.Name "d1_process"))
+  , connect
+      (L.domPort (toDom d2) (L.Name "file"))
+      (L.domPort d (L.Name "d2_file"))
+  , connect
+      (L.domPort (toDom d3) activePort)
+      (L.domPort d (L.Name "d3_active"))
+  , connect
+      (L.domPort (toDom d3) (L.Name "process"))
+      (L.domPort d (L.Name "d3_process"))
+  ]
+  where
+    d :: Dom
+    d = L.Name ("domtrans" ++ show n)
+
+    connect :: L.DomPort -> L.DomPort -> L.Decl
+    connect x y = L.connect' L.N x y [L.ConnectAnnotation (L.Name "MacroArg") []]
+
+outputLobster1 :: M4.Policy -> St -> [L.Decl]
+outputLobster1 policy st =
   domtransDecl :
-  classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls ++ transitionDecls
-    ++ domtransDecls
+  classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
+    ++ transitionDecls ++ domtransDecls
   where
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
@@ -335,19 +492,22 @@ outputLobster policy st =
       ]
 
     connectionDecls :: [L.Decl]
-    connectionDecls = concatMap outputAllowRules (Map.assocs (allow_rules st))
+    connectionDecls = concatMap outputAllowRules1 (Map.assocs (allow_rules st))
 
     attributeDecls :: [L.Decl]
     attributeDecls = do
       (attr, tys) <- Map.assocs (attrib_members st)
       ty <- Set.toList tys
-      outputAttributes st (S.fromId (S.toId ty)) (S.fromId (S.toId attr))
+      outputAttributes1 st (S.fromId (S.toId ty)) (S.fromId (S.toId attr))
+
+    subAttributeDecls :: [L.Decl]
+    subAttributeDecls = concatMap (outputSubAttributes1 st) subattributes
 
     transitionDecls :: [L.Decl]
-    transitionDecls = map outputTypeTransition (Set.toList (type_transitions st))
+    transitionDecls = map outputTypeTransition1 (Set.toList (type_transitions st))
 
     domtransDecls :: [L.Decl]
-    domtransDecls = concat $ zipWith outputDomtransMacro [1..] (Set.toList (domtrans_macros st))
+    domtransDecls = concat $ zipWith outputDomtransMacro1 [1..] (Set.toList (domtrans_macros st))
 
     domtransDecl :: L.Decl
     domtransDecl =
@@ -380,11 +540,84 @@ outputLobster policy st =
         d3_tt     = L.Name "d3_type_transition"
         d2_name   = L.Name "d2_name"
 
+outputLobster2 :: St -> [L.Decl]
+outputLobster2 st =
+  domtransDecl :
+  domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
+    ++ transitionDecls ++ domtransDecls
+  where
+    domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> [L.Decl]
+    domainDecl (ty, classes) =
+      [ L.Class className [] (header ++ stmts)
+      , L.Domain (toDom ty) className [] ]
+        -- TODO: Add support for anonymous domains to lobster language
+      where
+        className = L.Name ("Type_" ++ S.idString ty)
+        header = map L.newPort [activePort, memberPort, attributePort]
+        stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
+
+    domainDecls :: [L.Decl]
+    domainDecls = concatMap domainDecl (Map.assocs (object_classes st))
+
+    connectionDecls :: [L.Decl]
+    connectionDecls = map outputAllowRule2 (Map.assocs (allow_rules st))
+
+    attributeDecls :: [L.Decl]
+    attributeDecls = do
+      (attr, tys) <- Map.assocs (attrib_members st)
+      [ outputAttribute2 ty attr | ty <- Set.toList tys ]
+
+    subAttributeDecls :: [L.Decl]
+    subAttributeDecls =
+      [ outputSubAttribute2 sub sup | (sub, sup) <- subattributes ]
+
+    transitionDecls :: [L.Decl]
+    transitionDecls = map outputTypeTransition2 (Set.toList (type_transitions st))
+
+    domtransDecls :: [L.Decl]
+    domtransDecls = concat $ zipWith outputDomtransMacro2 [1..] (Set.toList (domtrans_macros st))
+
+    domtransDecl :: L.Decl
+    domtransDecl =
+      L.Class (L.Name "Domtrans_pattern") [d2_name]
+        [ L.newPort d1_active
+        , L.newPort d1_fd
+        , L.newPort d1_fifo
+        , L.newPort d1_proc
+        , L.newPort d2_file
+        , L.newPort d3_active
+        , L.newPort d3_proc
+        , L.connect' L.N (L.extPort d1_active) (L.extPort d2_file)
+            [outputPerm (S.mkId "x_file_perms")]
+        , L.connect' L.N (L.extPort d1_active) (L.extPort d3_proc)
+            [outputPerm (S.mkId "transition"),
+             L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationVar d2_name]]
+        , L.connect' L.N (L.extPort d3_active) (L.extPort d1_fd)
+            [outputPerm (S.mkId "use")]
+        , L.connect' L.N (L.extPort d3_active) (L.extPort d1_fifo)
+            [outputPerm (S.mkId "rw_fifo_file_perms")]
+        , L.connect' L.N (L.extPort d3_active) (L.extPort d1_proc)
+            [outputPerm (S.mkId "sigchld")]
+        ]
+      where
+        d1_active = L.Name "d1_active"
+        d1_fd     = L.Name "d1_fd"
+        d1_fifo   = L.Name "d1_fifo_file"
+        d1_proc   = L.Name "d1_process"
+        d2_file   = L.Name "d2_file"
+        d3_active = L.Name "d3_active"
+        d3_proc   = L.Name "d3_process"
+        d2_name   = L.Name "d2_name"
+
+outputLobster :: OutputMode -> M4.Policy -> St -> [L.Decl]
+outputLobster Mode1 policy = outputLobster1 policy
+outputLobster Mode2 _ = outputLobster2
+
 ----------------------------------------------------------------------
 
 -- | Convert a policy to Lobster.
-toLobster :: Policy -> Either Error [L.Decl]
-toLobster policy0 = do
+toLobster :: OutputMode -> Policy -> Either Error [L.Decl]
+toLobster mode policy0 = do
   let patternMacros =
         -- We handle domtrans_pattern macro as a special case, for now
         Map.delete (S.mkId "domtrans_pattern") $
@@ -408,8 +641,11 @@ toLobster policy0 = do
           , "_class_set" `isSuffixOf` S.idString i ]
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
-  let finalSt = execState (runReaderT (processPolicy policy) []) initSt
-  return (outputLobster policy finalSt)
+  let action = processPolicy policy >> processAttributes >> processSubAttributes subattributes
+  let (ok, finalSt) = runState (runReaderT action []) initSt
+  if ok
+    then return (outputLobster mode policy finalSt)
+    else Left (Error "subattribute check failed")
 
 capitalize :: String -> String
 capitalize "" = ""

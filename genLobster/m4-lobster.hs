@@ -12,8 +12,7 @@ import SCD.M4.ModuleFiles (readPolicy)
 import qualified SCD.Lobster.Gen.CoreSyn as L
 import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 
-import qualified M4ToLobster as M1
-import qualified M4ToLobster2 as M2
+import qualified M4ToLobster as M4L
 import M4ToLobster.Error (Error, runErr, runIO)
 
 
@@ -33,7 +32,7 @@ data Options = Options
   , ifdefDeclFile :: Maybe FilePath
   , inferMissing :: Bool
 --   , kindErrors :: Bool
-  , simpleMode :: Bool
+  , outputMode :: M4L.OutputMode
   } deriving Show
 
 -- | Default options for reference policy processing
@@ -44,12 +43,12 @@ defaultOptions = Options
   , ifdefDeclFile = Nothing
   , inferMissing = False
 --   , kindErrors = False
-  , simpleMode = False
+  , outputMode = M4L.Mode1
   }
 
 options :: [OptDescr (Options -> Options)]
 options =
-  [ Option [] ["simple"] (NoArg (\o -> o{ simpleMode = True })) ""
+  [ Option [] ["simple"] (NoArg (\o -> o{ outputMode = M4L.Mode2 })) ""
 --  , Option [] ["multiple"] (ReqArg (\a o -> o{ path = a, isDir = True }) "FILE") ""
 --  , Option [] ["single"] (ReqArg (\a o -> o{ path = a, isDir = False }) "FILE") ""
 --  , Option [] ["infer-missing"] (NoArg (\o -> o{ inferMissing = True })) ""
@@ -113,5 +112,4 @@ exitErrors errs = do
 dirToLobster :: FilePath -> Options -> EitherT Error IO [L.Decl]
 dirToLobster iDir opts = do
   policy0 <- runIO $ readPolicy (ifdefDeclFile opts) iDir
-  let toLobster = if simpleMode opts then M2.toLobster else M1.toLobster
-  hoistEither $ toLobster policy0
+  hoistEither $ M4L.toLobster (outputMode opts) policy0

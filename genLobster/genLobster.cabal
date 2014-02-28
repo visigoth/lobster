@@ -11,7 +11,6 @@ Cabal-Version:       >= 1.10
 Library
   hs-source-dirs:    src
   exposed-modules:   M4ToLobster
-                     M4ToLobster2
                      M4ToLobster.Error
   ghc-options:       -Wall
   Build-Depends:     base >= 4,
