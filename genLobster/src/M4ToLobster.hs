@@ -300,13 +300,10 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     classDecl (classId, perms) = L.Class (toClassId classId) [] (header ++ stmts)
       where
         header = map L.newPort [memberPort, attributePort, transitionPort]
-        stmts = [ L.newPort (toPortId p) | p <- Set.toList perms ]
+        stmts = [ L.newPort (toPort p) | p <- Set.toList perms ]
 
     transitionPort :: L.Name
     transitionPort = L.Name "type_transition"
-
-    toPortId :: S.PermissionId -> L.Name
-    toPortId = L.Name . lowercase . S.idString
 
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
@@ -326,11 +323,8 @@ outputAllowRule1 :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
 outputAllowRule1 (AllowRule subject object cls) (perm, ps) =
   L.connect' L.N
     (L.domPort (toIdentifier subject processClassId) activePort)
-    (L.domPort (toIdentifier object cls) (toPortId perm))
+    (L.domPort (toIdentifier object cls) (toPort perm))
     (map outputPos (Set.toList ps))
-  where
-    toPortId :: S.PermissionId -> L.Name
-    toPortId = L.Name . lowercase . S.idString
 
 outputAllowRule2 :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> L.Decl
 outputAllowRule2 (AllowRule subject object cls, m) =
