@@ -123,22 +123,25 @@ addTypeTransition subj rel cls new = modify f
       , type_transitions = Set.insert (subj, rel, cls, new) (type_transitions st)
       }
 
-addDomtransMacro :: S.TypeOrAttributeId -> S.TypeOrAttributeId -> S.TypeOrAttributeId -> M ()
-addDomtransMacro d1 d2 d3 = modify f
+addDomtransMacro :: [S.TypeOrAttributeId] -> M ()
+addDomtransMacro args = modify f
   where
     f st = st
       { object_classes =
-          insertMapSet d1 processClassId $
-          insertMapSet d1 (S.mkId "fd") $
-          insertMapSet d1 (S.mkId "fifo_file") $
-          insertMapSet d2 (S.mkId "file") $
-          insertMapSet d3 processClassId $
-          object_classes st
+          foldr ($) (object_classes st)
+            [ Map.insertWith Set.union d cs | (d, cs) <- zip args argClasses ]
       , class_perms =
           insertMapSet (S.mkId "file") (S.mkId "x_file_perms") $
           class_perms st
-      , domtrans_macros = Set.insert [d1, d2, d3] (domtrans_macros st)
+      , domtrans_macros = Set.insert args (domtrans_macros st)
       }
+
+    argClasses :: [Set S.ClassId]
+    argClasses =
+      [ Set.fromList [processClassId, S.mkId "fd", S.mkId "fifo_file"]
+      , Set.fromList [S.mkId "file"]
+      , Set.fromList [processClassId]
+      ]
 
 isDefined :: M4.IfdefId -> Bool
 isDefined _ = False
@@ -174,7 +177,7 @@ processStmt stmt =
     StmtPosition stmt1 pos -> local (pos :) $ processStmt stmt1
     Call m4id [al, bl, cl] | m4id == S.mkId "domtrans_pattern" ->
       sequence_ $
-        [ addDomtransMacro a b c
+        [ addDomtransMacro [a, b, c]
         | a <- map (S.fromId . S.toId) $ filterSignedId $ toList al
         , b <- map (S.fromId . S.toId) $ filterSignedId $ toList bl
         , c <- map (S.fromId . S.toId) $ filterSignedId $ toList cl
