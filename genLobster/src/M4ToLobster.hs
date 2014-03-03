@@ -41,7 +41,7 @@ data St = St
   , attrib_members   :: !(Map S.AttributeId (Set S.TypeId))
   , allow_rules      :: !(Map AllowRule (Map S.PermissionId (Set P.Pos)))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
-  , domtrans_macros  :: !(Set (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId))
+  , domtrans_macros  :: !(Set [S.TypeOrAttributeId])
   }
 
 processClassId :: S.ClassId
@@ -137,7 +137,7 @@ addDomtransMacro d1 d2 d3 = modify f
       , class_perms =
           insertMapSet (S.mkId "file") (S.mkId "x_file_perms") $
           class_perms st
-      , domtrans_macros = Set.insert (d1, d2, d3) (domtrans_macros st)
+      , domtrans_macros = Set.insert [d1, d2, d3] (domtrans_macros st)
       }
 
 isDefined :: M4.IfdefId -> Bool
@@ -400,74 +400,59 @@ outputTypeTransition2 (subj, rel, cls, new) =
     (L.domPort (toDom new) (toPort cls))
     [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
 
-outputDomtransMacro1 ::
-  Int -> (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId) -> [L.Decl]
-outputDomtransMacro1 n (d1, d2, d3) =
-  [ L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString d2))]
-  , L.neutral
-      (L.domPort (toId d1 "process") (L.Name "active"))
-      (L.domPort d (L.Name "d1_active"))
-  , L.neutral
-      (L.domPort (toId d1 "fd") (L.Name "use"))
-      (L.domPort d (L.Name "d1_fd_use"))
-  , L.neutral
-      (L.domPort (toId d1 "fifo_file") (L.Name "rw_fifo_file_perms"))
-      (L.domPort d (L.Name "d1_fifo"))
-  , L.neutral
-      (L.domPort (toId d1 "process") (L.Name "sigchld"))
-      (L.domPort d (L.Name "d1_sigchld"))
-  , L.neutral
-      (L.domPort (toId d2 "file") (L.Name "x_file_perms"))
-      (L.domPort d (L.Name "d2"))
-  , L.neutral
-      (L.domPort (toId d3 "process") (L.Name "active"))
-      (L.domPort d (L.Name "d3_active"))
-  , L.neutral
-      (L.domPort (toId d3 "process") (L.Name "transition"))
-      (L.domPort d (L.Name "d3_transition"))
-  , L.neutral
-      (L.domPort (toId d3 "process") (L.Name "type_transition"))
-      (L.domPort d (L.Name "d3_type_transition"))
-  ]
+outputDomtransMacro1 :: Int -> [S.TypeOrAttributeId] -> [L.Decl]
+outputDomtransMacro1 n ds = domDecl : map connectArg args
   where
-    toId :: S.TypeOrAttributeId -> String -> L.Name
-    toId typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ classId))
-
     d :: L.Name
     d = L.Name ("domtrans" ++ show n)
 
-outputDomtransMacro2 ::
-  Int -> (S.TypeOrAttributeId, S.TypeOrAttributeId, S.TypeOrAttributeId) -> [L.Decl]
-outputDomtransMacro2 n (d1, d2, d3) =
-  [ L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString d2))]
-  , connect
-      (L.domPort (toDom d1) activePort)
-      (L.domPort d (L.Name "d1_active"))
-  , connect
-      (L.domPort (toDom d1) (L.Name "fd"))
-      (L.domPort d (L.Name "d1_fd"))
-  , connect
-      (L.domPort (toDom d1) (L.Name "fifo_file"))
-      (L.domPort d (L.Name "d1_fifo_file"))
-  , connect
-      (L.domPort (toDom d1) (L.Name "process"))
-      (L.domPort d (L.Name "d1_process"))
-  , connect
-      (L.domPort (toDom d2) (L.Name "file"))
-      (L.domPort d (L.Name "d2_file"))
-  , connect
-      (L.domPort (toDom d3) activePort)
-      (L.domPort d (L.Name "d3_active"))
-  , connect
-      (L.domPort (toDom d3) (L.Name "process"))
-      (L.domPort d (L.Name "d3_process"))
-  ]
+    domDecl :: L.Decl
+    domDecl = L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString (ds !! 1)))]
+
+    connectArg :: (Int, S.ClassId, S.PermissionId, String) -> L.Decl
+    connectArg (i, cls, perm, argname) =
+      L.neutral
+        (L.domPort (toIdentifier (ds !! i) cls) (toPort perm))
+        (L.domPort d (L.Name argname))
+
+    args :: [(Int, S.ClassId, S.PermissionId, String)]
+    args =
+      [ (0, processClassId    , activePermissionId         , "d1_active"         )
+      , (0, S.mkId "fd"       , S.mkId "use"               , "d1_fd_use"         )
+      , (0, S.mkId "fifo_file", S.mkId "rw_fifo_file_perms", "d1_fifo"           )
+      , (0, processClassId    , S.mkId "sigchld"           , "d1_sigchld"        )
+      , (1, S.mkId "file"     , S.mkId "x_file_perms"      , "d2"                )
+      , (2, processClassId    , activePermissionId         , "d3_active"         )
+      , (2, processClassId    , S.mkId "transition"        , "d3_transition"     )
+      , (2, processClassId    , S.mkId "type_transition"   , "d3_type_transition")
+      ]
+
+outputDomtransMacro2 :: Int -> [S.TypeOrAttributeId] -> [L.Decl]
+outputDomtransMacro2 n ds = domDecl : map connectArg args
   where
     d :: Dom
     d = L.Name ("domtrans" ++ show n)
 
-    connect :: L.DomPort -> L.DomPort -> L.Decl
-    connect x y = L.connect' L.N x y [L.ConnectAnnotation (L.Name "MacroArg") []]
+    domDecl :: L.Decl
+    domDecl = L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString (ds !! 1)))]
+
+    connectArg :: (Int, Port, String) -> L.Decl
+    connectArg (i, port, argname) =
+      L.connect' L.N
+        (L.domPort (toDom (ds !! i)) port)
+        (L.domPort d (L.Name argname))
+        [L.ConnectAnnotation (L.Name "MacroArg") []]
+
+    args :: [(Int, Port, String)]
+    args =
+      [ (0, activePort        , "d1_active"   )
+      , (0, L.Name "fd"       , "d1_fd"       )
+      , (0, L.Name "fifo_file", "d1_fifo_file")
+      , (0, L.Name "process"  , "d1_process"  )
+      , (1, L.Name "file"     , "d2_file"     )
+      , (2, activePort        , "d3_active"   )
+      , (2, L.Name "process"  , "d3_process"  )
+      ]
 
 outputLobster1 :: M4.Policy -> St -> [L.Decl]
 outputLobster1 policy st =
