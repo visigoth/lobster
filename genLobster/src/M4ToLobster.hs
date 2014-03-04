@@ -424,9 +424,10 @@ outputDomtransMacro1 n ds = domDecl : map connectArg args
 
     connectArg :: (Int, S.ClassId, S.PermissionId, String) -> L.Decl
     connectArg (i, cls, perm, argname) =
-      L.neutral
+      L.connect' L.N
         (L.domPort (toIdentifier (ds !! i) cls) (toPort perm))
         (L.domPort d (L.Name argname))
+        [L.ConnectAnnotation (L.Name "MacroArg") []]
 
     args :: [(Int, S.ClassId, S.PermissionId, String)]
     args =
