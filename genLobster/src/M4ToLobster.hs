@@ -82,24 +82,34 @@ insertMapSet k x = Map.insertWith (flip Set.union) k (Set.singleton x)
 addkeyMapSet :: (Ord k, Ord a) => k -> Map k (Set a) -> Map k (Set a)
 addkeyMapSet = Map.alter (maybe (Just Set.empty) Just)
 
+-- | Most class/permission pairs (c,p) indicate an information flow
+-- between a *process* and an object of class c. However, some may
+-- implicitly involve a different class: e.g. filesystem:associate
+-- relates a *file* to a filesystem.
+activeClass :: S.ClassId -> S.PermissionId -> S.ClassId
+activeClass c p
+  | c == S.mkId "filesystem" && p == S.mkId "associate" = S.mkId "file"
+  | otherwise = processClassId
+
 addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
 addAllow subject object cls perms = do
   -- discard all but the outermost enclosing source position
   -- so that we only get the position of the top-level macro
   ps <- asks (Set.fromList . take 1 . reverse)
-  let m = Map.fromSet (const ps) perms
-  modify (f m)
-  where
-    rule = AllowRule subject object cls
-    f m st = st
-      { object_classes =
-          insertMapSet subject processClassId $
-          insertMapSet object cls $
-          object_classes st
-      , class_perms = Map.insertWith (flip Set.union) cls perms (class_perms st)
-      , allow_rules = Map.insertWith (Map.unionWith Set.union) rule m (allow_rules st)
-      }
+  let rule = AllowRule subject object cls
+  let posMap = Map.fromSet (const ps) perms
+  let activeClasses = Set.map (activeClass cls) perms
+  modify $ \st -> st
+    { object_classes =
+        Map.insertWith Set.union subject activeClasses $
+        insertMapSet object cls $
+        object_classes st
+    , class_perms =
+        flip (foldr (flip insertMapSet activePermissionId)) (Set.toList activeClasses) $
+        Map.insertWith (flip Set.union) cls perms (class_perms st)
+    , allow_rules = Map.insertWith (Map.unionWith Set.union) rule posMap (allow_rules st)
+    }
 
 addAttrib :: S.TypeId -> S.AttributeId -> M ()
 addAttrib ty attr = modify f
@@ -325,7 +335,7 @@ outputPos (P.Pos fname _ l c) =
 outputAllowRule1 :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
 outputAllowRule1 (AllowRule subject object cls) (perm, ps) =
   L.connect' L.N
-    (L.domPort (toIdentifier subject processClassId) activePort)
+    (L.domPort (toIdentifier subject (activeClass cls perm)) activePort)
     (L.domPort (toIdentifier object cls) (toPort perm))
     (map outputPos (Set.toList ps))
 
