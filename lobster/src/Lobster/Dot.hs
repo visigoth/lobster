@@ -45,6 +45,7 @@ type PortNodes = Map.Map PortId Dot.NodeId
 dotDomain :: Domain a b -> Dot.Dot PortNodes
 dotDomain dom = (fmap snd . Dot.cluster) $ do
   Dot.attribute ("label", name dom)
+  mapM_ Dot.attribute (fillcolorAnnotation (domainAnnotation dom))
   nodes <- Map.traverseWithKey dotPortType (ports dom)
   subnodes <- traverse dotDomain (subDomains dom)
   _ <- traverse (dotConnection (nodes, subnodes)) (Map.assocs (connections dom))
@@ -69,6 +70,18 @@ dotConnection (nodes, subnodes) ((dp1, dp2), ci) = do
     (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection conn),
                                           ("color", colorAnnotation ann)]
     _                  -> fail "invalid DomainPort"
+
+fillcolorAnnotation :: Annotation -> [(String, String)]
+fillcolorAnnotation (Annotation elts) =
+  case go elts of
+    Nothing -> []
+    Just c -> [ ("style", "filled"), ("fillcolor", c) ]
+  where
+    go ((UIdent "Macro", _) : _) = Just "yellow"
+    go ((UIdent "Attribute", _) : _) = Just "lightgray"
+    go ((UIdent "Type", _) : _) = Nothing
+    go (_ : xs) = go xs
+    go [] = Nothing
 
 dirConnection :: Connection -> String
 dirConnection conn =
@@ -141,10 +154,13 @@ mergeConnInfo (ConnInfo c1 a1) (ConnInfo c2 a2) =
 simpleDotDomain :: Domain a b -> Dot.Dot PortNodes
 simpleDotDomain dom
   | Map.null (subDomains dom) = do
-      nodeId <- Dot.node [("label", name dom), ("shape", "rectangle")]
+      let attrs1 = [("label", name dom), ("shape", "rectangle")]
+      let attrs2 = fillcolorAnnotation (domainAnnotation dom)
+      nodeId <- Dot.node (attrs1 ++ attrs2)
       return (fmap (const nodeId) (ports dom))
   | otherwise = (fmap snd . Dot.cluster) $ do
       Dot.attribute ("label", name dom)
+      mapM_ Dot.attribute (fillcolorAnnotation (domainAnnotation dom))
       nodes <- Map.traverseWithKey dotPortType (ports dom)
       subnodes <- traverse simpleDotDomain (subDomains dom)
       let idOf dp =
