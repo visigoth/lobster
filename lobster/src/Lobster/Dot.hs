@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wall -Werror -fno-warn-orphans #-}
 --
 -- Dot.hs --- Exporting Lobster domains in Graphviz .dot format.
 --
@@ -44,26 +45,26 @@ type PortNodes = Map.Map PortId Dot.NodeId
 dotDomain :: Domain a b -> Dot.Dot PortNodes
 dotDomain dom = (fmap snd . Dot.cluster) $ do
   Dot.attribute ("label", name dom)
-  env <- Map.traverseWithKey dotPortType (ports dom)
-  envs <- traverse dotDomain (subDomains dom)
-  _ <- traverse (dotConnection (env, envs)) (Map.assocs (connections dom))
-  return env
+  nodes <- Map.traverseWithKey dotPortType (ports dom)
+  subnodes <- traverse dotDomain (subDomains dom)
+  _ <- traverse (dotConnection (nodes, subnodes)) (Map.assocs (connections dom))
+  return nodes
 
 dotPortType :: PortId -> PortType b -> Dot.Dot Dot.NodeId
-dotPortType pid@(PortId (LIdent s)) _ = do
+dotPortType (PortId (LIdent s)) _ = do
   Dot.node [("label", s), ("shape", "oval")]
   -- We ignore the PortType for now. It might make sense to eventually
   -- use a record shape to list all the components of the PortType.
 
 dotConnection :: (PortNodes, Map.Map DomainId PortNodes)
               -> ((DomainPort, DomainPort), ConnInfo) -> Dot.Dot ()
-dotConnection (env, envs) ((dp1, dp2), ci) = do
+dotConnection (nodes, subnodes) ((dp1, dp2), ci) = do
   let conn = ciConnection ci
   let ann = ciAnnotation ci
   let idOf dp =
         case domain dp of
-          Nothing -> Map.lookup (port dp) env
-          Just di -> Map.lookup di envs >>= Map.lookup (port dp)
+          Nothing -> Map.lookup (port dp) nodes
+          Just di -> Map.lookup di subnodes >>= Map.lookup (port dp)
   case (idOf dp1, idOf dp2) of
     (Just i1, Just i2) -> Dot.edge i1 i2 [("dir", dirConnection conn),
                                           ("color", colorAnnotation ann)]
@@ -144,12 +145,12 @@ simpleDotDomain dom
       return (fmap (const nodeId) (ports dom))
   | otherwise = (fmap snd . Dot.cluster) $ do
       Dot.attribute ("label", name dom)
-      env <- Map.traverseWithKey dotPortType (ports dom)
-      envs <- traverse simpleDotDomain (subDomains dom)
+      nodes <- Map.traverseWithKey dotPortType (ports dom)
+      subnodes <- traverse simpleDotDomain (subDomains dom)
       let idOf dp =
             case domain dp of
-              Nothing -> Map.lookup (port dp) env
-              Just di -> Map.lookup di envs >>= Map.lookup (port dp)
+              Nothing -> Map.lookup (port dp) nodes
+              Just di -> Map.lookup di subnodes >>= Map.lookup (port dp)
       let deref (dp1, dp2) =
             case (idOf dp1, idOf dp2) of
               (Just i1, Just i2) -> (i1, i2)
@@ -159,7 +160,7 @@ simpleDotDomain dom
             Dot.edge i1 i2 [ ("dir", dirConnection (ciConnection c))
                            , ("color", colorAnnotation (ciAnnotation c)) ]
       _ <- traverse mkEdge (Map.assocs conns')
-      return env
+      return nodes
 
 -- | Read .lsr input file, return .dot code as a string.
 simpleDotDomainFile :: FilePath -> IO String
