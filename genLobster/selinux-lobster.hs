@@ -148,7 +148,7 @@ processPolicy policy = classDecls ++ domainDecls ++ connectionDecls
         stmts = [ L.newPort (toPortId p) | p <- perms ]
     domainDecls :: [L.Decl]
     domainDecls =
-      [ L.Domain (toIdentifier' typeId classId) (toClassId classId) []
+      [ L.newDomain (toIdentifier' typeId classId) (toClassId classId) []
       | (typeId, classIds) <- Map.assocs (object_classes finalSt)
       , classId <- Set.toList classIds
       ]

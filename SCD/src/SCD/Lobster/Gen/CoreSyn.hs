@@ -61,7 +61,7 @@ data Decl
    -- spec seems
  = Class   Name [Param] [Decl]
  | Port    Name [PortConstraint] (Dir,[DomPort])
- | Domain  Name Name [Param]
+ | Domain  Name Name [Param] [ConnectAnnotation]
  | Type    Name [Name]
  | Connect DomPort DomPort Dir [ConnectAnnotation]
  | Comment String
@@ -131,7 +131,7 @@ data ConnectAnnotation = ConnectAnnotation Name [AnnotationElement]
 data AnnotationElement = AnnotationInt Int | AnnotationString String | AnnotationVar Name
 
 newDomain :: Name -> Name -> [Param] -> Decl
-newDomain binder ctor args = Domain binder ctor args
+newDomain binder ctor args = Domain binder ctor args []
 
 domPort :: Name -> Name -> DomPort
 domPort a b = DomPort { portDomain = Just a, portLabel = b }

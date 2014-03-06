@@ -26,6 +26,11 @@ ppLobster ds = vcat (map (ppDecl 0) ds)
 iBody :: Int
 iBody = 3
 
+prependAnnotations :: [ConnectAnnotation] -> Doc -> Doc
+prependAnnotations [] d = d
+prependAnnotations xs d =
+  vcat [brackets (sep (punctuate comma (map ppAnnotation xs))), d]
+
 ppDecl :: Int -> Decl -> Doc
 ppDecl i d =
  case d of
@@ -44,8 +49,8 @@ ppDecl i d =
         else text ":" <+> braces (sep (punctuate comma (map ppPC pcs)))) <>
        (if null ps then empty else space <> ppDir True di <+> hsep (map ppDP ps)) <>
          char ';'
-   Domain v f args ->
-     nest i $
+   Domain v f args xs ->
+     nest i $ prependAnnotations xs $
       text "domain" <+> ppName v <+> char '=' <+>
         ppName f <> parens (hsep (punctuate comma (map ppName args))) <> char ';'
    Type t as ->
@@ -55,13 +60,9 @@ ppDecl i d =
 	  then empty
 	  else (text "// attributes:" <+> hsep (map ppName as))))
 
-   Connect dpA dpB di [] ->
-     nest i $
-      ppDP dpA <+> ppDir True di <+> ppDP dpB <> char ';'
    Connect dpA dpB di xs ->
-     nest i $ vcat $
-      [ brackets (sep (punctuate comma (map ppAnnotation xs))) 
-      , ppDP dpA <+> ppDir True di <+> ppDP dpB <> char ';' ]
+     nest i $ prependAnnotations xs $
+      ppDP dpA <+> ppDir True di <+> ppDP dpB <> char ';'
 
    Comment "" -> text "" -- hack!
    Comment s -> nest i $ text ("// " ++ s)

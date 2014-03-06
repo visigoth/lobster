@@ -111,16 +111,22 @@ addAllow subject object cls perms = do
     , allow_rules = Map.insertWith (Map.unionWith Set.union) rule posMap (allow_rules st)
     }
 
-addAttrib :: S.TypeId -> S.AttributeId -> M ()
-addAttrib ty attr = modify f
+addAttrib :: S.AttributeId -> M ()
+addAttrib attr =
+  modify $ \st -> st
+    { attrib_members = addkeyMapSet attr (attrib_members st)
+    }
+
+addTypeAttrib :: S.TypeId -> S.AttributeId -> M ()
+addTypeAttrib ty attr = modify f
   where
     f st = st
       { object_classes = addkeyMapSet (S.fromId (S.toId attr)) (object_classes st)
       , attrib_members = insertMapSet attr ty (attrib_members st)
       }
 
-addAttribs :: S.TypeId -> [S.AttributeId] -> M ()
-addAttribs ty attrs = mapM_ (addAttrib ty) attrs
+addTypeAttribs :: S.TypeId -> [S.AttributeId] -> M ()
+addTypeAttribs ty attrs = mapM_ (addTypeAttrib ty) attrs
 
 addTypeTransition :: S.TypeId -> S.TypeId -> S.ClassId -> S.TypeId -> M ()
 addTypeTransition subj rel cls new = modify f
@@ -165,8 +171,9 @@ processStmt stmt =
   case stmt of
     Ifdef i stmts1 stmts2 -> processStmts (if isDefined i then stmts1 else stmts2)
     Ifndef i stmts -> processStmts (if isDefined i then [] else stmts)
-    Type t _aliases attrs -> addAttribs t attrs -- TODO: track aliases
-    TypeAttribute t attrs -> addAttribs t (toList attrs)
+    Attribute attr -> addAttrib attr
+    Type t _aliases attrs -> addTypeAttribs t attrs -- TODO: track aliases
+    TypeAttribute t attrs -> addTypeAttribs t (toList attrs)
     Transition S.TypeTransition (S.SourceTarget al bl cl) t ->
       sequence_ $
         [ addTypeTransition subject related classId object
@@ -421,6 +428,7 @@ outputDomtransMacro1 n ds = domDecl : map connectArg args
 
     domDecl :: L.Decl
     domDecl = L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString (ds !! 1)))]
+      [L.ConnectAnnotation (L.Name "Macro") (map (L.AnnotationString . S.idString) ds)]
 
     connectArg :: (Int, S.ClassId, S.PermissionId, String) -> L.Decl
     connectArg (i, cls, perm, argname) =
@@ -449,6 +457,7 @@ outputDomtransMacro2 n ds = domDecl : map connectArg args
 
     domDecl :: L.Decl
     domDecl = L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString (ds !! 1)))]
+      [L.ConnectAnnotation (L.Name "Macro") (map (L.AnnotationString . S.idString) ds)]
 
     connectArg :: (Int, Port, String) -> L.Decl
     connectArg (i, port, argname) =
@@ -479,9 +488,13 @@ outputLobster1 policy st =
 
     domainDecls :: [L.Decl]
     domainDecls =
-      [ L.Domain (toIdentifier typeId classId) (toClassId classId) []
+      [ L.Domain (toIdentifier typeId classId) (toClassId classId) [] [annotation]
       | (typeId, classIds) <- Map.assocs (object_classes st)
       , classId <- Set.toList classIds
+      , let annotation =
+              if Map.member (S.fromId (S.toId typeId)) (attrib_members st)
+                then L.ConnectAnnotation (L.Name "Attribute") []
+                else L.ConnectAnnotation (L.Name "Type") []
       ]
 
     connectionDecls :: [L.Decl]
@@ -542,12 +555,16 @@ outputLobster2 st =
     domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> [L.Decl]
     domainDecl (ty, classes) =
       [ L.Class className [] (header ++ stmts)
-      , L.Domain (toDom ty) className [] ]
+      , L.Domain (toDom ty) className [] [annotation] ]
         -- TODO: Add support for anonymous domains to lobster language
       where
         className = L.Name ("Type_" ++ S.idString ty)
         header = map L.newPort [activePort, memberPort, attributePort]
         stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
+        annotation =
+          if Map.member (S.fromId (S.toId ty)) (attrib_members st)
+            then L.ConnectAnnotation (L.Name "Attribute") []
+            else L.ConnectAnnotation (L.Name "Type") []
 
     domainDecls :: [L.Decl]
     domainDecls = concatMap domainDecl (Map.assocs (object_classes st))
