@@ -354,6 +354,11 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     toClassId :: S.ClassId -> L.Name
     toClassId = L.Name . capitalize . S.idString
 
+outputModule :: M4.ModuleId -> L.ConnectAnnotation
+outputModule i =
+  L.ConnectAnnotation (L.Name "Module")
+    [L.AnnotationString (S.idString i)]
+
 outputPerm :: S.PermissionId -> L.ConnectAnnotation
 outputPerm p =
   L.ConnectAnnotation (L.Name "Perm")
@@ -514,13 +519,18 @@ outputLobster1 policy st =
 
     domainDecls :: [L.Decl]
     domainDecls =
-      [ L.Domain (toIdentifier typeId classId) (toClassId classId) [] [annotation]
+      [ L.Domain (toIdentifier typeId classId) (toClassId classId) [] [ann1, ann2]
       | (typeId, classIds) <- Map.assocs (object_classes st)
       , classId <- Set.toList classIds
-      , let annotation =
+      , let ann1 =
               if Map.member (S.fromId (S.toId typeId)) (attrib_members st)
                 then L.ConnectAnnotation (L.Name "Attribute") []
                 else L.ConnectAnnotation (L.Name "Type") []
+      , let modId =
+              case Map.lookup (S.toId typeId) (type_modules st) of
+                Just m -> m
+                Nothing -> S.mkId "unknown"
+      , let ann2 = outputModule modId
       ]
 
     connectionDecls :: [L.Decl]
@@ -581,16 +591,21 @@ outputLobster2 st =
     domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> [L.Decl]
     domainDecl (ty, classes) =
       [ L.Class className [] (header ++ stmts)
-      , L.Domain (toDom ty) className [] [annotation] ]
+      , L.Domain (toDom ty) className [] [ann1, ann2] ]
         -- TODO: Add support for anonymous domains to lobster language
       where
         className = L.Name ("Type_" ++ S.idString ty)
         header = map L.newPort [activePort, memberPort, attributePort]
         stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
-        annotation =
+        ann1 =
           if Map.member (S.fromId (S.toId ty)) (attrib_members st)
             then L.ConnectAnnotation (L.Name "Attribute") []
             else L.ConnectAnnotation (L.Name "Type") []
+        modId =
+          case Map.lookup (S.toId ty) (type_modules st) of
+            Just m -> m
+            Nothing -> S.mkId "unknown"
+        ann2 = outputModule modId
 
     domainDecls :: [L.Decl]
     domainDecls = concatMap domainDecl (Map.assocs (object_classes st))
