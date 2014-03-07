@@ -42,6 +42,7 @@ data St = St
   , allow_rules      :: !(Map AllowRule (Map S.PermissionId (Set P.Pos)))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
   , domtrans_macros  :: !(Set [S.TypeOrAttributeId])
+  , type_modules     :: !(Map S.Identifier M4.ModuleId)
   }
 
 processClassId :: S.ClassId
@@ -58,9 +59,27 @@ initSt = St
   , allow_rules      = Map.empty
   , type_transitions = Set.empty
   , domtrans_macros  = Set.empty
+  , type_modules     = Map.empty
   }
 
-type M a = ReaderT [P.Pos] (State St) a
+data Env = Env
+  { envPositions :: [P.Pos]
+  , envModuleId :: M4.ModuleId
+  }
+
+initEnv :: Env
+initEnv = Env
+  { envPositions = []
+  , envModuleId = S.mkId "none"
+  }
+
+setModuleId :: M4.ModuleId -> Env -> Env
+setModuleId i e = e { envModuleId = i }
+
+addPos :: P.Pos -> Env -> Env
+addPos p e = e { envPositions = p : envPositions e }
+
+type M a = ReaderT Env (State St) a
 
 ----------------------------------------------------------------------
 -- Processing of M4 policy
@@ -96,7 +115,7 @@ addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
 addAllow subject object cls perms = do
   -- discard all but the outermost enclosing source position
   -- so that we only get the position of the top-level macro
-  ps <- asks (Set.fromList . take 1 . reverse)
+  ps <- asks (Set.fromList . take 1 . reverse . envPositions)
   let rule = AllowRule subject object cls
   let posMap = Map.fromSet (const ps) perms
   let activeClasses = Set.map (activeClass cls) perms
@@ -110,6 +129,12 @@ addAllow subject object cls perms = do
         Map.insertWith (flip Set.union) cls perms (class_perms st)
     , allow_rules = Map.insertWith (Map.unionWith Set.union) rule posMap (allow_rules st)
     }
+
+addDeclaration :: S.IsIdentifier i => i -> M ()
+addDeclaration i = do
+  m <- asks envModuleId
+  modify $ \st ->
+    st { type_modules = Map.insert (S.toId i) m (type_modules st) }
 
 addAttrib :: S.AttributeId -> M ()
 addAttrib attr =
@@ -171,8 +196,8 @@ processStmt stmt =
   case stmt of
     Ifdef i stmts1 stmts2 -> processStmts (if isDefined i then stmts1 else stmts2)
     Ifndef i stmts -> processStmts (if isDefined i then [] else stmts)
-    Attribute attr -> addAttrib attr
-    Type t _aliases attrs -> addTypeAttribs t attrs -- TODO: track aliases
+    Attribute attr -> addDeclaration attr >> addAttrib attr
+    Type t _aliases attrs -> addDeclaration t >> addTypeAttribs t attrs -- TODO: track aliases
     TypeAttribute t attrs -> addTypeAttribs t (toList attrs)
     Transition S.TypeTransition (S.SourceTarget al bl cl) t ->
       sequence_ $
@@ -191,7 +216,7 @@ processStmt stmt =
         , classId <- toList cl
         , let perms = Set.fromList $ toList dl
         ]
-    StmtPosition stmt1 pos -> local (pos :) $ processStmt stmt1
+    StmtPosition stmt1 pos -> local (addPos pos) $ processStmt stmt1
     Call m4id [al, bl, cl] | m4id == S.mkId "domtrans_pattern" ->
       sequence_ $
         [ addDomtransMacro [a, b, c]
@@ -202,7 +227,8 @@ processStmt stmt =
     _ -> return ()
 
 processImplementation :: M4.Implementation -> M ()
-processImplementation (M4.Implementation _ _ stmts) = mapM_ processStmt stmts
+processImplementation (M4.Implementation modId _ stmts) =
+  local (setModuleId modId) $ mapM_ processStmt stmts
 
 processPolicyModule :: M4.PolicyModule -> M ()
 processPolicyModule m = processImplementation (M4.implementation m)
@@ -652,7 +678,7 @@ toLobster mode policy0 = do
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
   let action = processPolicy policy >> processAttributes >> processSubAttributes subattributes
-  let (ok, finalSt) = runState (runReaderT action []) initSt
+  let (ok, finalSt) = runState (runReaderT action initEnv) initSt
   if ok
     then return (outputLobster mode policy finalSt)
     else Left (Error "subattribute check failed")
