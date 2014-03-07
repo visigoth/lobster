@@ -101,6 +101,14 @@ colorAnnotation (Annotation elts) = go elts
     go (_ : xs) = go xs
     go [] = "black"
 
+domainModule :: Domain a b -> Maybe String
+domainModule d =
+  case domainAnnotation d of
+    Annotation es ->
+      case lookup (UIdent "Module") es of
+        Just [StringExpression s] -> Just s
+        _ -> Nothing
+
 -- | Read domain from .lsr file.
 parseDomainFile :: FilePath -> IO P.Domain
 parseDomainFile filename = do
@@ -151,6 +159,13 @@ mergeConnInfo :: ConnInfo -> ConnInfo -> ConnInfo
 mergeConnInfo (ConnInfo c1 a1) (ConnInfo c2 a2) =
   ConnInfo (mergeConnection c1 c2) (mappend a1 a2)
 
+simpleDotModule ::
+  Maybe String -> Map.Map DomainId (Domain a b) -> Dot.Dot (Map.Map DomainId PortNodes)
+simpleDotModule Nothing m = traverse simpleDotDomain m
+simpleDotModule (Just i) m = (fmap snd . Dot.cluster) $ do
+  Dot.attribute ("label", i)
+  traverse simpleDotDomain m
+
 simpleDotDomain :: Domain a b -> Dot.Dot PortNodes
 simpleDotDomain dom
   | Map.null (subDomains dom) = do
@@ -162,7 +177,11 @@ simpleDotDomain dom
       Dot.attribute ("label", name dom)
       mapM_ Dot.attribute (fillcolorAnnotation (domainAnnotation dom))
       nodes <- Map.traverseWithKey dotPortType (ports dom)
-      subnodes <- traverse simpleDotDomain (subDomains dom)
+      let modules = Map.fromListWith Map.union
+            [ (domainModule d, Map.singleton i d)
+            | (i, d) <- Map.assocs (subDomains dom) ]
+      subnodes' <- Map.traverseWithKey simpleDotModule modules
+      let subnodes = Map.unions (Map.elems subnodes')
       let idOf dp =
             case domain dp of
               Nothing -> Map.lookup (port dp) nodes
