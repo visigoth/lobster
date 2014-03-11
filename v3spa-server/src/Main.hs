@@ -165,7 +165,7 @@ handleImportSELinux = method POST $ do
       dir <- refPolicyDir (seReqRefpolicy req)
       policy0 <- liftIO $ readPolicy Nothing dir
       policy1 <- foldM importModule policy0 (seReqModules req)
-      case M.toLobster policy1 of
+      case M.toLobster M.Mode2 policy1 of
         Left err  -> sendError $ MiscError (show err)
         Right lsr -> do
           let obj = object [ "version" .= V.version
