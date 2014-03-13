@@ -18,7 +18,6 @@ Library
                      directory >= 1,
                      mtl >= 1,
                      containers >= 0.1.0.0,
-                     lobster >= 0.1,
                      scd >= 0.1,
                      errors >= 1.4.5
 
@@ -31,7 +30,6 @@ Executable genLobster
                      directory >= 1,
                      mtl >= 1,
                      containers >= 0.1.0.0,
-                     lobster >= 0.1,
                      scd >= 0.1
 
 Executable selinux-lobster
@@ -42,7 +40,6 @@ Executable selinux-lobster
                      directory >= 1,
                      mtl >= 1,
                      containers >= 0.1.0.0,
-                     lobster >= 0.1,
                      scd >= 0.1
 
 Executable m4-lobster
