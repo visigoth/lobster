@@ -5,7 +5,7 @@
 -- All Rights Reserved.
 --
 
-module Version where
+module V3SPA.Server.Version where
 
 -- | Version number of the V3SPA server and protocol.
 --
@@ -24,6 +24,11 @@ module Version where
 --   - added "domainAnnotations" and "classAnnotations" to domain
 --   - added "version" at top level
 --   - implemented source positions in error messages
+--
+-- Version 2:
+--
+-- - changed Lobster JSON format to flat list of domains,
+--   ports, and connections
 version :: Int
-version = 1
+version = 2
 

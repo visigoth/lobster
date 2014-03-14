@@ -1,0 +1,34 @@
+{-# LANGUAGE OverloadedStrings #-}
+--
+-- IPTables.hs --- Import IPTables to Lobster.
+--
+-- Copyright (C) 2013, Galois, Inc.
+-- All Rights Reserved.
+--
+
+module V3SPA.Server.Import.IPTables
+  ( handleImportIptables
+  ) where
+
+import Control.Error
+import Snap
+
+import Lobster.Core
+import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
+
+import V3SPA.Server.Snap
+
+import qualified SCD.Lobster.Gen.CoreSyn  as L
+import qualified IptablesToLobster        as I
+
+-- | Parse IPtables from a request body string.
+importIptables :: String -> Either (Error Span) [L.Decl]
+importIptables = fmapL (MiscError . show) . I.toLobster
+
+-- | "POST /import/iptables" --- import IPTables to Lobster
+handleImportIptables :: V3Snap ()
+handleImportIptables = method POST $ do
+  modifyResponse $ setContentType "application/json"
+  body <- readBodyString
+  lsr  <- hoistErr $ importIptables body
+  respond (showLobster lsr)
