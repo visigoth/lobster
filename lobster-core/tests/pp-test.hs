@@ -30,7 +30,7 @@ main :: IO ()
 main = do
   file      <- parseArgs
   contents  <- LBS.readFile file
-  let toks   = alexScanTokens contents
-  let policy = parsePolicy toks
-  putDoc (ppr policy <> line)
+  case parseByteString contents of
+    Left err     -> error (show err)
+    Right policy -> putDoc (ppr policy <> line)
 

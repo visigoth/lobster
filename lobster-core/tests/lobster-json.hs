@@ -1,11 +1,14 @@
+{-# LANGUAGE OverloadedStrings #-}
 --
--- eval-test.hs --- Test the Lobster evaluator.
+-- lobster-json.hs --- Convert a Lobster file to JSON.
 --
 -- Copyright (C) 2014, Galois, Inc.
 -- All Rights Reserved.
 --
 
-import Control.Lens
+import Control.Error
+import Data.Monoid ((<>))
+import Data.Text (pack)
 import System.Environment
 import System.Exit
 import System.IO
@@ -15,6 +18,7 @@ import Lobster.Core
 import qualified Data.ByteString.Lazy       as LBS
 import qualified Data.Graph.Inductive       as G
 import qualified Data.Aeson.Encode.Pretty   as AP
+import qualified Data.Text.IO               as TIO
 
 usage :: IO a
 usage = do
@@ -28,18 +32,17 @@ parseArgs = do
     a:_ -> return a
     []  -> usage
 
-eval :: Policy Span -> IO (Module Span)
-eval policy =
-  case evalPolicy policy of
-    Left err  -> error (show err)
-    Right mod -> return mod
+die :: FilePath -> Error Span -> IO a
+die file err = do
+  let msg = pack file <> ":" <> spanErrorMessage err
+  TIO.hPutStrLn stderr msg
+  exitFailure
 
 main :: IO ()
 main = do
-  file      <- parseArgs
-  contents  <- LBS.readFile file
-  let toks   = alexScanTokens contents
-  let policy = parsePolicy toks
-  mod       <- eval policy
-  LBS.putStrLn (AP.encodePretty mod)
+  file   <- parseArgs
+  result <- runEitherT $ readPolicy file
+  case result of
+    Left err  -> die file err
+    Right mod -> LBS.putStrLn (AP.encodePretty mod)
 

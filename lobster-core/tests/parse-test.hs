@@ -30,9 +30,9 @@ main :: IO ()
 main = do
   file      <- parseArgs
   contents  <- LBS.readFile file
-  let toks   = alexScanTokens contents
-  let (Policy _ policy) = parsePolicy toks
-  -- remove source location to reduce size of shown ast
-  let stmts = map (fmap $ const ()) policy
-  putStrLn $ ppShow stmts
+  case parseByteString contents of
+    Left err -> error (show err)
+    Right (Policy _ policy) -> do
+      let stmts = map (fmap $ const ()) policy
+      putStrLn $ ppShow stmts
 

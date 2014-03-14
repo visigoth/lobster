@@ -12,6 +12,7 @@ module Lobster.Core.Parser
 
 import Lobster.Core.AST
 import Lobster.Core.Lexer
+import Lobster.Core.Error
 
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as T
@@ -59,6 +60,11 @@ import qualified Data.Text as T
   String            { Token _ _ TokString }
   UIdent            { Token _ _ TokUIdent }
   LIdent            { Token _ _ TokLIdent }
+  EOF               { Token _ _ TokEOF }
+
+%monad { Alex }
+%lexer { lexwrap } { Token _ _ TokEOF }
+%error { happyError }
 
 %%
 
@@ -223,6 +229,9 @@ ExpList
 -- TODO: Implement parser for assertion language.
 
 {
+lexwrap :: (Token -> Alex a) -> Alex a
+lexwrap = (alexMonadScan >>=)
+
 -- | Get the value of an integer token (partial).
 tokIntValue :: Token -> Integer
 tokIntValue (Token _ _ (TokInteger i)) = i
@@ -239,12 +248,10 @@ qnameSpan (UName i) = label i
 qnameSpan (QName q i) = unionSpan (qnameSpan q) (label i)
 -}
 
--- FIXME: need to use an error monad here
-happyError :: [Token] -> a
-happyError (t:_) = error msg
+happyError :: Token -> Alex a
+happyError t = alexError $ ParseError (tokSpan t) msg
   where
-    (line, col) = spanStart (tokSpan t)
-    msg = show line ++ ":" ++ show col ++ ": syntax error at '" ++ T.unpack (tokText t) ++ "'"
+    msg = T.pack ("syntax error at '" ++ T.unpack (tokText t) ++ "'")
 }
 
 -- vim: set ft=happy ts=2 et:

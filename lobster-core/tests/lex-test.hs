@@ -25,10 +25,18 @@ parseArgs = do
     a:_ -> return a
     []  -> usage
 
+scanner s = runAlex s $ do
+  let loop xs = do
+        tok <- alexMonadScan
+        case tok of
+          Token _ _ TokEOF -> return xs
+          _ -> loop $ tok : xs
+  loop []
+
 main :: IO ()
 main = do
   file     <- parseArgs
   contents <- LBS.readFile file
-  let toks  = alexScanTokens contents
-  mapM_ print toks
-
+  case scanner contents of
+    Left err   -> error (show err)
+    Right toks -> mapM_ print (reverse toks)

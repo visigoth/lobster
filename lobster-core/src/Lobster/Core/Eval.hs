@@ -18,7 +18,6 @@ module Lobster.Core.Eval
   , moduleRootDomain
 
     -- * Evaluation
-  , Error(..)
   , evalPolicy
   , labelledGraph
 
@@ -65,6 +64,7 @@ import Data.Monoid ((<>), mempty)
 import Data.Text (Text)
 import Text.Show.Pretty (ppShow)
 
+import Lobster.Core.Error
 import Lobster.Core.Lexer (Span)
 
 import qualified Data.Graph.Inductive as G
@@ -290,22 +290,6 @@ domainTree mod domId dom = DomTree
 ----------------------------------------------------------------------
 -- Evaluator Monad
 
--- | Errors raised by the evaluator.
-data Error l
-  = DuplicatePort l Text
-  | DuplicateClass l Text
-  | DuplicateDomain l Text
-  | DuplicateVar l Text
-  | UndefinedClass l Text
-  | UndefinedVar l Text
-  | UndefinedDomain l Text
-  | UndefinedPort (A.PortName l)
-  | InternalConnection (A.PortName l) (A.PortName l)
-  | BadArguments l Int
-  | TypeError (Value l) Text
-  | MiscError String
-  deriving Show
-
 -- | State and error handling monad for evaluation.
 type Eval l a = StateT (Module l) (Either (Error l)) a
 
@@ -338,21 +322,26 @@ lookupVar (A.VarName l name) = do
   x <- use (moduleEnv . envVars . at name)
   maybeLose (UndefinedVar l name) x
 
+-- | Convert a port name to a string for error messages.
+fullPortName :: A.PortName l -> Text
+fullPortName (A.UPortName (A.VarName _ name)) = name
+fullPortName (A.QPortName _ (A.VarName _ n1) (A.VarName _ n2)) = n1 <> "." <> n2
+
 -- | Resolve a port in the current domain, returning its port
 -- id if it is valid.
 lookupPort :: A.PortName l -> Eval l (DomainId, PortId)
-lookupPort pid@(A.UPortName (A.VarName _ name)) = do
+lookupPort pid@(A.UPortName (A.VarName l name)) = do
   port  <- use (moduleEnv . envPorts . at name)
   domId <- use moduleRootDomain
-  port' <- maybeLose (UndefinedPort pid) port
+  port' <- maybeLose (UndefinedPort l name) port
   return (domId, port')
-lookupPort pid@(A.QPortName _ (A.VarName l domName) (A.VarName _ portName)) = do
+lookupPort pid@(A.QPortName _ (A.VarName l1 domName) (A.VarName l2 portName)) = do
   -- look up subdomain, get domain id and subdomain environment
   x <- use (moduleEnv . envSubdomains . at domName)
-  (domId, subEnv) <- maybeLose (UndefinedDomain l domName) x
+  (domId, subEnv) <- maybeLose (UndefinedDomain l1 domName) x
   -- look up port in subdomain environment
   let y = subEnv ^. envPorts . at portName
-  port <- maybeLose (UndefinedPort pid) y
+  port <- maybeLose (UndefinedPort l2 (fullPortName pid)) y
   return (domId, port)
 
 -- | Add a port definition to the current graph.
