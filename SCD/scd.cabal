@@ -7,25 +7,6 @@ Author:              Magnus Carlsson, Joe Hurd, Sigbjorn Finne, Joel Stanley, Br
 Maintainer:          magnus@galois.com, joe@galois.com, sof@galois.com, bletner@contractor.galois.com
 Build-Type:          Custom
 Cabal-Version:       >= 1.8
-Extra-source-files: checkpolicy/ChangeLog,
-                    checkpolicy/checkmodule.8,
-                    checkpolicy/checkmodule.c,
-                    checkpolicy/checkpolicy.8,
-                    checkpolicy/checkpolicy.c,
-                    checkpolicy/checkpolicy.h,
-                    checkpolicy/COPYING,
-                    checkpolicy/Makefile,
-                    checkpolicy/module_compiler.c,
-                    checkpolicy/module_compiler.h,
-                    checkpolicy/parse_util.c,
-                    checkpolicy/parse_util.h,
-                    checkpolicy/policy_define.c,
-                    checkpolicy/policy_define.h,
-                    checkpolicy/policy_parse.y,
-                    checkpolicy/policy_scan.l,
-                    checkpolicy/queue.c,
-                    checkpolicy/queue.h,
-                    checkpolicy/VERSION
 
 Library
   Build-Depends:     array >= 0.1.0.0,
