@@ -14,6 +14,7 @@ module Lobster.Core.Error
   , errorLabel
   ) where
 
+import Control.Error (headMay)
 import Data.Foldable (Foldable)
 import Data.Monoid ((<>))
 import Data.Text (Text, pack)
@@ -34,13 +35,13 @@ data Error l
   | UndefinedPort l Text
   | InternalConnection l Text Text
   | BadArguments l Int
-  | MiscError l String
+  | MiscError String
   deriving (Show, Functor, Foldable)
 
 -- | Extract the label from an error using the derived
 -- 'Foldable' instance.
-errorLabel :: Error l -> l
-errorLabel = head . F.toList
+errorLabel :: Error l -> Maybe l
+errorLabel = headMay . F.toList
 
 -- | Return an error message string for an error.
 errorMessage :: Error l -> Text
@@ -48,7 +49,7 @@ errorMessage err =
   case err of
     LexError _ t   -> t
     ParseError _ t -> t
-    MiscError _ t  -> pack t
+    MiscError t    -> pack t
     DuplicatePort _ t ->
       "duplicate port definition: '" <> t <> "'"
     DuplicateDomain _ t ->

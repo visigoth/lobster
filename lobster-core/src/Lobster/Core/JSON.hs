@@ -17,6 +17,7 @@ import Data.Aeson as A
 import Data.Text (Text)
 
 import Lobster.Core.Lexer (Loc(..), Span(..))
+import Lobster.Core.Error
 import Lobster.Core.Eval
 
 import qualified Data.Graph.Inductive       as G
@@ -135,3 +136,10 @@ instance ToJSON (Module Span) where
       goD (domId, _)   = (getDomKey m domId, domainJSON m domId)
       goP (portId, _)  = (getPortKey m portId, portJSON m portId)
 
+instance ToJSON (Error Span) where
+  toJSON e =
+    object
+      [ "filename"    .= ("<unknown>" :: Text)  -- FIXME
+      , "message"     .= errorMessage e
+      , "srcloc"      .= maybe Null toJSON (errorLabel e)
+      ]

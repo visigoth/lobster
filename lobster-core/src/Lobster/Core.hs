@@ -50,9 +50,10 @@ readPolicy path = do
 
 -- | Return a string describing a source location for console
 -- output.  This only looks at the start location.
-spanStartText :: Span -> Text
-spanStartText (Span NoLoc _) = "<end of file>"
-spanStartText (Span (Loc (line, col)) _) =
+spanStartText :: Maybe Span -> Text
+spanStartText Nothing = "<unknown>"
+spanStartText (Just (Span NoLoc _)) = "<end of file>"
+spanStartText (Just (Span (Loc (line, col)) _)) =
   pack (show line) <> ":" <> pack (show col)
 
 -- | Return an error message with source location information.
