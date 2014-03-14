@@ -71,6 +71,18 @@ portJSON m portId =
       , "srcloc"        .= toJSON (A.label port)
       ]
 
+connectionJSON :: Module Span -> Connection Span -> A.Value
+connectionJSON m c =
+  object
+    [ "left"        .= (c ^. connectionLeft . to (getPortKey m))
+    , "right"       .= (c ^. connectionRight . to (getPortKey m))
+    , "level"       .= (c ^. connectionLevel)
+    , "connection"  .= (c ^. connectionType)
+    , "annotations" .= (c ^. connectionAnnotation)
+    , "srcloc"      .= (c ^. connectionLabel)
+    ]
+
+
 subdomainsJSON :: Module Span -> Domain Span -> A.Value
 subdomainsJSON m dom =
   toJSON $ S.map (getDomKey m) $ dom ^. domainSubdomains
@@ -106,17 +118,6 @@ instance ToJSON (A.Annotation l) where
           , "args"  .= args
           ]
 
-instance ToJSON (Connection Span) where
-  toJSON c =
-    object
-      [ "left"        .= (c ^. connectionLeft . to show)
-      , "right"       .= (c ^. connectionRight . to show)
-      , "level"       .= (c ^. connectionLevel)
-      , "connection"  .= (c ^. connectionType)
-      , "annotations" .= (c ^. connectionAnnotation)
-      , "srcloc"      .= (c ^. connectionLabel)
-      ]
-
 connections :: Module Span -> [Connection Span]
 connections m = map go (G.labEdges $ m ^. moduleGraph)
   where
@@ -127,7 +128,7 @@ instance ToJSON (Module Span) where
     object
       [ "domains"     .= toJSON domains
       , "ports"       .= toJSON ports
-      , "connections" .= toJSON (connections m)
+      , "connections" .= toJSON (map (connectionJSON m) (connections m))
       , "root"        .= toJSON (getDomKey m (m ^. moduleRootDomain))
       ]
     where
