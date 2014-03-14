@@ -22,7 +22,7 @@ import qualified Data.Text.IO               as TIO
 
 usage :: IO a
 usage = do
-  hPutStrLn stderr "usage: eval-test FILENAME"
+  hPutStrLn stderr "usage: lobster-json FILENAME"
   exitFailure
 
 parseArgs :: IO FilePath
@@ -40,9 +40,7 @@ die file err = do
 
 main :: IO ()
 main = do
-  file   <- parseArgs
-  result <- runEitherT $ readPolicy file
-  case result of
-    Left err  -> die file err
-    Right mod -> LBS.putStrLn (AP.encodePretty mod)
+  file <- parseArgs
+  mod  <- eitherT (die file) return (readPolicy file)
+  LBS.putStrLn (AP.encodePretty mod)
 

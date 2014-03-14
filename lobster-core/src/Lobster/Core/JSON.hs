@@ -15,7 +15,7 @@ import Control.Lens hiding ((.=))
 import Data.Aeson as A
 import Data.Text (Text)
 
-import Lobster.Core.Lexer (Span(..))
+import Lobster.Core.Lexer (Loc(..), Span(..))
 import Lobster.Core.Eval
 
 import qualified Data.Aeson.Encode.Pretty   as AP
@@ -36,11 +36,15 @@ getPortKey :: Module l -> PortId -> Text
 -- getPortKey mod portId = (mod ^?! modulePorts . ix portId) ^. portPath
 getPortKey _ (PortId x) = T.pack $ show x
 
+instance ToJSON Loc where
+  toJSON NoLoc        = Null
+  toJSON (Loc (l, c)) = object ["line" .= l, "col" .= c]
+
 instance ToJSON Span where
-  toJSON (Span (sL, sC) (eL, eC)) =
+  toJSON (Span start end) =
     object
-      [ "start" .= object [ "line" .= sL, "col" .= sC ]
-      , "end"   .= object [ "line" .= eL, "col" .= eC ]
+      [ "start" .= toJSON start
+      , "end"   .= toJSON end
       ]
 
 domainJSON :: Module Span -> DomainId -> A.Value

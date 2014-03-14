@@ -47,11 +47,20 @@ readPolicy path = do
     policy <- parseByteString contents
     evalPolicy policy
 
+----------------------------------------------------------------------
+-- Utilities
+
+-- | Return a string describing a source location for console
+-- output.  This only looks at the start location.
+spanStartText :: Span -> Text
+spanStartText (Span NoLoc _) = "<end of file>"
+spanStartText (Span (Loc (line, col)) _) =
+  pack (show line) <> ":" <> pack (show col)
+
 -- | Return an error message with source location information.
 spanErrorMessage :: Error Span -> Text
-spanErrorMessage err = lineT <> ":" <> colT <> ": " <> msg
+spanErrorMessage err = loc <> ": " <> msg
   where
-    Span (line, col) _ = errorLabel err
-    lineT = pack $ show $ line
-    colT  = pack $ show $ col
-    msg   = errorMessage err
+    loc = spanStartText (errorLabel err)
+    msg = errorMessage err
+

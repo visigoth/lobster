@@ -160,7 +160,7 @@ Annotation
 -- Statements
 
 Policy :: { Policy Span }
-Policy : StmtList { Policy (foldr1 unionSpan (map label $1)) $1 }
+Policy : StmtList { Policy (foldr unionSpan emptySpan (map label $1)) $1 }
 
 -- Parse a port identifier.
 PortName :: { PortName Span }
@@ -240,13 +240,6 @@ tokIntValue _ = error "not an integer token"
 -- | Take the union span of two tokens.
 spanToks :: Token -> Token -> Span
 spanToks t1 t2 = unionSpan (tokSpan t1) (tokSpan t2)
-
-{-
--- | Take the union span of identifiers in a qname.
-qnameSpan :: QName Span -> Span
-qnameSpan (UName i) = label i
-qnameSpan (QName q i) = unionSpan (qnameSpan q) (label i)
--}
 
 happyError :: Token -> Alex a
 happyError t = alexError $ ParseError (tokSpan t) msg

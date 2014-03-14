@@ -8,8 +8,10 @@
 {
 module Lobster.Core.Lexer
   ( -- * Source Spans
-    Span(..)
+    Loc(..)
+  , Span(..)
   , unionSpan
+  , emptySpan
 
     -- * Token Types
   , Keyword(..)
@@ -26,7 +28,7 @@ module Lobster.Core.Lexer
   ) where
 
 import Data.Char (chr)
-import Data.Monoid ((<>))
+import Data.Monoid ((<>), Monoid(..))
 import Data.Word (Word8)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Text.Read (decimal)
@@ -155,24 +157,40 @@ data ConnOperator
   | OpConnNeutral
   deriving (Eq, Ord, Show)
 
--- | A source span (probably should be in its own module).
+-- | A source location.
+data Loc = Loc (Int, Int)     -- ^ known line and column
+         | NoLoc              -- ^ unknown loc
+  deriving (Eq, Ord, Show)
+
+-- | A source span.
 data Span = Span
-  { spanStart :: (Int, Int)
-  , spanEnd   :: (Int, Int)
+  { spanStart :: Loc
+  , spanEnd   :: Loc
   } deriving (Eq, Ord, Show)
+
+-- | An empty span.
+emptySpan :: Span
+emptySpan = Span NoLoc NoLoc
 
 -- | Create a source span from a token position and text.
 mkTokSpan :: Integral a => AlexPosn -> a -> Span
 mkTokSpan (AlexPn _ line col) len = Span start end
   where
-    start = (line, col)
-    end   = (line, col + fromIntegral len)
+    start = Loc (line, col)
+    end   = Loc (line, col + fromIntegral len)
 
 -- | Take the union of two source ranges.
 unionSpan :: Span -> Span -> Span
-unionSpan s1 s2
-  | s1 < s2   = Span (spanStart s1) (spanEnd s2)
-  | otherwise = Span (spanStart s2) (spanEnd s1)
+unionSpan (Span NoLoc end1) (Span start2 end2) =
+  Span start2 (max end1 end2)
+unionSpan (Span start1 NoLoc) (Span start2 end2) =
+  Span (min start1 start2) end2
+unionSpan (Span start1 end1) (Span NoLoc end2) =
+  Span start1 (max end1 end2)
+unionSpan (Span start1 end1) (Span start2 NoLoc) =
+  Span (min start1 start2) end1
+unionSpan (Span start1 end1) (Span start2 end2) =
+  Span (min start1 start2) (max end1 end2)
 
 -- | Data common to all token types.
 data Token = Token
@@ -180,6 +198,10 @@ data Token = Token
   , tokText   :: T.Text
   , tokType   :: TokenType
   } deriving Show
+
+instance Monoid Span where
+  mempty  = emptySpan
+  mappend = unionSpan
 
 -- | Data for each type of token.
 data TokenType
@@ -196,8 +218,7 @@ data TokenType
 alexEOF :: Alex Token
 alexEOF = do
   (pos, _, _) <- alexGetInput
-  let span = mkTokSpan pos 0
-  return $ Token span (T.empty) TokEOF
+  return $ Token emptySpan (T.empty) TokEOF
 
 -- | Token type builder for an integer literal.
 tokInt :: T.Text -> Alex TokenType
