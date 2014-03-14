@@ -35,8 +35,6 @@ import Data.Text (Text)
 import Data.Foldable (Foldable)
 import Data.Traversable (Traversable)
 
-import qualified Data.Text as T
-
 -- | Class of AST objects labeled with arbitrary data.
 class Labeled a where
   label :: a b -> b

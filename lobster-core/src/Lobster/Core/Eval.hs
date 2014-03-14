@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveFunctor #-}
@@ -33,6 +34,10 @@ module Lobster.Core.Eval
   , domainAnnotation
   , domainClassAnnotation
 
+    -- * Domain Trees
+  , DomTree(..)
+  , moduleDomTree
+
     -- * Ports
   , Port()
   , PortId(..)
@@ -62,17 +67,14 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import Data.Monoid ((<>), mempty)
 import Data.Text (Text)
-import Text.Show.Pretty (ppShow)
 
 import Lobster.Core.Error
-import Lobster.Core.Lexer (Span)
 
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map             as M
 import qualified Data.Set             as S
 import qualified Data.Text            as T
 import qualified Lobster.Core.AST     as A
-import qualified Lobster.Core.Parser  as P
 
 -- | "when" with a monadic boolean condition.
 whenM :: Monad m => m Bool -> m () -> m ()
@@ -245,9 +247,9 @@ labelledGraph m = G.undir (G.emap goE (G.gmap goN (m ^. moduleGraph)))
         nameL <> " -- " <> nameR
     -}
     goE = const ""
-    goN (pre, node, _, post) =
+    goN (preds, node, _, posts) =
       let name = m ^?! moduleDomains . ix (DomainId node) . domainPath in
-      (pre, node, name, post)
+      (preds, node, name, posts)
 
 ----------------------------------------------------------------------
 -- Domain Trees
@@ -270,13 +272,13 @@ instance Ord (DomTree l) where
 
 -- TODO: Could this be better defined as a 'Fold'?
 moduleDomTree :: Module l -> DomTree l
-moduleDomTree mod = domainTree mod rootDomId rootDom
+moduleDomTree m = domainTree m rootDomId rootDom
   where
-    rootDomId = mod ^. moduleRootDomain
-    rootDom   = mod ^?! moduleDomains . ix rootDomId
+    rootDomId = m ^. moduleRootDomain
+    rootDom   = m ^?! moduleDomains . ix rootDomId
 
 domainTree :: Module l -> DomainId -> Domain l -> DomTree l
-domainTree mod domId dom = DomTree
+domainTree m domId dom = DomTree
   { _domTreeDomainId    = domId
   , _domTreeDomain      = dom
   , _domTreeSubdomains  = map goSubdomains (S.toList $ dom ^. domainSubdomains)
@@ -284,8 +286,8 @@ domainTree mod domId dom = DomTree
   }
   where
     goSubdomains subDomId =
-      domainTree mod subDomId (mod ^?! moduleDomains . ix subDomId)
-    goPorts portId = mod ^?! modulePorts . ix portId
+      domainTree m subDomId (m ^?! moduleDomains . ix subDomId)
+    goPorts portId = m ^?! modulePorts . ix portId
 
 ----------------------------------------------------------------------
 -- Evaluator Monad
@@ -299,14 +301,14 @@ lose = lift . throwE
 
 -- | Throw an error if a 'Maybe' value is Nothing.
 maybeLose :: Error l -> Maybe a -> Eval l a
-maybeLose err x = lift $ note err x
+maybeLose e x = lift $ note e x
 
 ----------------------------------------------------------------------
 -- Evaluation
 
 -- | Add a class definition to the current environment.
 addClass :: A.TypeName l -> Class l -> Eval l ()
-addClass (A.TypeName l name) cl = do
+addClass (A.TypeName _ name) cl = do
   moduleEnv . envClasses . at name ?= cl
 
 -- | Look up a class definition.
@@ -330,17 +332,17 @@ fullPortName (A.QPortName _ (A.VarName _ n1) (A.VarName _ n2)) = n1 <> "." <> n2
 -- | Resolve a port in the current domain, returning its port
 -- id if it is valid.
 lookupPort :: A.PortName l -> Eval l (DomainId, PortId)
-lookupPort pid@(A.UPortName (A.VarName l name)) = do
+lookupPort (A.UPortName (A.VarName l name)) = do
   port  <- use (moduleEnv . envPorts . at name)
   domId <- use moduleRootDomain
   port' <- maybeLose (UndefinedPort l name) port
   return (domId, port')
-lookupPort pid@(A.QPortName _ (A.VarName l1 domName) (A.VarName l2 portName)) = do
+lookupPort pid@(A.QPortName _ (A.VarName l1 domN) (A.VarName l2 portN)) = do
   -- look up subdomain, get domain id and subdomain environment
-  x <- use (moduleEnv . envSubdomains . at domName)
-  (domId, subEnv) <- maybeLose (UndefinedDomain l1 domName) x
+  x <- use (moduleEnv . envSubdomains . at domN)
+  (domId, subEnv) <- maybeLose (UndefinedDomain l1 domN) x
   -- look up port in subdomain environment
-  let y = subEnv ^. envPorts . at portName
+  let y = subEnv ^. envPorts . at portN
   port <- maybeLose (UndefinedPort l2 (fullPortName pid)) y
   return (domId, port)
 
@@ -392,11 +394,11 @@ newDomain l name path cls ann = Domain
 
 -- | Execute an action in a new environment for a domain.
 inEnv :: DomainId -> Env l -> Eval l a -> Eval l a
-inEnv newDomId newEnv f = do
+inEnv domId env f = do
   oldDomId <- use moduleRootDomain
   oldEnv   <- use moduleEnv
-  moduleRootDomain .= newDomId
-  moduleEnv        .= newEnv
+  moduleRootDomain .= domId
+  moduleEnv        .= env
   result <- f
   moduleRootDomain .= oldDomId
   moduleEnv        .= oldEnv
@@ -532,19 +534,19 @@ connectionEdges l pidL pidR cty ann = do
 
 -- | Evaluate a statement and build up the graph.
 evalStmt :: A.Annotation l -> A.Stmt l -> Eval l ()
-evalStmt ann (A.StmtPortDecl l (A.VarName _ name) attr) = do
+evalStmt ann (A.StmtPortDecl l (A.VarName _ name) _) = do
   -- check for duplicate port definition
   whenM (isBound envPorts name) (lose $ DuplicatePort l name)
   -- create new port and add to graph
-  portPath <- getMemberPath name
-  let port = Port name portPath Nothing Nothing l ann
+  path <- getMemberPath name
+  let port = Port name path Nothing Nothing l ann
   -- XXX ignoring port attributes for now
   void $ addPort name port
 
 evalStmt ann (A.StmtClassDecl l ty@(A.TypeName _ name) args body) = do
   whenM (isBound envClasses name) (lose $ DuplicateClass l name)
-  classPath <- getClassPath name
-  let cl = Class ty classPath args body ann
+  path <- getClassPath name
+  let cl = Class ty path args body ann
   addClass ty cl
 
 evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
@@ -563,7 +565,7 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   -- add subdomain's environment to our environment
   moduleEnv . envSubdomains . at name ?= (domId, subEnv)
 
-evalStmt ann (A.StmtAssign l (A.VarName _ name) e) = do
+evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
   whenM (isBound envVars name) (lose $ DuplicateVar l name)
   val <- evalExp e
   moduleEnv . envVars . at name ?= val

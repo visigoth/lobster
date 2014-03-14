@@ -39,12 +39,14 @@ library
                        lens
   hs-source-dirs:      src
   build-tools:         alex, happy
+  ghc-options:         -Wall
   default-language:    Haskell2010
 
 executable lex-test
   hs-source-dirs:       tests
   main-is:              lex-test.hs
   default-language:     Haskell2010
+  ghc-options:          -Wall
   build-depends:        base >= 4.6,
                         bytestring >= 0.10,
                         lobster-core
@@ -53,6 +55,7 @@ executable parse-test
   hs-source-dirs:       tests
   main-is:              parse-test.hs
   default-language:     Haskell2010
+  ghc-options:          -Wall
   build-depends:        base >= 4.6,
                         bytestring >= 0.10,
                         lobster-core,
@@ -62,6 +65,7 @@ executable pp-test
   hs-source-dirs:       tests
   main-is:              pp-test.hs
   default-language:     Haskell2010
+  ghc-options:          -Wall
   build-depends:        base >= 4.6,
                         bytestring >= 0.10,
                         mainland-pretty >= 0.2.7,
@@ -71,6 +75,7 @@ executable eval-test
   hs-source-dirs:       tests
   main-is:              eval-test.hs
   default-language:     Haskell2010
+  ghc-options:          -Wall
   build-depends:        base >= 4.6,
                         errors >= 1.4,
                         bytestring >= 0.10,

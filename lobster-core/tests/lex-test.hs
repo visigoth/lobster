@@ -25,6 +25,8 @@ parseArgs = do
     a:_ -> return a
     []  -> usage
 
+-- this might belong in the lexer
+scanner :: LBS.ByteString -> Either (Error Span) [Token]
 scanner s = runAlex s $ do
   let loop xs = do
         tok <- alexMonadScan

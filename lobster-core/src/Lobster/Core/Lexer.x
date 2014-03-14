@@ -6,6 +6,14 @@
 --
 
 {
+-- the alex wrapper code generates a lot of warnings...
+{-# OPTIONS_GHC -fno-warn-missing-signatures #-}
+{-# OPTIONS_GHC -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+{-# OPTIONS_GHC -fno-warn-unused-matches #-}
+{-# OPTIONS_GHC -fno-warn-unused-do-bind #-}
+{-# OPTIONS_GHC -fno-warn-unused-imports #-}
+
 module Lobster.Core.Lexer
   ( -- * Source Spans
     Loc(..)
@@ -28,18 +36,16 @@ module Lobster.Core.Lexer
   ) where
 
 import Data.Char (chr)
-import Data.Monoid ((<>), Monoid(..))
+import Data.Monoid (Monoid(..))
 import Data.Word (Word8)
 import Data.Text.Encoding (decodeUtf8)
 import Data.Text.Read (decimal)
 
 import Lobster.Core.Error
 
-import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Lazy  as LBS
 import qualified Data.Text             as T
 
-import qualified Data.Char
 import qualified Data.ByteString.Lazy     as ByteString
 import qualified Data.ByteString.Internal as ByteString (w2c)
 }
@@ -217,7 +223,6 @@ data TokenType
 
 alexEOF :: Alex Token
 alexEOF = do
-  (pos, _, _) <- alexGetInput
   return $ Token emptySpan (T.empty) TokEOF
 
 -- | Token type builder for an integer literal.
@@ -225,7 +230,7 @@ tokInt :: T.Text -> Alex TokenType
 tokInt t =
   case decimal t of
     Right (x, _) -> return $ TokInteger x
-    Left err -> do
+    Left _ -> do
       (pos,_,_) <- alexGetInput
       let span = mkTokSpan pos (T.length t)
       alexError $ LexError span (T.pack "invalid integer literal")
@@ -360,9 +365,9 @@ alexMonadScan = do
     AlexError (pos,_,str) -> do
       let t    = [chr (fromIntegral (LBS.head str))]
       let msg  = T.pack $ "lexical error at '" ++ t ++ "'"
-      let span = mkTokSpan pos 1
+      let span = mkTokSpan pos (1 :: Int)
       alexError $ LexError span msg
-    AlexSkip  inp' len -> do
+    AlexSkip  inp' _ -> do
         alexSetInput inp'
         alexMonadScan
     AlexToken inp'@(_,_,str') len action -> do

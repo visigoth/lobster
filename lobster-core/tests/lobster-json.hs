@@ -15,7 +15,7 @@ import System.IO
 
 import Lobster.Core
 
-import qualified Data.ByteString.Lazy       as LBS
+import qualified Data.ByteString.Lazy.Char8 as LBS
 import qualified Data.Graph.Inductive       as G
 import qualified Data.Aeson.Encode.Pretty   as AP
 import qualified Data.Text.IO               as TIO

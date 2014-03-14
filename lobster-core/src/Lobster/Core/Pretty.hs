@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 --
 -- Pretty.hs --- Pretty-printer for the Lobster AST.
 --
@@ -9,7 +10,6 @@
 -- AST types.
 module Lobster.Core.Pretty () where
 
-import Data.List (groupBy)
 import Text.PrettyPrint.Mainland
 
 import Lobster.Core.AST
@@ -104,8 +104,8 @@ instance Pretty (Stmt a) where
   ppr (StmtDomainDecl _ varName tyName args) =
     text "domain" <+> ppr varName <+> equals <+> ppr tyName
                   <> parens (pprCommaSep args) <> semi
-  ppr (StmtAssign _ varName exp) =
-    ppr varName <+> equals <+> ppr exp <> semi
+  ppr (StmtAssign _ varName expr) =
+    ppr varName <+> equals <+> ppr expr <> semi
   ppr (StmtConnection _ e1 conn e2) =
     ppr e1 <+> ppr conn <+> ppr e2 <> semi
   ppr (StmtAnnotation _ a stmt) =
