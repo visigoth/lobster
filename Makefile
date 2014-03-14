@@ -16,6 +16,7 @@ all: .cabal-sandbox
 .PHONY: clean
 clean:
 	rm -rf cabal.sandbox.config .cabal-sandbox
+	rm -rf $(addsuffix /dist,$(SUBPROJECTS))
 
 # Create the Cabal sandbox if it doesn't exist or
 # the Makefile changes (to update the source links).
