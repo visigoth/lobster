@@ -1,0 +1,192 @@
+// Some ideas for doing useful things in lobster with conditionals
+
+////////////////////////////////////////////////////////////////////////////////
+// Base types
+
+// First, we need to have a notion of types for ports. Current lobster
+// programs can be thought of as a degenerate case where we leave the
+// types abstract or generic.
+
+class C() {
+  port in;  // no annotation -> infer generic "Port" type? Polymorphic value?
+}
+
+// We can add base types
+
+class C() {
+  port in : Bool;
+}
+
+// You can think of the ports as values that can vary over time, much
+// like inputs and outputs in the actor model or Kahn Process
+// Networks.
+
+// Let's add integers
+
+class C() {
+  port in  : [32]; // cryptol syntax for 32-bit unsigned int
+  port out : [32];
+
+  if (in != 0) {
+    in -- out;
+  }
+}
+
+// This has both fixed-width integer types, and a literal syntax for
+// them. I think adding bignum-style integers is a slippery slope, but
+// arbitrarily wide bitvectors are well supported by tools like SMT.
+
+// Particularly relevant for something like iptables, we should be
+// able to specify inequalities and boolean operators so we can check
+// for ranges:
+
+class C() {
+  port in  : [32];
+  port out : [32];
+
+  if (in => 80 && in =< 1024) {
+    in -- out;
+  }
+}
+
+// Maybe some syntactic sugar for ranges?
+
+class C() {
+  port in  : [32];
+  port out : [32];
+
+  if (in =~ [80..1024]) {
+    in -- out;
+  }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Enums
+
+// Now to do something interesting with this, we can connect a port
+// conditionally to another. With booleans, this looks a lot like
+// logic gates:
+
+class CNOT() {
+  port in  : Bool;
+  port out : Bool;
+  port c   : Bool;
+
+  if (c == True) {
+    in -- out;
+  }
+}
+
+// Maybe Bool isn't a base type, but is a sum or enum:
+
+enum Bool {
+  False,
+  True
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// "Backwards" conditionals
+
+// Since all we're doing is connecting ports, why can't we do
+// something like this?
+
+class C() {
+  port in  : Bool;
+  port out : Bool;
+
+  if (out == True) { // huh?
+    in -- out;
+  }
+}
+
+// I suspect if we allow more complex "effects" than just connecting
+// ports, we'll have to impose some kind of directionality
+// restrictions on the scrutinee of a conditional. In particular, any
+// name referenced in the predicate should probably only ever be on
+// the LHS of an arrow within the current class (capturing the notion
+// of an "input"). Either that or go full-Prolog and make everything
+// bidirectional.
+
+////////////////////////////////////////////////////////////////////////////////
+// Structs and aggregate data
+
+// Alright, let's move on to aggregate data. After all, the motivating
+// example for me is packets in iptables firewalls, and they have a
+// nice variety of properties we'd like to case on and keep track of.
+
+// There are a few directions we could go here. We could go with
+// sums-of-products algebraic datatypes like Haskell. This has a lot
+// of appeal to a Haskeller, but I'm not sure it's really necessary. I
+// would welcome pushback from folks dealing with more sophisticated
+// structures than packets, though.
+
+enum ConnState {
+  NEW,
+  ESTABLISHED,
+  RELATED
+}
+
+struct Packet {
+  tcp_port   : [16],
+  tcp_dest   : [32],
+  conn_state : ConnState
+}
+
+class Filter() {
+  port in  : Packet;
+  port out : Packet;
+
+  if (in.tcp_port == 80 && in.conn_state == NEW) {
+    in -- out;
+  }
+}
+
+// Here's something interesting. You can think of structs as being
+// collections of ports. The dot operator is then just accessing that
+// subport, and everything else proceeds as before with the base types
+// example.
+
+// The price of thinking this way is, like I mentioned above, that
+// we're in logic programming territory if we want to think about
+// these things running backwards. For example:
+
+class Logger() {
+  port in  : Packet;
+  port out : [32];
+
+  if (out != 172.0.0.1) {
+    in.tcp_dest -- out;
+  }
+}
+
+// This might be fine for certain kinds of interpretation, such as
+// generating constraints for an SMT solver. But it'll make it
+// substantially more difficult to evaluate things concretely. Given
+// the goals of the current project, I'm not too worried about this.
+
+////////////////////////////////////////////////////////////////////////////////
+// Branching
+
+// We want to support the following:
+
+class C() {
+  port in   : Bool;
+  port out1 : Bool;
+  port out2 : Bool;
+
+  if (in == True) {
+    in -- out1;
+  }
+
+  if (in == False) {
+    in -- out2;
+  }
+}
+
+// From a symbolic execution/constraint generation point of view, this
+// introduces the possibility of diamonds which might be tricky to get
+// right. For Java and LLVM we do some preprocessing to find
+// postdominators, suspend execution until all possible paths to the
+// postdominator have been evaluated, then perform a logical merge
+// operation across the various paths. We'd probably have to do
+// something similar here.
