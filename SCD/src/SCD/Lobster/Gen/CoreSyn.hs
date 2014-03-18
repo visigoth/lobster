@@ -19,16 +19,22 @@ module SCD.Lobster.Gen.CoreSyn
        , Decl(..)
        , Name(..)
        , nameString
+       , mkName
        , DomPort(..)
        , Dir(..)
        , Param
        , PortConstraint(..)
        , ConnectAnnotation(..)
+       , mkAnnotation
        , AnnotationElement(..)
+       , annotationInt
+       , annotationString
+       , annotationName
 
        , newClass
        , newType
        , newDomain
+       , newDomain'
        , newPort
        , newComment
 
@@ -43,6 +49,7 @@ module SCD.Lobster.Gen.CoreSyn
        , neutral
        , bidi
        , connect
+       , neutral'
        , connect'
        ) where
 
@@ -81,6 +88,9 @@ instance Monoid Name where
 
 nameString :: Name -> String
 nameString (Name s) = s
+
+mkName :: String -> Name
+mkName = Name
 
 type PortDecl = Decl
 
@@ -128,10 +138,25 @@ data PortConstraint
 
 data ConnectAnnotation = ConnectAnnotation Name [AnnotationElement]
 
+mkAnnotation :: Name -> [AnnotationElement] -> ConnectAnnotation
+mkAnnotation = ConnectAnnotation
+
 data AnnotationElement = AnnotationInt Int | AnnotationString String | AnnotationVar Name
+
+annotationInt :: Int -> AnnotationElement
+annotationInt = AnnotationInt
+
+annotationString :: String -> AnnotationElement
+annotationString = AnnotationString
+
+annotationName :: Name -> AnnotationElement
+annotationName = AnnotationVar
 
 newDomain :: Name -> Name -> [Param] -> Decl
 newDomain binder ctor args = Domain binder ctor args []
+
+newDomain' :: Name -> Name -> [Param] -> [ConnectAnnotation] -> Decl
+newDomain' = Domain
 
 domPort :: Name -> Name -> DomPort
 domPort a b = DomPort { portDomain = Just a, portLabel = b }
@@ -147,6 +172,9 @@ right = connect R
 
 neutral :: DomPort -> DomPort -> Decl
 neutral = connect N
+
+neutral' :: DomPort -> DomPort -> [ConnectAnnotation] -> Decl
+neutral' = connect' N
 
 bidi :: DomPort -> DomPort -> Decl
 bidi = connect B

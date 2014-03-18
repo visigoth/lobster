@@ -311,22 +311,22 @@ type Dom = L.Name
 type Port = L.Name
 
 activePort :: Port
-activePort = L.Name "active"
+activePort = L.mkName "active"
 
 memberPort :: Port
-memberPort = L.Name "member"
+memberPort = L.mkName "member"
 
 attributePort :: Port
-attributePort = L.Name "attribute"
+attributePort = L.mkName "attribute"
 
 toDom :: S.IsIdentifier i => i -> Dom
-toDom = L.Name . lowercase . S.idString
+toDom = L.mkName . lowercase . S.idString
 
 toPort :: S.IsIdentifier i => i -> Port
-toPort = L.Name . lowercase . S.idString
+toPort = L.mkName . lowercase . S.idString
 
 toIdentifier :: S.IsIdentifier i => i -> S.ClassId -> Dom
-toIdentifier typeId classId = L.Name (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
+toIdentifier typeId classId = L.mkName (lowercase (S.idString typeId ++ "__" ++ S.idString classId))
 
 classPermissions :: Policy -> Map S.ClassId (Set S.PermissionId)
 classPermissions policy =
@@ -343,43 +343,43 @@ classDecls policy st = map classDecl (Map.assocs permissionMap)
     permissionMap = Map.unionWith Set.union (class_perms st) (classPermissions policy)
 
     classDecl :: (S.ClassId, Set S.PermissionId) -> L.Decl
-    classDecl (classId, perms) = L.Class (toClassId classId) [] (header ++ stmts)
+    classDecl (classId, perms) = L.newClass (toClassId classId) [] (header ++ stmts)
       where
         header = map L.newPort [memberPort, attributePort, transitionPort]
         stmts = [ L.newPort (toPort p) | p <- Set.toList perms ]
 
     transitionPort :: L.Name
-    transitionPort = L.Name "type_transition"
+    transitionPort = L.mkName "type_transition"
 
     toClassId :: S.ClassId -> L.Name
-    toClassId = L.Name . capitalize . S.idString
+    toClassId = L.mkName . capitalize . S.idString
 
 outputModule :: M4.ModuleId -> L.ConnectAnnotation
 outputModule i =
-  L.ConnectAnnotation (L.Name "Module")
-    [L.AnnotationString (S.idString i)]
+  L.mkAnnotation (L.mkName "Module")
+    [L.annotationString (S.idString i)]
 
 outputPerm :: S.PermissionId -> L.ConnectAnnotation
 outputPerm p =
-  L.ConnectAnnotation (L.Name "Perm")
-    [L.AnnotationString (S.idString p)]
+  L.mkAnnotation (L.mkName "Perm")
+    [L.annotationString (S.idString p)]
 
 outputPos :: P.Pos -> L.ConnectAnnotation
 outputPos (P.Pos fname _ l c) =
-  L.ConnectAnnotation (L.Name "SourcePos")
-    [L.AnnotationString fname, L.AnnotationInt l, L.AnnotationInt c]
+  L.mkAnnotation (L.mkName "SourcePos")
+    [L.annotationString fname, L.annotationInt l, L.annotationInt c]
 
 -- | Mode 1
 outputAllowRule1 :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
 outputAllowRule1 (AllowRule subject object cls) (perm, ps) =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toIdentifier subject (activeClass cls perm)) activePort)
     (L.domPort (toIdentifier object cls) (toPort perm))
     (map outputPos (Set.toList ps))
 
 outputAllowRule2 :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> L.Decl
 outputAllowRule2 (AllowRule subject object cls, m) =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toDom subject) activePort)
     (L.domPort (toDom object) (toPort cls))
     (map outputPerm perms ++ map outputPos ps)
@@ -392,10 +392,10 @@ outputAllowRules1 (rule, m) = map (outputAllowRule1 rule) (Map.assocs m)
 
 outputAttribute1 :: S.TypeOrAttributeId -> S.TypeOrAttributeId -> S.ClassId -> L.Decl
 outputAttribute1 ty attr cls =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toIdentifier ty cls) memberPort)
     (L.domPort (toIdentifier attr cls) attributePort)
-    [L.ConnectAnnotation (L.Name "Attribute") []]
+    [L.mkAnnotation (L.mkName "Attribute") []]
 
 outputAttributes1 :: St -> S.TypeOrAttributeId -> S.TypeOrAttributeId -> [L.Decl]
 outputAttributes1 st ty attr = [ outputAttribute1 ty attr cls | cls <- classes ]
@@ -409,10 +409,10 @@ outputAttributes1 st ty attr = [ outputAttribute1 ty attr cls | cls <- classes ]
 
 outputSubAttribute1 :: S.AttributeId -> S.AttributeId -> S.ClassId -> L.Decl
 outputSubAttribute1 sub sup cls =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toIdentifier sub cls) memberPort)
     (L.domPort (toIdentifier sup cls) attributePort)
-    [L.ConnectAnnotation (L.Name "SubAttribute") []]
+    [L.mkAnnotation (L.mkName "SubAttribute") []]
 
 outputSubAttributes1 :: St -> (S.AttributeId, S.AttributeId) -> [L.Decl]
 outputSubAttributes1 st (sub, sup) = [ outputSubAttribute1 sub sup cls | cls <- classes ]
@@ -422,51 +422,51 @@ outputSubAttributes1 st (sub, sup) = [ outputSubAttribute1 sub sup cls | cls <- 
 
 outputAttribute2 :: S.TypeId -> S.AttributeId -> L.Decl
 outputAttribute2 ty attr =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toDom ty) memberPort)
     (L.domPort (toDom attr) attributePort)
-    [L.ConnectAnnotation (L.Name "Attribute") []]
+    [L.mkAnnotation (L.mkName "Attribute") []]
 
 outputSubAttribute2 :: S.AttributeId -> S.AttributeId -> L.Decl
 outputSubAttribute2 ty attr =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toDom ty) memberPort)
     (L.domPort (toDom attr) attributePort)
-    [L.ConnectAnnotation (L.Name "SubAttribute") []]
+    [L.mkAnnotation (L.mkName "SubAttribute") []]
 
 outputTypeTransition1 :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
 outputTypeTransition1 (subj, rel, cls, new) =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toIdentifier subj processClassId) activePort)
     (L.domPort (toIdentifier new cls) transitionPort)
-    [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
+    [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationString (S.idString rel)]]
   where
     transitionPort :: L.Name
-    transitionPort = L.Name "type_transition"
+    transitionPort = L.mkName "type_transition"
 
 outputTypeTransition2 :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
 outputTypeTransition2 (subj, rel, cls, new) =
-  L.connect' L.N
+  L.neutral'
     (L.domPort (toDom subj) activePort)
     (L.domPort (toDom new) (toPort cls))
-    [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationString (S.idString rel)]]
+    [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationString (S.idString rel)]]
 
 outputDomtransMacro1 :: Int -> [S.TypeOrAttributeId] -> [L.Decl]
 outputDomtransMacro1 n ds = domDecl : map connectArg args
   where
     d :: L.Name
-    d = L.Name ("domtrans" ++ show n)
+    d = L.mkName ("domtrans" ++ show n)
 
     domDecl :: L.Decl
-    domDecl = L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString (ds !! 1)))]
-      [L.ConnectAnnotation (L.Name "Macro") (map (L.AnnotationString . S.idString) ds)]
+    domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
+      [L.mkAnnotation (L.mkName "Macro") (map (L.annotationString . S.idString) ds)]
 
     connectArg :: (Int, S.ClassId, S.PermissionId, String) -> L.Decl
     connectArg (i, cls, perm, argname) =
-      L.connect' L.N
+      L.neutral'
         (L.domPort (toIdentifier (ds !! i) cls) (toPort perm))
-        (L.domPort d (L.Name argname))
-        [L.ConnectAnnotation (L.Name "MacroArg") []]
+        (L.domPort d (L.mkName argname))
+        [L.mkAnnotation (L.mkName "MacroArg") []]
 
     args :: [(Int, S.ClassId, S.PermissionId, String)]
     args =
@@ -484,28 +484,28 @@ outputDomtransMacro2 :: Int -> [S.TypeOrAttributeId] -> [L.Decl]
 outputDomtransMacro2 n ds = domDecl : map connectArg args
   where
     d :: Dom
-    d = L.Name ("domtrans" ++ show n)
+    d = L.mkName ("domtrans" ++ show n)
 
     domDecl :: L.Decl
-    domDecl = L.Domain d (L.Name "Domtrans_pattern") [L.Name (show (S.idString (ds !! 1)))]
-      [L.ConnectAnnotation (L.Name "Macro") (map (L.AnnotationString . S.idString) ds)]
+    domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
+      [L.mkAnnotation (L.mkName "Macro") (map (L.annotationString . S.idString) ds)]
 
     connectArg :: (Int, Port, String) -> L.Decl
     connectArg (i, port, argname) =
-      L.connect' L.N
+      L.neutral'
         (L.domPort (toDom (ds !! i)) port)
-        (L.domPort d (L.Name argname))
-        [L.ConnectAnnotation (L.Name "MacroArg") []]
+        (L.domPort d (L.mkName argname))
+        [L.mkAnnotation (L.mkName "MacroArg") []]
 
     args :: [(Int, Port, String)]
     args =
-      [ (0, activePort        , "d1_active"   )
-      , (0, L.Name "fd"       , "d1_fd"       )
-      , (0, L.Name "fifo_file", "d1_fifo_file")
-      , (0, L.Name "process"  , "d1_process"  )
-      , (1, L.Name "file"     , "d2_file"     )
-      , (2, activePort        , "d3_active"   )
-      , (2, L.Name "process"  , "d3_process"  )
+      [ (0, activePort          , "d1_active"   )
+      , (0, L.mkName "fd"       , "d1_fd"       )
+      , (0, L.mkName "fifo_file", "d1_fifo_file")
+      , (0, L.mkName "process"  , "d1_process"  )
+      , (1, L.mkName "file"     , "d2_file"     )
+      , (2, activePort          , "d3_active"   )
+      , (2, L.mkName "process"  , "d3_process"  )
       ]
 
 outputLobster1 :: M4.Policy -> St -> [L.Decl]
@@ -515,17 +515,17 @@ outputLobster1 policy st =
     ++ transitionDecls ++ domtransDecls
   where
     toClassId :: S.ClassId -> L.Name
-    toClassId = L.Name . capitalize . S.idString
+    toClassId = L.mkName . capitalize . S.idString
 
     domainDecls :: [L.Decl]
     domainDecls =
-      [ L.Domain (toIdentifier typeId classId) (toClassId classId) [] [ann1, ann2]
+      [ L.newDomain' (toIdentifier typeId classId) (toClassId classId) [] [ann1, ann2]
       | (typeId, classIds) <- Map.assocs (object_classes st)
       , classId <- Set.toList classIds
       , let ann1 =
               if Map.member (S.fromId (S.toId typeId)) (attrib_members st)
-                then L.ConnectAnnotation (L.Name "Attribute") []
-                else L.ConnectAnnotation (L.Name "Type") []
+                then L.mkAnnotation (L.mkName "Attribute") []
+                else L.mkAnnotation (L.mkName "Type") []
       , let modId =
               case Map.lookup (S.toId typeId) (type_modules st) of
                 Just m -> m
@@ -553,7 +553,7 @@ outputLobster1 policy st =
 
     domtransDecl :: L.Decl
     domtransDecl =
-      L.Class (L.Name "Domtrans_pattern") [d2_name]
+      L.newClass (L.mkName "Domtrans_pattern") [d2_name]
         [ L.newPort d1_active
         , L.newPort d1_fd_use
         , L.newPort d1_fifo
@@ -564,23 +564,23 @@ outputLobster1 policy st =
         , L.newPort d3_tt
         , L.neutral (L.extPort d1_active) (L.extPort d2)
         , L.neutral (L.extPort d1_active) (L.extPort d3_trans)
-        , L.connect' L.N (L.extPort d1_active) (L.extPort d3_tt)
-            [L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationVar d2_name]]
+        , L.neutral' (L.extPort d1_active) (L.extPort d3_tt)
+            [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationName d2_name]]
 
         , L.neutral (L.extPort d3_active) (L.extPort d1_fd_use)
         , L.neutral (L.extPort d3_active) (L.extPort d1_fifo)
         , L.neutral (L.extPort d3_active) (L.extPort d1_sig)
         ]
       where
-        d1_active = L.Name "d1_active"
-        d1_fd_use = L.Name "d1_fd_use"
-        d1_fifo   = L.Name "d1_fifo"
-        d1_sig    = L.Name "d1_sigchld"
-        d2        = L.Name "d2"
-        d3_active = L.Name "d3_active"
-        d3_trans  = L.Name "d3_transition"
-        d3_tt     = L.Name "d3_type_transition"
-        d2_name   = L.Name "d2_name"
+        d1_active = L.mkName "d1_active"
+        d1_fd_use = L.mkName "d1_fd_use"
+        d1_fifo   = L.mkName "d1_fifo"
+        d1_sig    = L.mkName "d1_sigchld"
+        d2        = L.mkName "d2"
+        d3_active = L.mkName "d3_active"
+        d3_trans  = L.mkName "d3_transition"
+        d3_tt     = L.mkName "d3_type_transition"
+        d2_name   = L.mkName "d2_name"
 
 outputLobster2 :: St -> [L.Decl]
 outputLobster2 st =
@@ -590,17 +590,17 @@ outputLobster2 st =
   where
     domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> [L.Decl]
     domainDecl (ty, classes) =
-      [ L.Class className [] (header ++ stmts)
-      , L.Domain (toDom ty) className [] [ann1, ann2] ]
+      [ L.newClass className [] (header ++ stmts)
+      , L.newDomain' (toDom ty) className [] [ann1, ann2] ]
         -- TODO: Add support for anonymous domains to lobster language
       where
-        className = L.Name ("Type_" ++ S.idString ty)
+        className = L.mkName ("Type_" ++ S.idString ty)
         header = map L.newPort [activePort, memberPort, attributePort]
         stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
         ann1 =
           if Map.member (S.fromId (S.toId ty)) (attrib_members st)
-            then L.ConnectAnnotation (L.Name "Attribute") []
-            else L.ConnectAnnotation (L.Name "Type") []
+            then L.mkAnnotation (L.mkName "Attribute") []
+            else L.mkAnnotation (L.mkName "Type") []
         modId =
           case Map.lookup (S.toId ty) (type_modules st) of
             Just m -> m
@@ -630,7 +630,7 @@ outputLobster2 st =
 
     domtransDecl :: L.Decl
     domtransDecl =
-      L.Class (L.Name "Domtrans_pattern") [d2_name]
+      L.newClass (L.mkName "Domtrans_pattern") [d2_name]
         [ L.newPort d1_active
         , L.newPort d1_fd
         , L.newPort d1_fifo
@@ -638,27 +638,27 @@ outputLobster2 st =
         , L.newPort d2_file
         , L.newPort d3_active
         , L.newPort d3_proc
-        , L.connect' L.N (L.extPort d1_active) (L.extPort d2_file)
+        , L.neutral' (L.extPort d1_active) (L.extPort d2_file)
             [outputPerm (S.mkId "x_file_perms")]
-        , L.connect' L.N (L.extPort d1_active) (L.extPort d3_proc)
+        , L.neutral' (L.extPort d1_active) (L.extPort d3_proc)
             [outputPerm (S.mkId "transition"),
-             L.ConnectAnnotation (L.Name "TypeTransition") [L.AnnotationVar d2_name]]
-        , L.connect' L.N (L.extPort d3_active) (L.extPort d1_fd)
+             L.mkAnnotation (L.mkName "TypeTransition") [L.annotationName d2_name]]
+        , L.neutral' (L.extPort d3_active) (L.extPort d1_fd)
             [outputPerm (S.mkId "use")]
-        , L.connect' L.N (L.extPort d3_active) (L.extPort d1_fifo)
+        , L.neutral' (L.extPort d3_active) (L.extPort d1_fifo)
             [outputPerm (S.mkId "rw_fifo_file_perms")]
-        , L.connect' L.N (L.extPort d3_active) (L.extPort d1_proc)
+        , L.neutral' (L.extPort d3_active) (L.extPort d1_proc)
             [outputPerm (S.mkId "sigchld")]
         ]
       where
-        d1_active = L.Name "d1_active"
-        d1_fd     = L.Name "d1_fd"
-        d1_fifo   = L.Name "d1_fifo_file"
-        d1_proc   = L.Name "d1_process"
-        d2_file   = L.Name "d2_file"
-        d3_active = L.Name "d3_active"
-        d3_proc   = L.Name "d3_process"
-        d2_name   = L.Name "d2_name"
+        d1_active = L.mkName "d1_active"
+        d1_fd     = L.mkName "d1_fd"
+        d1_fifo   = L.mkName "d1_fifo_file"
+        d1_proc   = L.mkName "d1_process"
+        d2_file   = L.mkName "d2_file"
+        d3_active = L.mkName "d3_active"
+        d3_proc   = L.mkName "d3_process"
+        d2_name   = L.mkName "d2_name"
 
 outputLobster :: OutputMode -> M4.Policy -> St -> [L.Decl]
 outputLobster Mode1 policy = outputLobster1 policy
