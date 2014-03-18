@@ -20,7 +20,7 @@ import qualified SCD.M4.Syntax as M4
 import qualified SCD.SELinux.Syntax as S
 import qualified Text.Happy.ParserMonad as P
 
-import qualified SCD.Lobster.Gen.CoreSyn as L
+import qualified CoreSyn as L
 
 import SCD.M4.Subst (Macros(..), expandPolicyModule)
 

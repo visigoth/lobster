@@ -9,8 +9,8 @@ import System.Exit
 import Control.Error (EitherT, hoistEither)
 
 import SCD.M4.ModuleFiles (readPolicy)
-import qualified SCD.Lobster.Gen.CoreSyn as L
-import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
+import qualified CoreSyn as L
+import CoreSyn (showLobster)
 
 import qualified M4ToLobster as M4L
 import M4ToLobster.Error (Error, runErr, runIO)
