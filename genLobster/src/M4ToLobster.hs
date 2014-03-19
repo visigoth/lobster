@@ -21,6 +21,7 @@ import qualified SCD.SELinux.Syntax as S
 import qualified Text.Happy.ParserMonad as P
 
 import qualified CoreSyn as L
+import qualified Lobster.Core as C
 
 import SCD.M4.Subst (Macros(..), expandPolicyModule)
 
@@ -33,7 +34,7 @@ data AllowRule = AllowRule
   { allowSubject    :: S.TypeOrAttributeId
   , allowObject     :: S.TypeOrAttributeId
   , allowClass      :: S.ClassId
-  , allowConditions :: [(M4.IfdefId, Bool)]
+  , allowConditions :: [(Either M4.IfdefId S.CondExpr, Bool)]
   } deriving (Eq, Ord, Show)
 
 data St = St
@@ -65,7 +66,7 @@ initSt = St
 
 data Env = Env
   { envPositions :: [P.Pos]
-  , envConditions :: [(M4.IfdefId, Bool)]
+  , envConditions :: [(Either M4.IfdefId S.CondExpr, Bool)]
   , envModuleId :: M4.ModuleId
   }
 
@@ -82,8 +83,11 @@ setModuleId i e = e { envModuleId = i }
 addPos :: P.Pos -> Env -> Env
 addPos p e = e { envPositions = p : envPositions e }
 
-addCond :: Bool -> M4.IfdefId -> Env -> Env
-addCond b i e = e { envConditions = (i, b) : envConditions e }
+addIfdef :: Bool -> M4.IfdefId -> Env -> Env
+addIfdef b i e = e { envConditions = (Left i, b) : envConditions e }
+
+addCond :: Bool -> S.CondExpr -> Env -> Env
+addCond b c e = e { envConditions = (Right c, b) : envConditions e }
 
 type M a = ReaderT Env (State St) a
 
@@ -201,31 +205,15 @@ processStmts = mapM_ processStmt
 processStmt :: M4.Stmt -> M ()
 processStmt stmt =
   case stmt of
+    Tunable c stmts1 stmts2 -> do
+      local (addCond True c) $ processStmts stmts1
+      local (addCond False c) $ processStmts stmts2
+    Optional _stmts1 _stmts2 -> return () -- FIXME
     Ifdef i stmts1 stmts2 -> do
-      local (addCond True i) $ processStmts stmts1
-      local (addCond False i) $ processStmts stmts2
-    Ifndef i stmts -> local (addCond False i) $ processStmts stmts
-    Attribute attr -> addDeclaration attr >> addAttrib attr
-    Type t _aliases attrs -> addDeclaration t >> addTypeAttribs t attrs -- TODO: track aliases
-    TypeAttribute t attrs -> addTypeAttribs t (toList attrs)
-    Transition S.TypeTransition (S.SourceTarget al bl cl) t ->
-      sequence_ $
-        [ addTypeTransition subject related classId object
-        | let object = (S.fromId . S.toId) t
-        , subject <- map (S.fromId . S.toId) $ filterSignedId $ toList al
-        , related <- map (S.fromId . S.toId) $ filterSignedId $ toList bl
-        , classId <- toList cl
-        ]
-    TeAvTab S.Allow (S.SourceTarget al bl cl) (S.Permissions dl) ->
-      sequence_ $
-        [ addAllow subject object classId perms
-        | subject <- filterSignedId $ toList al
-        , object' <- filterSignedId $ toList bl
-        , let object = fromSelf subject object'
-        , classId <- toList cl
-        , let perms = Set.fromList $ toList dl
-        ]
-    StmtPosition stmt1 pos -> local (addPos pos) $ processStmt stmt1
+      local (addIfdef True i) $ processStmts stmts1
+      local (addIfdef False i) $ processStmts stmts2
+    Ifndef i stmts -> local (addIfdef False i) $ processStmts stmts
+    RefPolicyWarn {} -> return ()
     Call m4id [al, bl, cl] | m4id == S.mkId "domtrans_pattern" ->
       sequence_ $
         [ addDomtransMacro [a, b, c]
@@ -233,7 +221,67 @@ processStmt stmt =
         , b <- map (S.fromId . S.toId) $ filterSignedId $ toList bl
         , c <- map (S.fromId . S.toId) $ filterSignedId $ toList cl
         ]
-    _ -> return ()
+    Call _ _ -> return () -- FIXME
+    Role {}           -> return () -- role
+    AttributeRole {}  -> return () -- attribute_role
+    RoleAttribute {}  -> return () -- roleattribute
+    RoleTransition {} -> return ()
+    RoleAllow {}      -> return ()
+    Attribute attr -> addDeclaration attr >> addAttrib attr
+    Type t _aliases attrs -> addDeclaration t >> addTypeAttribs t attrs -- TODO: track aliases
+    TypeAlias _t _aliases -> return () -- TODO: track aliases
+    TypeAttribute t attrs -> addTypeAttribs t (toList attrs)
+    RangeTransition {} -> return ()
+    TeNeverAllow {}    -> return () -- neverallow
+    Transition trans (S.SourceTarget al bl cl) t ->
+      case trans of
+        S.TypeTransition ->
+          sequence_ $
+            [ addTypeTransition subject related classId object
+            | let object = (S.fromId . S.toId) t
+            , subject <- map (S.fromId . S.toId) $ filterSignedId $ toList al
+            , related <- map (S.fromId . S.toId) $ filterSignedId $ toList bl
+            , classId <- toList cl
+            ]
+        S.TypeMember -> return () -- type_member
+        S.TypeChange -> return ()
+    TeAvTab ad (S.SourceTarget al bl cl) ps ->
+      case isAllow ad of
+        True -> case ps of
+          S.Permissions dl ->
+            sequence_ $
+              [ addAllow subject object classId perms
+              | subject <- filterSignedId $ toList al
+              , object' <- filterSignedId $ toList bl
+              , let object = fromSelf subject object'
+              , classId <- toList cl
+              , let perms = Set.fromList $ toList dl
+              ]
+          S.PStarTilde st -> case st of
+            S.Tilde _ -> return () -- FIXME
+            S.Star    -> return () -- FIXME
+        False -> return () -- dontaudit / auditdeny
+    CondStmt c stmts1 stmts2 -> do
+      local (addCond True c) $ processStmts stmts1
+      local (addCond False c) $ processStmts stmts2
+    XMLDocStmt {}        -> return ()
+    SidStmt {}           -> return ()
+    FileSystemUseStmt {} -> return ()
+    GenFileSystemStmt {} -> return ()
+    PortStmt {}          -> return ()
+    NetInterfaceStmt {}  -> return ()
+    NodeStmt {}          -> return ()
+    Define {}            -> return ()
+    Require {}           -> return () -- gen_require
+    GenBoolean {}        -> return () -- gen_bool / gen_tunable
+    StmtPosition stmt1 pos -> local (addPos pos) $ processStmt stmt1
+
+isAllow :: S.AllowDeny -> Bool
+isAllow ad = case ad of
+  S.Allow      -> True
+  S.AuditAllow -> True
+  S.AuditDeny  -> False
+  S.DontAudit  -> False
 
 processImplementation :: M4.Implementation -> M ()
 processImplementation (M4.Implementation modId _ stmts) =
@@ -378,10 +426,27 @@ outputPos (P.Pos fname _ l c) =
   L.mkAnnotation (L.mkName "SourcePos")
     [L.annotationString fname, L.annotationInt l, L.annotationInt c]
 
-outputCond :: (M4.IfdefId, Bool) -> L.ConnectAnnotation
-outputCond (i, b) =
+outputCond :: (Either M4.IfdefId S.CondExpr, Bool) -> L.ConnectAnnotation
+outputCond (Left i, b) =
   L.mkAnnotation (L.mkName (if b then "Ifdef" else "Ifndef"))
     [L.annotationString (S.idString i)]
+outputCond (Right c, b) =
+  L.mkAnnotation (L.mkName "CondExpr")
+    [outputCondExpr (if b then c else S.Not c)]
+
+outputCondExpr :: S.CondExpr -> C.Exp C.Span
+outputCondExpr c =
+  case c of
+    S.Not c1      -> C.ExpUnaryOp C.emptySpan C.UnaryOpNot (outputCondExpr c1)
+    S.Op c1 op c2 -> C.ExpBinaryOp C.emptySpan (outputCondExpr c1) (outputOp op) (outputCondExpr c2)
+    S.Var i       -> C.ExpVar (L.mkName (S.idString i))
+  where
+    outputOp :: S.Op -> C.BinaryOp
+    outputOp S.And = C.BinaryOpAnd
+    outputOp S.Or  = C.BinaryOpOr
+    outputOp S.Xor = error "xor unimplemented"
+    outputOp S.Equals = C.BinaryOpEqual
+    outputOp S.Notequal = C.BinaryOpNotEqual
 
 -- | Mode 1
 outputAllowRule1 :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
