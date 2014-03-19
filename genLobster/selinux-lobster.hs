@@ -25,8 +25,8 @@ import Data.Set (Set)
 
 import Data.NonEmptyList (NonEmptyList)
 
-import qualified SCD.Lobster.Gen.CoreSyn as L
-import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
+import qualified CoreSyn as L
+import CoreSyn (showLobster)
 
 import SCD.SELinux.Syntax
 import SCD.SELinux.Parser (parsePolicy)
@@ -119,22 +119,22 @@ processPolicy policy = classDecls ++ domainDecls ++ connectionDecls
     finalSt :: St
     finalSt = execState (mapM_ processTeRbac (teRbacs policy)) initSt
     toPortId :: PermissionId -> L.Name
-    toPortId = L.Name . idString -- FIXME: lowercase?
+    toPortId = L.mkName . idString -- FIXME: lowercase?
     toClassId :: ClassId -> L.Name
-    toClassId = L.Name . capitalize . idString
+    toClassId = L.mkName . capitalize . idString
     toIdentifier :: TypeOrAttributeId -> L.Name
-    toIdentifier = L.Name . lowercase . idString
+    toIdentifier = L.mkName . lowercase . idString
     toIdentifier' :: TypeOrAttributeId -> ClassId -> L.Name
-    toIdentifier' typeId classId = L.Name (lowercase (idString typeId ++ "__" ++ idString classId))
+    toIdentifier' typeId classId = L.mkName (lowercase (idString typeId ++ "__" ++ idString classId))
     commonMap :: Map CommonId [PermissionId]
     commonMap = Map.fromList [ (i, toList ps) | CommonPerm i ps <- commonPerms policy ]
     activePort :: L.Name
-    activePort = L.Name "active"
+    activePort = L.mkName "active"
     classDecls :: [L.Decl]
     classDecls = map classDecl (toList (avPerms policy))
     classDecl :: AvPerm -> L.Decl
     classDecl (AvPermClass classId e) =
-      L.Class (toClassId classId) [] (active ++ stmts)
+      L.newClass (toClassId classId) [] (active ++ stmts)
       where
         isActive :: Bool
         isActive = idString classId == "process"
