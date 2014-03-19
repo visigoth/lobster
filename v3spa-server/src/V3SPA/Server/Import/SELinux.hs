@@ -16,10 +16,10 @@ import Control.Monad.Reader
 import Data.Aeson
 import System.FilePath ((</>))
 
-import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 import SCD.M4.ModuleFiles
 import Snap
 
+import CoreSyn (showLobster)
 import V3SPA.Server.Snap
 
 import qualified SCD.M4.Syntax            as M4
