@@ -25,6 +25,7 @@ module Lobster.Core.Lexer
   , Keyword(..)
   , Operator(..)
   , ConnOperator(..)
+  , ExpOperator(..)
   , TokenType(..)
   , Token(..)
 
@@ -92,6 +93,9 @@ $digit+             { tok tokInt }
 "subject"           { kw KwSubject }
 "this"              { kw KwThis }
 
+"true"              { tok_ (TokBool True) }
+"false"             { tok_ (TokBool False) }
+
 @lident             { tok_ TokLIdent }
 @uident             { tok_ TokUIdent }
 
@@ -118,6 +122,12 @@ $digit+             { tok tokInt }
 "<--"               { connOp OpConnRightToLeft }
 "<-->"              { connOp OpConnBidirectional }
 "--"                { connOp OpConnNeutral }
+
+"&&"                { expOp ExpOpAnd }
+"||"                { expOp ExpOpOr }
+"=="                { expOp ExpOpEqual }
+"!="                { expOp ExpOpNotEqual }
+"!"                 { expOp ExpOpNot }
 
 {
 -- | A Lobster language keyword.
@@ -153,6 +163,15 @@ data Operator
   | OpPeriod
   | OpStar
   | OpDotStar
+  deriving (Eq, Ord, Show)
+
+-- | An operator that can appear in an expression.
+data ExpOperator
+  = ExpOpAnd
+  | ExpOpOr
+  | ExpOpEqual
+  | ExpOpNotEqual
+  | ExpOpNot
   deriving (Eq, Ord, Show)
 
 -- | A connection operator.
@@ -214,8 +233,10 @@ data TokenType
   = TokKeyword      Keyword
   | TokOperator     Operator
   | TokConnOperator ConnOperator
+  | TokExpOperator  ExpOperator
   | TokInteger      Integer
   | TokString
+  | TokBool         Bool
   | TokUIdent
   | TokLIdent
   | TokEOF
@@ -259,6 +280,10 @@ op o = tok_ (TokOperator o)
 -- | Build a connection operator token.
 connOp :: ConnOperator -> AlexPosn -> LBS.ByteString -> Alex Token
 connOp o = tok_ (TokConnOperator o)
+
+-- | Build an expression operator token.
+expOp :: ExpOperator -> AlexPosn -> LBS.ByteString -> Alex Token
+expOp o = tok_ (TokExpOperator o)
 
 -- -----------------------------------------------------------------------------
 -- Alex wrapper code.

@@ -15,6 +15,7 @@ module Lobster.Core.AST
   , ConnType(..)
   , LitInteger(..)
   , LitString(..)
+  , LitBool(..)
   , LitDirection(..)
   , LitPosition(..)
   , VarName(..)
@@ -28,6 +29,8 @@ module Lobster.Core.AST
   , lookupAnnotation
   , PortName(..)
   , Stmt(..)
+  , UnaryOp(..)
+  , BinaryOp(..)
   , Exp(..)
   , Policy(..)
   , revConnType
@@ -72,6 +75,13 @@ revConnType :: ConnType -> ConnType
 revConnType ConnLeftToRight = ConnRightToLeft
 revConnType ConnRightToLeft = ConnLeftToRight
 revConnType c               = c
+
+-- | A boolean literal.
+data LitBool a = LitBool a Bool
+  deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+instance Labeled LitBool where
+  label (LitBool l _) = l
 
 -- | An integer literal.
 data LitInteger a = LitInteger a Integer
@@ -215,21 +225,39 @@ data Policy a = Policy a [Stmt a]
 ----------------------------------------------------------------------
 -- Expressions
 
+-- | A unary operator (currently only logical NOT).
+data UnaryOp
+  = UnaryOpNot
+  deriving (Eq, Ord, Show)
+
+-- | A binary operator (currently only for booleans).
+data BinaryOp
+  = BinaryOpAnd
+  | BinaryOpOr
+  | BinaryOpEqual
+  | BinaryOpNotEqual
+  deriving (Eq, Ord, Show)
+
 -- | An expression.
 data Exp a
   = ExpInt        (LitInteger a)
   | ExpString     (LitString a)
+  | ExpBool       (LitBool a)
   | ExpDirection  (LitDirection a)
   | ExpPosition   (LitPosition a)
   | ExpVar        (VarName a)
+  | ExpBinaryOp   a (Exp a) BinaryOp (Exp a)
+  | ExpUnaryOp    a UnaryOp (Exp a)
   | ExpParen      a (Exp a)
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 instance Labeled Exp where
   label (ExpInt x) = label x
   label (ExpString x) = label x
+  label (ExpBool x) = label x
   label (ExpDirection x) = label x
   label (ExpPosition x) = label x
   label (ExpVar x) = label x
+  label (ExpBinaryOp l _ _ _) = l
+  label (ExpUnaryOp l _ _) = l
   label (ExpParen l _) = l
-

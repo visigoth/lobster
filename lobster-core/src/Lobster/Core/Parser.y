@@ -35,6 +35,9 @@ import qualified Data.Text as T
 --  'never'           { Token _ _ (TokKeyword KwNever) }
 --  'this'            { Token _ _ (TokKeyword KwThis) }
 
+  'true'            { Token _ _ (TokBool True) }
+  'false'           { Token _ _ (TokBool False) }
+
   '('               { Token _ _ (TokOperator OpLParen) }
   ')'               { Token _ _ (TokOperator OpRParen) }
   '{'               { Token _ _ (TokOperator OpLBrace) }
@@ -56,6 +59,12 @@ import qualified Data.Text as T
   '<-->'            { Token _ _ (TokConnOperator OpConnBidirectional) }
   '--'              { Token _ _ (TokConnOperator OpConnNeutral) }
 
+  '&&'              { Token _ _ (TokExpOperator ExpOpAnd) }
+  '||'              { Token _ _ (TokExpOperator ExpOpOr) }
+  '=='              { Token _ _ (TokExpOperator ExpOpEqual) }
+  '!='              { Token _ _ (TokExpOperator ExpOpNotEqual) }
+  '!'               { Token _ _ (TokExpOperator ExpOpNot) }
+
   Integer           { Token _ _ (TokInteger _) }
   String            { Token _ _ TokString }
   UIdent            { Token _ _ TokUIdent }
@@ -65,6 +74,11 @@ import qualified Data.Text as T
 %monad { Alex }
 %lexer { lexwrap } { Token _ _ TokEOF }
 %error { happyError }
+
+%right '||'
+%right '&&'
+%nonassoc '==' '!='
+%left '!'
 
 %%
 
@@ -81,6 +95,12 @@ LitString :: { LitString Span }
 LitString
   -- XXX shouldn't use "read" here...
   : String          { LitString (tokSpan $1) (read $ T.unpack $ tokText $1) }
+
+-- A boolean literal.
+LitBool :: { LitBool Span }
+LitBool
+  : 'true'          { LitBool (tokSpan $1) True }
+  | 'false'         { LitBool (tokSpan $1) False }
 
 -- A direction literal keyword.
 LitDirection :: { LitDirection Span }
@@ -205,9 +225,15 @@ Exp :: { Exp Span }
 Exp
   : LitInteger    { ExpInt $1 }
   | LitString     { ExpString $1 }
+  | LitBool       { ExpBool $1 }
   | LitDirection  { ExpDirection $1 }
   | LitPosition   { ExpPosition $1 }
   | VarName       { ExpVar $1 }
+  | '!' Exp       { mkUnaryOp $2 UnaryOpNot }
+  | Exp '&&' Exp  { mkBinaryOp $1 $3 BinaryOpAnd }
+  | Exp '||' Exp  { mkBinaryOp $1 $3 BinaryOpOr }
+  | Exp '==' Exp  { mkBinaryOp $1 $3 BinaryOpEqual }
+  | Exp '!=' Exp  { mkBinaryOp $1 $3 BinaryOpNotEqual }
   | '(' Exp ')'   { ExpParen (spanToks $1 $3) $2 }
 
 -- An expression or '*' for no value.
@@ -240,6 +266,15 @@ tokIntValue _ = error "not an integer token"
 -- | Take the union span of two tokens.
 spanToks :: Token -> Token -> Span
 spanToks t1 t2 = unionSpan (tokSpan t1) (tokSpan t2)
+
+-- | Make a binary operator expression.
+mkBinaryOp :: Exp Span -> Exp Span -> BinaryOp -> Exp Span
+mkBinaryOp e1 e2 op = ExpBinaryOp loc e1 op e2
+  where loc = unionSpan (label e1) (label e2)
+
+-- | Make a unary operator expression.
+mkUnaryOp :: Exp Span -> UnaryOp -> Exp Span
+mkUnaryOp e op = ExpUnaryOp (label e) op e
 
 happyError :: Token -> Alex a
 happyError t = alexError $ ParseError (tokSpan t) msg

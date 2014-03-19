@@ -39,6 +39,15 @@ instance Pretty ConnType where
   ppr ConnBidirectional = text "<-->"
   ppr ConnNeutral       = text "--"
 
+instance Pretty BinaryOp where
+  ppr BinaryOpAnd      = text "&&"
+  ppr BinaryOpOr       = text "||"
+  ppr BinaryOpEqual    = text "=="
+  ppr BinaryOpNotEqual = text "!="
+
+instance Pretty UnaryOp where
+  ppr UnaryOpNot = text "!"
+
 ----------------------------------------------------------------------
 -- AST Atoms
 
@@ -47,6 +56,10 @@ instance Pretty (LitInteger a) where
 
 instance Pretty (LitString a) where
   ppr (LitString _ x) = ppr x
+
+instance Pretty (LitBool a) where
+  ppr (LitBool _ True)  = text "true"
+  ppr (LitBool _ False) = text "false"
 
 instance Pretty (LitDirection a) where
   ppr (LitDirection _ x) = ppr x
@@ -144,11 +157,42 @@ instance Pretty (Policy a) where
 ----------------------------------------------------------------------
 -- Expressions
 
+data Fixity = Fixity Assoc Int
+  deriving (Eq, Ord)
+
+data Assoc = LeftAssoc | RightAssoc | NonAssoc
+  deriving (Eq, Ord)
+
+fixity :: BinaryOp -> Fixity
+fixity BinaryOpOr       = Fixity RightAssoc 2
+fixity BinaryOpAnd      = Fixity RightAssoc 3
+fixity BinaryOpEqual    = Fixity NonAssoc 4
+fixity BinaryOpNotEqual = Fixity NonAssoc 4
+
+pprBinOp :: Int -> Exp a -> BinaryOp -> Exp a -> Doc
+pprBinOp prec e1 op e2 =
+  parensIf (prec > opPrec) $
+    pprPrec leftPrec e1 <+> ppr op <+> pprPrec rightPrec e2
+  where
+    leftPrec | opAssoc == RightAssoc = opPrec + 1
+             | otherwise             = opPrec
+    rightPrec | opAssoc == LeftAssoc = opPrec + 1
+              | otherwise            = opPrec
+    Fixity opAssoc opPrec = fixity op
+
+pprUnaryOp :: Int -> UnaryOp -> Exp a -> Doc
+pprUnaryOp prec op e =
+  parensIf (prec > 14) $
+    ppr op <> pprPrec 14 e
+
 instance Pretty (Exp a) where
-  ppr (ExpInt x)       = ppr x
-  ppr (ExpString s)    = ppr s
-  ppr (ExpDirection x) = ppr x
-  ppr (ExpPosition x)  = ppr x
-  ppr (ExpVar x)       = ppr x
-  ppr (ExpParen _ x)   = parens (ppr x)
+  pprPrec _ (ExpInt x)               = ppr x
+  pprPrec _ (ExpString s)            = ppr s
+  pprPrec _ (ExpBool x)              = ppr x
+  pprPrec _ (ExpDirection x)         = ppr x
+  pprPrec _ (ExpPosition x)          = ppr x
+  pprPrec _ (ExpVar x)               = ppr x
+  pprPrec n (ExpBinaryOp _ e1 op e2) = pprBinOp n e1 op e2
+  pprPrec n (ExpUnaryOp _ op e)      = pprUnaryOp n op e
+  pprPrec _ (ExpParen _ x)           = parens (ppr x)
 
