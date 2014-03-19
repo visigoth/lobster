@@ -18,11 +18,14 @@ module Lobster.Core.AST
   , LitDirection(..)
   , LitPosition(..)
   , VarName(..)
+  , getVarName
   , TypeName(..)
+  , getTypeName
   , ConnOp(..)
   , PortAttr(..)
   , AnnotationElement
   , Annotation(..)
+  , lookupAnnotation
   , PortName(..)
   , Stmt(..)
   , Exp(..)
@@ -30,6 +33,7 @@ module Lobster.Core.AST
   , revConnType
   ) where
 
+import Control.Arrow (first)
 import Data.Monoid ((<>), Monoid(..))
 import Data.Text (Text)
 import Data.Foldable (Foldable)
@@ -101,6 +105,10 @@ instance Labeled LitPosition where
 data VarName a = VarName a Text
   deriving (Show, Functor, Foldable, Traversable)
 
+-- | Extract the text from a variable name.
+getVarName :: VarName a -> Text
+getVarName (VarName _ t) = t
+
 instance Eq (VarName a) where
   VarName _ n1 == VarName _ n2 = n1 == n2
 
@@ -113,6 +121,10 @@ instance Labeled VarName where
 -- | An upper case type name identifier.
 data TypeName a = TypeName a Text
   deriving (Show, Functor, Foldable, Traversable)
+
+-- | Extract the text from a variable name.
+getTypeName :: TypeName a -> Text
+getTypeName (TypeName _ t) = t
 
 instance Eq (TypeName a) where
   TypeName _ t1 == TypeName _ t2 = t1 == t2
@@ -147,6 +159,10 @@ data Annotation a = Annotation [AnnotationElement a]
 instance Monoid (Annotation a) where
   mempty = Annotation []
   mappend (Annotation xs) (Annotation ys) = Annotation (xs <> ys)
+
+-- | Look up an annotation by name.
+lookupAnnotation :: Text -> Annotation a -> Maybe [Exp a]
+lookupAnnotation t (Annotation anns) = lookup t (map (first getTypeName) anns)
 
 -- | A port reference (qualified or unqualified).
 data PortName a

@@ -384,7 +384,7 @@ newDomain :: l -> Text -> Text -> Class l -> A.Annotation l -> Domain l
 newDomain l name path cls ann = Domain
   { _domainName            = name
   , _domainPath            = path
-  , _domainClassName       = cls ^. className . to typeName
+  , _domainClassName       = cls ^. className . to A.getTypeName
   , _domainSubdomains      = S.empty
   , _domainPorts           = S.empty
   , _domainLabel           = l
@@ -421,14 +421,6 @@ evalExp e =
     A.ExpPosition  (A.LitPosition  l x) -> return (ValuePosition l x)
     A.ExpVar       var                  -> lookupVar var
     A.ExpParen _   e2                   -> evalExp e2
-
--- | Extract the text identifier from a variable name.
-varName :: A.VarName l -> Text
-varName (A.VarName _ x) = x
-
--- | Extract the text from a type name.
-typeName :: A.TypeName l -> Text
-typeName (A.TypeName _ x) = x
 
 -- | Get a domain by ID by looking in the current graph.
 getDomain :: DomainId -> Eval l (Domain l)
@@ -467,7 +459,7 @@ buildLocals l vars exps = do
   unless (length vars == length exps) $
     lose $ BadArguments l (length vars)
   vals <- mapM evalExp exps
-  let varNames = map varName vars
+  let varNames = map A.getVarName vars
   return $ M.fromList $ zip varNames vals
 
 -- | Build a new environment for a subdomain given a class and its
