@@ -57,6 +57,7 @@ domainJSON m domId =
       , "path"              .= (dom ^. domainPath)
       , "class"             .= (dom ^. domainClassName)
       , "subdomains"        .= subdomainsJSON m dom
+      , "parent"            .= maybe Null (toJSON . getDomKey m) (dom ^. domainParent)
       , "ports"             .= portsJSON m dom
       , "classAnnotations"  .= (dom ^. domainClassAnnotation)
       , "domainAnnotations" .= (dom ^. domainAnnotation)

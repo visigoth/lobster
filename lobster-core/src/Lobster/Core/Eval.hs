@@ -29,6 +29,7 @@ module Lobster.Core.Eval
   , domainClassName
   , domainPath
   , domainSubdomains
+  , domainParent
   , domainPorts
   , domainLabel
   , domainAnnotation
@@ -158,6 +159,7 @@ data Domain l = Domain
   , _domainClassName        :: Text
   , _domainPath             :: Text
   , _domainSubdomains       :: S.Set DomainId
+  , _domainParent           :: Maybe DomainId
   , _domainPorts            :: S.Set PortId
   , _domainLabel            :: l
   , _domainAnnotation       :: A.Annotation l
@@ -174,6 +176,7 @@ topDomain l = Domain
   , _domainClassName        = ""
   , _domainPath             = ""
   , _domainSubdomains       = S.empty
+  , _domainParent           = Nothing
   , _domainPorts            = S.empty
   , _domainLabel            = l
   , _domainAnnotation       = mempty
@@ -361,8 +364,8 @@ addPort port = do
   return portId
 
 -- | Add a subdomain definition to the current graph.
-addSubdomain :: Domain l -> Eval l DomainId
-addSubdomain dom = do
+addDomain :: Domain l -> Eval l DomainId
+addDomain dom = do
   domId <- DomainId <$> (moduleNextDomainId <<+= 1)
   moduleDomains . at domId ?= dom
   moduleGraph %= G.insNode (nodeId domId, ())
@@ -383,12 +386,13 @@ newEnv classes locals = Env
 
 -- | Create a new, empty domain given its name, path, and
 -- class.
-newDomain :: l -> Text -> Text -> Class l -> A.Annotation l -> Domain l
-newDomain l name path cls ann = Domain
+newDomain :: l -> Text -> Text -> Class l -> DomainId -> A.Annotation l -> Domain l
+newDomain l name path cls parent ann = Domain
   { _domainName            = name
   , _domainPath            = path
   , _domainClassName       = cls ^. className . to A.getTypeName
   , _domainSubdomains      = S.empty
+  , _domainParent          = Just parent
   , _domainPorts           = S.empty
   , _domainLabel           = l
   , _domainAnnotation      = ann
@@ -585,8 +589,9 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   env    <- subdomainEnv l cls args
   -- create new domain and add it to the graph
   domPath <- getMemberPath name
-  let dom = newDomain l name domPath cls ann
-  domId <- addSubdomain dom
+  rootId  <- use moduleRootDomain
+  let dom = newDomain l name domPath cls rootId ann
+  domId <- addDomain dom
   -- evaluate domain body in new environment
   subEnv <- inEnv domId env $ do
     evalStmts (cls ^. classBody)
