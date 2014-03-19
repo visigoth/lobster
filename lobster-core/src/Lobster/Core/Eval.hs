@@ -189,13 +189,15 @@ topDomain l = Domain
 data ConnLevel = ConnLevelPeer      -- ports at same level
                | ConnLevelParent    -- right port is in subdomain
                | ConnLevelChild     -- left port is in subdomain
+               | ConnLevelInternal  -- both ports in same domain
   deriving (Eq, Ord, Show)
 
 -- | Reverse a connection level if a parent/child type.
 revLevel :: ConnLevel -> ConnLevel
-revLevel ConnLevelParent = ConnLevelChild
-revLevel ConnLevelChild  = ConnLevelParent
-revLevel ConnLevelPeer   = ConnLevelPeer
+revLevel ConnLevelParent   = ConnLevelChild
+revLevel ConnLevelChild    = ConnLevelParent
+revLevel ConnLevelPeer     = ConnLevelPeer
+revLevel ConnLevelInternal = ConnLevelInternal
 
 -- | Graph edge label type.
 data Connection l = Connection
@@ -416,10 +418,13 @@ connLevel pidL pidR = do
   isParent <- isSubdomain domL domR
   isChild  <- isSubdomain domR domL
 
-  if | isPeer    -> return ConnLevelPeer
-     | isParent  -> return ConnLevelParent
-     | isChild   -> return ConnLevelChild
-     | otherwise -> lose $ MiscError "internal error: invalid connection"
+  -- Note: Internal connections used to be an error, but we
+  -- are simply dropping them for now.
+  if | domL == domR -> return ConnLevelInternal
+     | isPeer       -> return ConnLevelPeer
+     | isParent     -> return ConnLevelParent
+     | isChild      -> return ConnLevelChild
+     | otherwise    -> lose $ MiscError "internal error: invalid connection"
 
 -- | Add a connection (in a single direction) between two ports.
 addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
@@ -428,18 +433,19 @@ addConnection l portL portR cty ann = do
   --       once we have predicates we may want to 'or' them
   --       together in this case?
   level <- connLevel portL portR
-  domL  <- (^. portDomain) <$> getPort portL
-  domR  <- (^. portDomain) <$> getPort portR
-  let conn = Connection
-               { _connectionLeft       = portL
-               , _connectionRight      = portR
-               , _connectionLevel      = level
-               , _connectionType       = cty
-               , _connectionLabel      = l
-               , _connectionAnnotation = ann
-               }
-  let edge = (nodeId domL, nodeId domR, conn)
-  moduleGraph %= G.insEdge edge
+  unless (level == ConnLevelInternal) $ do
+    domL  <- (^. portDomain) <$> getPort portL
+    domR  <- (^. portDomain) <$> getPort portR
+    let conn = Connection
+                 { _connectionLeft       = portL
+                 , _connectionRight      = portR
+                 , _connectionLevel      = level
+                 , _connectionType       = cty
+                 , _connectionLabel      = l
+                 , _connectionAnnotation = ann
+                 }
+    let edge = (nodeId domL, nodeId domR, conn)
+    moduleGraph %= G.insEdge edge
 
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.
