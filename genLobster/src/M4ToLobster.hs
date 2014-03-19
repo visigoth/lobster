@@ -33,6 +33,7 @@ data AllowRule = AllowRule
   { allowSubject    :: S.TypeOrAttributeId
   , allowObject     :: S.TypeOrAttributeId
   , allowClass      :: S.ClassId
+  , allowConditions :: [(M4.IfdefId, Bool)]
   } deriving (Eq, Ord, Show)
 
 data St = St
@@ -64,12 +65,14 @@ initSt = St
 
 data Env = Env
   { envPositions :: [P.Pos]
+  , envConditions :: [(M4.IfdefId, Bool)]
   , envModuleId :: M4.ModuleId
   }
 
 initEnv :: Env
 initEnv = Env
   { envPositions = []
+  , envConditions = []
   , envModuleId = S.mkId "none"
   }
 
@@ -78,6 +81,9 @@ setModuleId i e = e { envModuleId = i }
 
 addPos :: P.Pos -> Env -> Env
 addPos p e = e { envPositions = p : envPositions e }
+
+addCond :: Bool -> M4.IfdefId -> Env -> Env
+addCond b i e = e { envConditions = (i, b) : envConditions e }
 
 type M a = ReaderT Env (State St) a
 
@@ -116,7 +122,8 @@ addAllow subject object cls perms = do
   -- discard all but the outermost enclosing source position
   -- so that we only get the position of the top-level macro
   ps <- asks (Set.fromList . take 1 . reverse . envPositions)
-  let rule = AllowRule subject object cls
+  conds <- asks envConditions
+  let rule = AllowRule subject object cls conds
   let posMap = Map.fromSet (const ps) perms
   let activeClasses = Set.map (activeClass cls) perms
   modify $ \st -> st
@@ -194,8 +201,10 @@ processStmts = mapM_ processStmt
 processStmt :: M4.Stmt -> M ()
 processStmt stmt =
   case stmt of
-    Ifdef i stmts1 stmts2 -> processStmts (if isDefined i then stmts1 else stmts2)
-    Ifndef i stmts -> processStmts (if isDefined i then [] else stmts)
+    Ifdef i stmts1 stmts2 -> do
+      local (addCond True i) $ processStmts stmts1
+      local (addCond False i) $ processStmts stmts2
+    Ifndef i stmts -> local (addCond False i) $ processStmts stmts
     Attribute attr -> addDeclaration attr >> addAttrib attr
     Type t _aliases attrs -> addDeclaration t >> addTypeAttribs t attrs -- TODO: track aliases
     TypeAttribute t attrs -> addTypeAttribs t (toList attrs)
@@ -369,20 +378,25 @@ outputPos (P.Pos fname _ l c) =
   L.mkAnnotation (L.mkName "SourcePos")
     [L.annotationString fname, L.annotationInt l, L.annotationInt c]
 
+outputCond :: (M4.IfdefId, Bool) -> L.ConnectAnnotation
+outputCond (i, b) =
+  L.mkAnnotation (L.mkName (if b then "Ifdef" else "Ifndef"))
+    [L.annotationString (S.idString i)]
+
 -- | Mode 1
 outputAllowRule1 :: AllowRule -> (S.PermissionId, Set P.Pos) -> L.Decl
-outputAllowRule1 (AllowRule subject object cls) (perm, ps) =
+outputAllowRule1 (AllowRule subject object cls conds) (perm, ps) =
   L.neutral'
     (L.domPort (toIdentifier subject (activeClass cls perm)) activePort)
     (L.domPort (toIdentifier object cls) (toPort perm))
-    (map outputPos (Set.toList ps))
+    (map outputCond conds ++ map outputPos (Set.toList ps))
 
 outputAllowRule2 :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> L.Decl
-outputAllowRule2 (AllowRule subject object cls, m) =
+outputAllowRule2 (AllowRule subject object cls conds, m) =
   L.neutral'
     (L.domPort (toDom subject) activePort)
     (L.domPort (toDom object) (toPort cls))
-    (map outputPerm perms ++ map outputPos ps)
+    (map outputPerm perms ++ map outputCond conds ++ map outputPos ps)
   where
     perms = Map.keys m
     ps = Set.toList (Set.unions (Map.elems m))
