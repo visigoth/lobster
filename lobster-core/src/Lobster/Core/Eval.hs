@@ -47,6 +47,7 @@ module Lobster.Core.Eval
   , portDirection
   , portLabel
   , portAnnotation
+  , portDomain
  
     -- * Connections
   , ConnLevel(..)
@@ -62,7 +63,7 @@ module Lobster.Core.Eval
 import Control.Applicative ((<$>))
 import Control.Error
 import Control.Lens hiding (op)
-import Control.Monad (unless, void, when)
+import Control.Monad (unless, when)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import Data.Monoid ((<>), mempty)
@@ -139,6 +140,7 @@ data Port l = Port
   , _portDirection  :: Maybe A.Direction
   , _portLabel      :: l
   , _portAnnotation :: A.Annotation l
+  , _portDomain     :: DomainId
   } deriving (Show, Functor)
 
 instance A.Labeled Port where
@@ -349,10 +351,9 @@ lookupPort pid@(A.QPortName _ (A.VarName l1 domN) (A.VarName l2 portN)) = do
   return (domId, port)
 
 -- | Add a port definition to the current graph.
-addPort :: Text -> Port l -> Eval l PortId
-addPort name port = do
+addPort :: Port l -> Eval l PortId
+addPort port = do
   portId <- PortId <$> (moduleNextPortId <<+= 1)
-  moduleEnv . envPorts . at name ?= portId
   modulePorts . at portId ?= port
   -- add port to current root domain
   rootId <- use moduleRootDomain
@@ -565,9 +566,11 @@ evalStmt ann (A.StmtPortDecl l (A.VarName _ name) _) = do
   whenM (isBound envPorts name) (lose $ DuplicatePort l name)
   -- create new port and add to graph
   path <- getMemberPath name
-  let port = Port name path Nothing Nothing l ann
+  domId <- use moduleRootDomain
+  let port = Port name path Nothing Nothing l ann domId
   -- XXX ignoring port attributes for now
-  void $ addPort name port
+  portId <- addPort port
+  moduleEnv . envPorts . at name ?= portId
 
 evalStmt ann (A.StmtClassDecl l ty@(A.TypeName _ name) args body) = do
   whenM (isBound envClasses name) (lose $ DuplicateClass l name)

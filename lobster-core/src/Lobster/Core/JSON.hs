@@ -71,6 +71,7 @@ portJSON m portId =
       , "path"          .= (port ^. portPath)
       , "annotations"   .= (port ^. portAnnotation)
       , "srcloc"        .= toJSON (A.label port)
+      , "domain"        .= (port ^. portDomain . to (getDomKey m))
       ]
 
 connectionJSON :: Module Span -> Connection Span -> A.Value
