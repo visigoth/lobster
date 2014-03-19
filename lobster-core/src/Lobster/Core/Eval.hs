@@ -3,6 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE MultiWayIf #-}
 --
 -- Eval.hs --- Lobster to graph evaluator.
 --
@@ -338,20 +339,19 @@ fullPortName (A.QPortName _ (A.VarName _ n1) (A.VarName _ n2)) = n1 <> "." <> n2
 
 -- | Resolve a port in the current domain, returning its port
 -- id if it is valid.
-lookupPort :: A.PortName l -> Eval l (DomainId, PortId)
+lookupPort :: A.PortName l -> Eval l PortId
 lookupPort (A.UPortName (A.VarName l name)) = do
   port  <- use (moduleEnv . envPorts . at name)
-  domId <- use moduleRootDomain
   port' <- maybeLose (UndefinedPort l name) port
-  return (domId, port')
+  return port'
 lookupPort pid@(A.QPortName _ (A.VarName l1 domN) (A.VarName l2 portN)) = do
   -- look up subdomain, get domain id and subdomain environment
   x <- use (moduleEnv . envSubdomains . at domN)
-  (domId, subEnv) <- maybeLose (UndefinedDomain l1 domN) x
+  (_, subEnv) <- maybeLose (UndefinedDomain l1 domN) x
   -- look up port in subdomain environment
   let y = subEnv ^. envPorts . at portN
   port <- maybeLose (UndefinedPort l2 (fullPortName pid)) y
-  return (domId, port)
+  return port
 
 -- | Add a port definition to the current graph.
 addPort :: Port l -> Eval l PortId
@@ -363,6 +363,14 @@ addPort port = do
   moduleDomains . ix rootId . domainPorts . contains portId .= True
   return portId
 
+-- | Get a port by ID.
+getPort :: PortId -> Eval l (Port l)
+getPort pid = do
+  ports <- use modulePorts
+  case ports ^? ix pid of
+    Just port -> return port
+    Nothing   -> lose $ MiscError "internal error: undefined port"
+
 -- | Add a subdomain definition to the current graph.
 addDomain :: Domain l -> Eval l DomainId
 addDomain dom = do
@@ -373,6 +381,65 @@ addDomain dom = do
   rootId <- use moduleRootDomain
   moduleDomains . ix rootId . domainSubdomains . contains domId .= True
   return domId
+
+-- | Get a domain by ID.
+getDomain :: DomainId -> Eval l (Domain l)
+getDomain domId = do
+  domains <- use moduleDomains
+  case domains ^? ix domId of
+    Just dom -> return dom
+    Nothing  -> lose $ MiscError "internal error: undefined domain"
+
+-- | Return true if one domain is a subdomain of the other.
+isSubdomain :: DomainId -> DomainId -> Eval l Bool
+isSubdomain parentId childId = do
+  parent <- getDomain parentId
+  return $ S.member childId (parent ^. domainSubdomains)
+
+-- | Return true if two domains have the same parent.
+isPeerDomain :: DomainId -> DomainId -> Eval l Bool
+isPeerDomain domId1 domId2 = do
+  dom1 <- getDomain domId1
+  dom2 <- getDomain domId2
+  return (dom1 ^. domainParent == dom2 ^. domainParent)
+
+-- | Get the connection level between two ports.  This raises
+-- an error if the ports cannot be connected because they are
+-- not peers or from a domain to a port in a subdomain.
+connLevel :: PortId -> PortId -> Eval l ConnLevel
+connLevel pidL pidR = do
+  portL <- getPort pidL
+  portR <- getPort pidR
+  let domL = portL ^. portDomain
+  let domR = portR ^. portDomain
+  isPeer   <- isPeerDomain domL domR
+  isParent <- isSubdomain domL domR
+  isChild  <- isSubdomain domR domL
+
+  if | isPeer    -> return ConnLevelPeer
+     | isParent  -> return ConnLevelParent
+     | isChild   -> return ConnLevelChild
+     | otherwise -> lose $ MiscError "internal error: invalid connection"
+
+-- | Add a connection (in a single direction) between two ports.
+addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
+addConnection l portL portR cty ann = do
+  -- TODO: check to see if the connection already exists?
+  --       once we have predicates we may want to 'or' them
+  --       together in this case?
+  level <- connLevel portL portR
+  domL  <- (^. portDomain) <$> getPort portL
+  domR  <- (^. portDomain) <$> getPort portR
+  let conn = Connection
+               { _connectionLeft       = portL
+               , _connectionRight      = portR
+               , _connectionLevel      = level
+               , _connectionType       = cty
+               , _connectionLabel      = l
+               , _connectionAnnotation = ann
+               }
+  let edge = (nodeId domL, nodeId domR, conn)
+  moduleGraph %= G.insEdge edge
 
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.
@@ -461,12 +528,6 @@ evalExp e =
     A.ExpVar       var                  -> lookupVar var
     A.ExpParen _   e2                   -> evalExp e2
 
--- | Get a domain by ID by looking in the current graph.
-getDomain :: DomainId -> Eval l (Domain l)
-getDomain domId = do
-  domains <- use moduleDomains
-  return $ domains ^?! ix domId
-
 -- | Return the domain currently in scope during evaluation.
 currentDomain :: Eval l (Domain l)
 currentDomain = getDomain =<< use moduleRootDomain
@@ -510,59 +571,6 @@ subdomainEnv l cl args = do
   classes <- use (moduleEnv . envClasses)
   return (newEnv classes locals)
 
--- | Create graph edges between domains via ports, given a pair
--- of domains and ports and information about the connection.
-makeEdges :: l
-          -> (DomainId, PortId)
-          -> (DomainId, PortId)
-          -> ConnLevel
-          -> A.ConnType
-          -> A.Annotation l
-          -> [G.LEdge (Connection l)]
-makeEdges l (domL, portL) (domR, portR) level ty ann =
-  [ (nodeId domL, nodeId domR, connF)
-  , (nodeId domR, nodeId domL, connR)]
-  where
-    connF = Connection
-              { _connectionLeft       = portL
-              , _connectionRight      = portR
-              , _connectionLevel      = level
-              , _connectionType       = ty
-              , _connectionLabel      = l
-              , _connectionAnnotation = ann
-              }
-    connR = Connection
-              { _connectionLeft       = portR
-              , _connectionRight      = portL
-              , _connectionLevel      = revLevel level
-              , _connectionType       = A.revConnType ty
-              , _connectionLabel      = l
-              , _connectionAnnotation = ann
-              }
-
--- | Return a list of graph edges for a connection between two
--- ports.
-connectionEdges :: l
-                -> A.PortName l
-                -> A.PortName l
-                -> A.ConnType
-                -> A.Annotation l
-                -> Eval l [G.LEdge (Connection l)]
-connectionEdges l pidL pidR cty ann = do
-  portL <- lookupPort pidL
-  portR <- lookupPort pidR
-
-  case (pidL, pidR) of
-    (A.UPortName _, A.UPortName _) ->
-      -- XXX m4-lobster currently outputs these, just ignore them for now
-      return [] -- lose $ InternalConnection pidL pidR
-    (A.QPortName _ _ _, A.QPortName _ _ _) ->
-      return $ makeEdges l portL portR ConnLevelPeer cty ann
-    (A.QPortName _ _ _, A.UPortName _) ->
-      return $ makeEdges l portL portR ConnLevelParent cty ann
-    (A.UPortName _, A.QPortName _ _ _) ->
-      return $ makeEdges l portL portR ConnLevelChild cty ann
-
 -- | Evaluate a statement and build up the graph.
 evalStmt :: A.Annotation l -> A.Stmt l -> Eval l ()
 evalStmt ann (A.StmtPortDecl l (A.VarName _ name) _) = do
@@ -605,10 +613,10 @@ evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
   moduleEnv . envVars . at name ?= val
 
 evalStmt ann (A.StmtConnection l pidL (A.ConnOp _ cty) pidR) = do
-  -- TODO: This doesn't check for an existing connection.  Should
-  -- we worry about that here or leave it for the type checker?
-  edges <- connectionEdges l pidL pidR cty ann
-  moduleGraph %= G.insEdges edges
+  portL <- lookupPort pidL
+  portR <- lookupPort pidR
+  addConnection l portL portR cty ann
+  addConnection l portR portL (A.revConnType cty) ann
 
 evalStmt ann1 (A.StmtAnnotation _ ann2 stmt) = evalStmt (ann1 <> ann2) stmt
 
@@ -619,38 +627,3 @@ evalStmts = mapM_ (evalStmt mempty)
 evalPolicy :: A.Policy l -> Either (Error l) (Module l)
 evalPolicy (A.Policy l stmts) =
   execStateT (evalStmts stmts) (initialModule l)
-
-----------------------------------------------------------------------
--- Graph Operations (move into new module)
-
-{-
--- | Return the abstraction cost of an edge relation.
-cost :: Relation -> Int
-cost HasSubdomain = 1
-cost (Connection ConnLevelChild _) = 1
-cost _ = 0
-
--- | Return a subgraph following up to "n" subdomain edges.
---
--- This probably isn't very efficient as written.  We could
--- likely do better writing an algorithm by hand and following
--- subdomain edges directly from the root.
-graphByLevel :: Int -> Graph -> Graph
-graphByLevel n gr = G.delNodes nodes gr
-  where
-    costGraph = G.emap cost gr
-    costTree  = G.spTree 0 costGraph
-    pathFst (G.LP (x:_)) = x
-    tooHigh (_, cost) = cost > n
-    nodes = map fst $ filter tooHigh $ map pathFst costTree
-
--- | Load a Lobster file into a graph and write a Graphviz file
--- in "test.dot".  Used to test this module from GHCI.
-test :: FilePath -> IO (Module Span)
-test file = do
-  A.Policy l xs <- P.test file
-  let d = execStateT (evalStmts xs) (initialModule l)
-  case d of
-    Left err -> error (show err)
-    Right x  -> return x
--}
