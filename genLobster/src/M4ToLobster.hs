@@ -208,7 +208,9 @@ processStmt stmt =
     Tunable c stmts1 stmts2 -> do
       local (addCond True c) $ processStmts stmts1
       local (addCond False c) $ processStmts stmts2
-    Optional _stmts1 _stmts2 -> return () -- FIXME
+    Optional stmts1 stmts2 -> do
+      processStmts stmts1
+      processStmts stmts2
     Ifdef i stmts1 stmts2 -> do
       local (addIfdef True i) $ processStmts stmts1
       local (addIfdef False i) $ processStmts stmts2
