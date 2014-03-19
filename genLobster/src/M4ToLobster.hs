@@ -195,10 +195,6 @@ addDomtransMacro args = modify f
       , Set.fromList [processClassId]
       ]
 
-isDefined :: M4.IfdefId -> Bool
-isDefined _ = False
--- ^ FIXME: make this depend on a parameter
-
 processStmts :: M4.Stmts -> M ()
 processStmts = mapM_ processStmt
 
