@@ -35,6 +35,7 @@ data Error l
   | UndefinedPort l Text
   | InternalConnection l Text Text
   | BadArguments l Int
+  | TypeError l Text
   | MiscError String
   deriving (Show, Functor, Foldable)
 
@@ -70,4 +71,5 @@ errorMessage err =
       "invalid internal connection from '" <> t1 <> "' to '" <> t2 <> "'"
     BadArguments _ n ->
       "wrong number of arguments, expecting " <> (pack $ show n)
-
+    TypeError _ t ->
+      "type mismatch, expecting " <> t

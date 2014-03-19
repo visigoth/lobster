@@ -61,7 +61,7 @@ module Lobster.Core.Eval
 
 import Control.Applicative ((<$>))
 import Control.Error
-import Control.Lens
+import Control.Lens hiding (op)
 import Control.Monad (unless, void, when)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
@@ -116,6 +116,7 @@ initialEnv = Env
 data Value l
   = ValueInt l Integer
   | ValueString l Text
+  | ValueBool l Bool
   | ValueDirection l A.Direction
   | ValuePosition l A.Position
   deriving (Show, Functor)
@@ -123,6 +124,7 @@ data Value l
 instance A.Labeled Value where
   label (ValueInt l _)       = l
   label (ValueString l _)    = l
+  label (ValueBool l _)      = l
   label (ValueDirection l _) = l
   label (ValuePosition l _)  = l
 
@@ -411,14 +413,46 @@ isBound field name = do
   m <- use (moduleEnv . field)
   return $ isJust $ m ^? ix name
 
+ofType :: Value l -> Prism' (Value l) (l, a) -> Text -> Eval l a
+ofType val tyPrism text =
+  case val ^? tyPrism of
+    Just x  -> return (snd x)
+    Nothing -> lose $ TypeError (A.label val) text
+
+evalBoolBinaryOp :: l -> (Bool -> Bool -> Bool) -> A.Exp l -> A.Exp l -> Eval l (Value l)
+evalBoolBinaryOp l f e1 e2 = do
+  v1 <- evalExp e1
+  v2 <- evalExp e2
+  b1 <- ofType v1 _ValueBool "boolean"
+  b2 <- ofType v2 _ValueBool "boolean"
+  return $ ValueBool l (f b1 b2)
+
+evalBoolUnaryOp :: l -> (Bool -> Bool) -> A.Exp l -> Eval l (Value l)
+evalBoolUnaryOp l f e = do
+  v1 <- evalExp e
+  b1 <- ofType v1 _ValueBool "boolean"
+  return $ ValueBool l (f b1)
+
+evalBinaryOp :: l -> A.BinaryOp -> A.Exp l -> A.Exp l -> Eval l (Value l)
+evalBinaryOp l A.BinaryOpAnd e1 e2      = evalBoolBinaryOp l (&&) e1 e2
+evalBinaryOp l A.BinaryOpOr e1 e2       = evalBoolBinaryOp l (||) e1 e2
+evalBinaryOp l A.BinaryOpEqual e1 e2    = evalBoolBinaryOp l (==) e1 e2
+evalBinaryOp l A.BinaryOpNotEqual e1 e2 = evalBoolBinaryOp l (/=) e1 e2
+
+evalUnaryOp :: l -> A.UnaryOp -> A.Exp l -> Eval l (Value l)
+evalUnaryOp l A.UnaryOpNot e = evalBoolUnaryOp l not e
+
 -- | Evaluate a Lobster expression.
 evalExp :: A.Exp l -> Eval l (Value l)
 evalExp e =
   case e of
     A.ExpInt       (A.LitInteger   l x) -> return (ValueInt l x)
     A.ExpString    (A.LitString    l x) -> return (ValueString l x)
+    A.ExpBool      (A.LitBool      l x) -> return (ValueBool l x)
     A.ExpDirection (A.LitDirection l x) -> return (ValueDirection l x)
     A.ExpPosition  (A.LitPosition  l x) -> return (ValuePosition l x)
+    A.ExpBinaryOp  l e1 op e2           -> evalBinaryOp l op e1 e2
+    A.ExpUnaryOp   l op e1              -> evalUnaryOp l op e1
     A.ExpVar       var                  -> lookupVar var
     A.ExpParen _   e2                   -> evalExp e2
 

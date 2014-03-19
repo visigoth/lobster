@@ -15,10 +15,12 @@ module Lobster.Core.JSON () where
 import Control.Lens hiding ((.=))
 import Data.Aeson as A
 import Data.Text (Text)
+import Text.PrettyPrint.Mainland (pretty, ppr)
 
 import Lobster.Core.Lexer (Loc(..), Span(..))
 import Lobster.Core.Error
 import Lobster.Core.Eval
+import Lobster.Core.Pretty()
 
 import qualified Data.Graph.Inductive       as G
 import qualified Data.Map                   as M
@@ -105,9 +107,11 @@ instance ToJSON A.ConnType where
 -- | Convert an unevaluated expression to JSON.  This is only
 -- used for annotations.
 instance ToJSON (A.Exp l) where
-  toJSON (A.ExpInt (A.LitInteger _ x))   = toJSON x
+  toJSON (A.ExpInt (A.LitInteger _ x)) = toJSON x
   toJSON (A.ExpString (A.LitString _ x)) = toJSON x
-  toJSON _ = error "unsupported annotation expression"
+  -- XXX for now, just convert to strings
+  toJSON e = toJSON (pretty 0 (ppr e))
+  -- toJSON _ = error "unsupported annotation expression"
 
 instance ToJSON (A.Annotation l) where
   toJSON (A.Annotation xs) = toJSON (map go xs)
