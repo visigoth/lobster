@@ -117,6 +117,11 @@ instance Pretty (Stmt a) where
   ppr (StmtDomainDecl _ varName tyName args) =
     text "domain" <+> ppr varName <+> equals <+> ppr tyName
                   <> parens (pprCommaSep args) <> semi
+  ppr (StmtAnonDomainDecl _ varName body) =
+    text "domain" <+> ppr varName <+> equals <+> lbrace
+                  </> indent 2 (pprStmts body)
+                  </> rbrace
+                  <>  semi
   ppr (StmtAssign _ varName expr) =
     ppr varName <+> equals <+> ppr expr <> semi
   ppr (StmtConnection _ e1 conn e2) =

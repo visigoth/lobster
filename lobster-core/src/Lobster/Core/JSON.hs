@@ -99,6 +99,7 @@ instance ToJSON ConnLevel where
   toJSON ConnLevelPeer   = "peer"
   toJSON ConnLevelParent = "parent"
   toJSON ConnLevelChild  = "child"
+  toJSON _ = error "invalid conn level in JSON"
 
 instance ToJSON A.ConnType where
   toJSON A.ConnLeftToRight   = "left-to-right"

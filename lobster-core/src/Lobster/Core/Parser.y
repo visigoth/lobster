@@ -197,6 +197,9 @@ Stmt
     { StmtPortDecl (spanToks $1 $4) $2 $3 }
   | 'domain' VarName '=' TypeName '(' ExpList ')' ';'
     { StmtDomainDecl (spanToks $1 $8) $2 $4 $6 }
+  -- anonymous domains without a class definition
+  | 'domain' VarName '=' '{' StmtList '}' ';'
+    { StmtAnonDomainDecl (spanToks $1 $7) $2 $5 }
   | VarName '=' Exp ';'
     { StmtAssign (unionSpan (label $1) (tokSpan $4)) $1 $3 }
   | PortName ConnOp PortName ';'

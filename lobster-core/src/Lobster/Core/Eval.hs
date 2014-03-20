@@ -577,6 +577,12 @@ subdomainEnv l cl args = do
   classes <- use (moduleEnv . envClasses)
   return (newEnv classes locals)
 
+-- | Return a unique anonymous class name for a domain.
+getAnonClassName :: l -> Text -> Eval l (A.TypeName l)
+getAnonClassName l t = do
+  domId <- use moduleNextDomainId
+  return (A.TypeName l ("Anon" <> T.pack (show domId) <> "#" <> t))
+
 -- | Evaluate a statement and build up the graph.
 evalStmt :: A.Annotation l -> A.Stmt l -> Eval l ()
 evalStmt ann (A.StmtPortDecl l (A.VarName _ name) _) = do
@@ -612,6 +618,11 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
     use moduleEnv
   -- add subdomain's environment to our environment
   moduleEnv . envSubdomains . at name ?= (domId, subEnv)
+
+evalStmt ann (A.StmtAnonDomainDecl l var@(A.VarName l2 name) body) = do
+  cls <- getAnonClassName l2 name
+  evalStmt mempty (A.StmtClassDecl l cls [] body)
+  evalStmt ann (A.StmtDomainDecl l var cls [])
 
 evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
   whenM (isBound envVars name) (lose $ DuplicateVar l name)
