@@ -665,13 +665,10 @@ outputLobster2 st =
   domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
     ++ transitionDecls ++ domtransDecls
   where
-    domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> [L.Decl]
+    domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> L.Decl
     domainDecl (ty, classes) =
-      [ L.newClass className [] (header ++ stmts)
-      , L.newDomain' (toDom ty) className [] [ann1, ann2] ]
-        -- TODO: Add support for anonymous domains to lobster language
+      L.anonDomain' (toDom ty) (header ++ stmts) [ann1, ann2]
       where
-        className = L.mkName ("Type_" ++ S.idString ty)
         header = map L.newPort [activePort, memberPort, attributePort]
         stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
         ann1 =
@@ -685,7 +682,7 @@ outputLobster2 st =
         ann2 = outputModule modId
 
     domainDecls :: [L.Decl]
-    domainDecls = concatMap domainDecl (Map.assocs (object_classes st))
+    domainDecls = map domainDecl (Map.assocs (object_classes st))
 
     connectionDecls :: [L.Decl]
     connectionDecls = map outputAllowRule2 (Map.assocs (allow_rules st))
