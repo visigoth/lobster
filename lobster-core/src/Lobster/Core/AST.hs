@@ -1,3 +1,4 @@
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveTraversable #-}
@@ -32,11 +33,21 @@ module Lobster.Core.AST
   , UnaryOp(..)
   , BinaryOp(..)
   , Exp(..)
+  , _ExpInt
+  , _ExpString
+  , _ExpBool
+  , _ExpDirection
+  , _ExpPosition
+  , _ExpVar
+  , _ExpBinaryOp
+  , _ExpUnaryOp
+  , _ExpParen
   , Policy(..)
   , revConnType
   ) where
 
 import Control.Arrow (first)
+import Control.Lens
 import Data.Monoid ((<>), Monoid(..))
 import Data.Text (Text)
 import Data.Foldable (Foldable)
@@ -252,6 +263,8 @@ data Exp a
   | ExpUnaryOp    a UnaryOp (Exp a)
   | ExpParen      a (Exp a)
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+makePrisms ''Exp
 
 instance Labeled Exp where
   label (ExpInt x) = label x
