@@ -2,7 +2,7 @@ import Control.Applicative
 
 import IptablesToLobster
 
-import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
+import CoreSyn (showLobster)
 
 main = do
   s <- getContents

@@ -19,6 +19,7 @@ library
                        iptables-helpers >= 0.6,
                        mtl >= 2.1,
                        scd,
+                       genLobster,
                        transformers >= 0.3
 
 executable iptables-lobster
@@ -32,6 +33,7 @@ executable iptables-lobster
                        iptables-lobster,
                        mtl >= 2.1,
                        scd,
+                       genLobster,
                        transformers >= 0.3
 
 test-suite iptables-lobster-test

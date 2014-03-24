@@ -14,14 +14,13 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.String
 
 import Iptables
 import qualified Iptables.Parser as P
 import Iptables.Print
 import Iptables.Types
 
-import qualified SCD.Lobster.Gen.CoreSyn as L
+import qualified CoreSyn as L
 
 -- | Parse and translate iptables rules into Lobster. If we encounter
 -- an error along the way, discard the translation and return the
@@ -34,8 +33,8 @@ toLobster s = do
     case runM ipts table0 chain0 accept0 translateAll of
       (Left e, _)      -> Left e
       (Right _, final) ->
-        return $ preamble ++ [mkHost "Host" (stateToLobster final)] ++ [host]
-  where host = L.newDomain "host" "Host" []
+        return $ preamble ++ [mkHost (L.mkName "Host") (stateToLobster final)] ++ [host]
+  where host = L.newDomain (L.mkName "host") (L.mkName "Host") []
         -- separate these out so we have the correct initial values;
         -- undefined is okay for now on these because it gets reset
         -- immediately by translateChain
@@ -46,9 +45,9 @@ toLobster s = do
           e0 <- translateChain "raw" "PREROUTING"
           addEdge (incoming, e0)
           e1 <- translateChain "mangle" "INPUT"
-          addEdge (L.domPort routing "local", e1)
+          addEdge (L.domPort routing (L.mkName "local"), e1)
           e2 <- translateChain "mangle" "FORWARD"
-          addEdge (L.domPort routing "forward", e2)
+          addEdge (L.domPort routing (L.mkName "forward"), e2)
           e3 <- translateChain "raw" "OUTPUT"
           addEdge (outPort userspace, e3)
 
@@ -61,10 +60,10 @@ parseIptables s =
 stateToLobster :: S -> [L.Decl]
 stateToLobster S { sRules, sActions, sEdges } =
     ruleDecls ++ actionDecls ++ edgeDecls
-  where ruleDecls = [ L.newDomain name "Rule" [fromString $ ppRuleOpts rule]
+  where ruleDecls = [ L.newDomain name (L.mkName "Rule") [L.mkName $ ppRuleOpts rule]
                     | (name, rule) <- Map.toList sRules
                     ]
-        actionDecls = [ L.newDomain name "Action" [fromString action]
+        actionDecls = [ L.newDomain name (L.mkName "Action") [L.mkName action]
                       | (name, action) <- Map.toList sActions
                       ]
         ppRuleOpts rule =
@@ -219,24 +218,24 @@ connectToTarget this target = do
     TReject _ -> addEdge (this, reject) >> return []
     TSecmark ctx -> do
       -- create an action to represent setting the security mark
-      let baseName = fromMaybe "UNKNOWN" (L.portDomain this)
-          name = baseName <> "_SECMARK"
+      let baseName = maybe "UNKNOWN" L.nameString (L.portDomain this)
+          name = L.mkName (baseName <> "_SECMARK")
       addAction name ("--selctx " ++ ctx)
       addEdge (this, inPort name)
       -- control flow continues
       return [outPort name]
     TConnsecmarkRestore -> do
       -- create an action to represent restoring the security mark
-      let baseName = fromMaybe "UNKNOWN" (L.portDomain this)
-          name = baseName <> "_CONNSECMARK"
+      let baseName = maybe "UNKNOWN" L.nameString (L.portDomain this)
+          name = L.mkName (baseName <> "_CONNSECMARK")
       addAction name "--restore"
       addEdge (this, inPort name)
       -- control flow continues
       return [outPort name]
     TConnsecmarkSave -> do
       -- create an action to represent saving the security mark
-      let baseName = fromMaybe "UNKNOWN" (L.portDomain this)
-          name = baseName <> "_CONNSECMARK"
+      let baseName = maybe "UNKNOWN" L.nameString (L.portDomain this)
+          name = L.mkName (baseName <> "_CONNSECMARK")
       addAction name "--save"
       addEdge (this, inPort name)
       -- control flow continues
@@ -433,74 +432,75 @@ initialRuleNum = 0
 
 mkRuleName :: String -> String -> Integer -> L.Name
 mkRuleName table chain num =
-  fromString . concat $ [table, "_", chain, "_", show num]
+  L.mkName . concat $ [table, "_", chain, "_", show num]
 
 inPort :: L.Name -> L.DomPort
-inPort dom = L.domPort dom "in"
+inPort dom = L.domPort dom (L.mkName "in")
 
 outPort :: L.Name -> L.DomPort
-outPort dom = L.domPort dom "out"
+outPort dom = L.domPort dom (L.mkName "out")
 
 matchPort :: L.Name -> L.DomPort
-matchPort dom = L.domPort dom "match"
+matchPort dom = L.domPort dom (L.mkName "match")
 
 failPort :: L.Name -> L.DomPort
-failPort dom = L.domPort dom "fail"
+failPort dom = L.domPort dom (L.mkName "fail")
 
 drop :: L.DomPort
-drop = inPort "drop"
+drop = inPort (L.mkName "drop")
 
 reject :: L.DomPort
-reject = inPort "reject"
+reject = inPort (L.mkName "reject")
 
 routing :: L.Name
-routing = "routing"
+routing = L.mkName "routing"
 
 userspace :: L.Name
-userspace = "userspace"
+userspace = L.mkName "userspace"
 
 incoming :: L.DomPort
-incoming = L.DomPort Nothing "in"
+incoming = L.extPort (L.mkName "in")
 
 outgoing :: L.DomPort
-outgoing = L.DomPort Nothing "out"
+outgoing = L.extPort (L.mkName "out")
 
 preamble :: [L.Decl]
 preamble = [
     L.newComment "An rule corresponding to a single rule in an iptables chain"
-  , L.newClass "Rule" ["condition"]
+  , L.newClass (L.mkName "Rule") [L.mkName "condition"]
       [ L.newComment "Incoming packet"
-      , L.newPort "in"
+      , L.newPort (L.mkName "in")
       , L.newComment "Outgoing packet when condition is true"
-      , L.newPort "match"
+      , L.newPort (L.mkName "match")
       , L.newComment "Outgoing packet when condition is false"
-      , L.newPort "fail"
+      , L.newPort (L.mkName "fail")
       ]
   , L.newComment "An action corresponding to an effectful target like LOG or MARK"
-  , L.newClass "Action" ["action"]
+  , L.newClass (L.mkName "Action") [L.mkName "action"]
       [ L.newComment "Incoming packet"
-      , L.newPort "in"
+      , L.newPort (L.mkName "in")
       , L.newComment "Outgoing packet"
-      , L.newPort "out"
+      , L.newPort (L.mkName "out")
       ]
   , L.newComment "Abstract representation of userspace"
-  , L.newClass "UserSpace" []
+  , L.newClass (L.mkName "UserSpace") []
       [ L.newComment "Packets entering userspace"
-      , L.newPort "in"
+      , L.newPort (L.mkName "in")
       , L.newComment "Packets leaving userspace"
-      , L.newPort "out"
+      , L.newPort (L.mkName "out")
       ]
   , L.newComment "Abstract representation of the routing table"
-  , L.newClass "RoutingTable" []
+  , L.newClass (L.mkName "RoutingTable") []
       [ L.newComment "Incoming packets from nat PREROUTING"
-      , L.newPort "in"
+      , L.newPort (L.mkName "in")
       , L.newComment "Outgoing packets to mangle INPUT"
-      , L.newPort "local"
+      , L.newPort (L.mkName "local")
       , L.newComment "Outgoing packets to mangle FORWARD"
-      , L.newPort "forward"
+      , L.newPort (L.mkName "forward")
       ]
   , L.newComment "Abstract representation of a packet's destination outside of the current policy (eg DROP, REJECT)"
-  , L.newClass "Destination" [] [L.newPort "in"]
+  , L.newClass (L.mkName "Destination") []
+      [ L.newPort (L.mkName "in") ]
   ]
 
 -- | Create the abstract host with the given declarations added after
@@ -509,15 +509,15 @@ preamble = [
 mkHost :: L.Name -> [L.Decl] -> L.Decl
 mkHost name decls = L.newClass name [] (builtins ++ decls)
   where builtins = [ L.newComment "All incoming interfaces"
-                   , L.newPort "in"
+                   , L.newPort (L.mkName "in")
                    , L.newComment "All outgoing interfaces"
-                   , L.newPort "out"
+                   , L.newPort (L.mkName "out")
                    , L.newComment "Rejected packets flow here"
-                   , L.newDomain "reject" "Destination" []
+                   , L.newDomain (L.mkName "reject") (L.mkName "Destination") []
                    , L.newComment "Dropped packets flow here"
-                   , L.newDomain "drop" "Destination" []
+                   , L.newDomain (L.mkName "drop") (L.mkName "Destination") []
                    , L.newComment "This host's routing table"
-                   , L.newDomain routing "RoutingTable" []
+                   , L.newDomain routing (L.mkName "RoutingTable") []
                    , L.newComment "This host's userspace"
-                   , L.newDomain userspace "UserSpace" []
+                   , L.newDomain userspace (L.mkName "UserSpace") []
                    ]
