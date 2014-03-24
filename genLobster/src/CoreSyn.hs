@@ -20,9 +20,11 @@ module CoreSyn
   , anonDomain
   , anonDomain'
   , newPort
+  , newComment
 
   , domPort
   , extPort
+  , portDomain
   , left
   , right
   , neutral
@@ -67,6 +69,9 @@ anonDomain' binder decls xs =
 newPort :: Name -> Decl
 newPort nm = L.StmtPortDecl L.emptySpan nm []
 
+newComment :: Text.Text -> Decl
+newComment t = L.StmtComment L.emptySpan t
+
 mkAnnotation :: Name -> [AnnotationElement] -> ConnectAnnotation
 mkAnnotation (L.VarName s n) xs = (L.TypeName s n, xs)
 
@@ -94,6 +99,10 @@ domPort a b = L.QPortName L.emptySpan a b
 
 extPort :: Name -> DomPort
 extPort b = L.UPortName b
+
+portDomain :: DomPort -> Maybe Name
+portDomain (L.UPortName _) = Nothing
+portDomain (L.QPortName _ d _) = Just d
 
 left :: DomPort -> DomPort -> Decl
 left = connect L.ConnRightToLeft
