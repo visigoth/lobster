@@ -128,6 +128,9 @@ instance Pretty (Stmt a) where
     ppr e1 <+> ppr conn <+> ppr e2 <> semi
   ppr (StmtAnnotation _ a stmt) =
     ppr a </> ppr stmt
+  ppr (StmtComment _ a) =
+    -- TODO: linewrap long comments
+    text "//" <+> fromText a
 
 -- | Return true if two statements should be grouped
 -- together without an extra newline.
@@ -146,6 +149,7 @@ stmtGroup StmtDomainDecl{} StmtConnection{} = True    -- looks nice
 stmtGroup StmtAssign{}     StmtAssign{}     = True
 stmtGroup StmtConnection{} StmtConnection{} = True
 stmtGroup _                StmtAnnotation{} = False
+stmtGroup StmtComment{}    _                = True
 stmtGroup _                _                = False
 
 -- | Pretty print a list of policy statements.

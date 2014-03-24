@@ -637,6 +637,14 @@ evalStmt ann (A.StmtConnection l pidL (A.ConnOp _ cty) pidR) = do
 
 evalStmt ann1 (A.StmtAnnotation _ ann2 stmt) = evalStmt (ann1 <> ann2) stmt
 
+-- Ignore comments.
+--
+-- XXX this swallows the annotation, which isn't ideal.  this
+-- won't ever happen from parsed Lobster input, but if someone
+-- creates Lobster AST manually with an annotation before a
+-- comment, it won't affect the next statement.
+evalStmt _ (A.StmtComment _ _) = return ()
+
 evalStmts :: [A.Stmt l] -> Eval l ()
 evalStmts = mapM_ (evalStmt mempty)
 
