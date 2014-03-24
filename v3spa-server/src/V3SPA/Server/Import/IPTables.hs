@@ -14,11 +14,11 @@ import Control.Error
 import Snap
 
 import Lobster.Core
-import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
+import CoreSyn (showLobster)
 
 import V3SPA.Server.Snap
 
-import qualified SCD.Lobster.Gen.CoreSyn  as L
+import qualified CoreSyn                  as L
 import qualified IptablesToLobster        as I
 
 -- | Parse IPtables from a request body string.
