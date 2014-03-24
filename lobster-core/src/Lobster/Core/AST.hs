@@ -28,6 +28,7 @@ module Lobster.Core.AST
   , AnnotationElement
   , Annotation(..)
   , lookupAnnotation
+  , lookupAnnotations
   , PortName(..)
   , Stmt(..)
   , UnaryOp(..)
@@ -181,9 +182,17 @@ instance Monoid (Annotation a) where
   mempty = Annotation []
   mappend (Annotation xs) (Annotation ys) = Annotation (xs <> ys)
 
--- | Look up an annotation by name.
+-- | Look up an annotation by name.  If there are multiple
+-- annotations with the same name, only the first is returned.
 lookupAnnotation :: Text -> Annotation a -> Maybe [Exp a]
 lookupAnnotation t (Annotation anns) = lookup t (map (first getTypeName) anns)
+
+-- | Look up a list of annotations by name.
+lookupAnnotations :: Text -> Annotation a -> [[Exp a]]
+lookupAnnotations t (Annotation anns) = map snd matches
+  where
+    matches = filter go anns
+    go (TypeName _ name, _) = t == name
 
 -- | A port reference (qualified or unqualified).
 data PortName a
