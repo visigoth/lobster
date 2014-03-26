@@ -359,7 +359,7 @@ processSubAttributes subs = do
 ----------------------------------------------------------------------
 -- Generation of Lobster code
 
-data OutputMode = Mode1 | Mode2 -- TODO: more sensible names
+data OutputMode = Mode1 | Mode2 | Mode3 -- TODO: more sensible names
   deriving (Eq, Ord, Show)
 
 type Dom = L.Name
@@ -464,6 +464,44 @@ outputAllowRule2 (AllowRule subject object cls conds, m) =
     perms = Map.keys m
     ps = Set.toList (Set.unions (Map.elems m))
 
+-- | If both ends of the edge are located in the same module, then we
+-- connect them directly. Otherwise, we split either or both ends into
+-- separate edges: The main edge connects to the "ext" port of the
+-- module domain, and encodes its final destination in an annotation.
+-- Then a secondary edge connects the internal port to the "ext" port
+-- of its module.
+moduleEdges ::
+  St -> (S.Identifier, Port) -> (S.Identifier, Port) -> [L.ConnectAnnotation] -> [(Maybe M4.ModuleId, L.Decl)]
+moduleEdges st (d1, p1) (d2, p2) anns
+  | m1 == m2 = [(m1, L.neutral' (L.domPort (toDom d1) p1) (L.domPort (toDom d2) p2) anns)]
+  | otherwise = (Nothing, L.neutral' dp1' dp2' (a1 ++ a2 ++ anns)) : e1 ++ e2
+  where
+    m1 = Map.lookup d1 (type_modules st)
+    m2 = Map.lookup d2 (type_modules st)
+    ext m = L.domPort (toDom m) (L.mkName "ext")
+    dp1 = L.domPort (toDom d1) p1
+    dp2 = L.domPort (toDom d2) p2
+    (dp1', a1, e1) = case m1 of
+      Nothing -> (dp1, [], [])
+      Just m -> ( ext m
+                , [L.mkAnnotation (L.mkName "Lhs") [L.annotationName (toDom d1), L.annotationName p1]]
+                , [(Just m, L.neutral dp1 (L.extPort (L.mkName "ext")))])
+    (dp2', a2, e2) = case m2 of
+      Nothing -> (dp2, [], [])
+      Just m -> ( ext m
+                , [L.mkAnnotation (L.mkName "Rhs") [L.annotationName (toDom d2), L.annotationName p2]]
+                , [(Just m, L.neutral dp2 (L.extPort (L.mkName "ext")))])
+
+outputAllowRule3 :: St -> (AllowRule, Map S.PermissionId (Set P.Pos)) -> [(Maybe M4.ModuleId, L.Decl)]
+outputAllowRule3 st (AllowRule subject object cls conds, m) =
+  moduleEdges st
+    (S.toId subject, activePort)
+    (S.toId object, toPort cls)
+    (map outputPerm perms ++ map outputCond conds ++ map outputPos ps)
+  where
+    perms = Map.keys m
+    ps = Set.toList (Set.unions (Map.elems m))
+
 outputAllowRules1 :: (AllowRule, Map S.PermissionId (Set P.Pos)) -> [L.Decl]
 outputAllowRules1 (rule, m) = map (outputAllowRule1 rule) (Map.assocs m)
 
@@ -504,11 +542,25 @@ outputAttribute2 ty attr =
     (L.domPort (toDom attr) attributePort)
     [L.mkAnnotation (L.mkName "Attribute") []]
 
+outputAttribute3 :: St -> S.TypeId -> S.AttributeId -> [(Maybe M4.ModuleId, L.Decl)]
+outputAttribute3 st ty attr =
+  moduleEdges st
+    (S.toId ty, memberPort)
+    (S.toId attr, attributePort)
+    [L.mkAnnotation (L.mkName "Attribute") []]
+
 outputSubAttribute2 :: S.AttributeId -> S.AttributeId -> L.Decl
 outputSubAttribute2 ty attr =
   L.neutral'
     (L.domPort (toDom ty) memberPort)
     (L.domPort (toDom attr) attributePort)
+    [L.mkAnnotation (L.mkName "SubAttribute") []]
+
+outputSubAttribute3 :: St -> S.AttributeId -> S.AttributeId -> [(Maybe M4.ModuleId, L.Decl)]
+outputSubAttribute3 st ty attr =
+  moduleEdges st
+    (S.toId ty, memberPort)
+    (S.toId attr, attributePort)
     [L.mkAnnotation (L.mkName "SubAttribute") []]
 
 outputTypeTransition1 :: (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> L.Decl
@@ -585,9 +637,72 @@ outputDomtransMacro2 n ds = domDecl : map connectArg args
       , (2, L.mkName "process"  , "d3_process"  )
       ]
 
+domtransDecl1 :: L.Decl
+domtransDecl1 =
+  L.newClass (L.mkName "Domtrans_pattern") [d2_name]
+    [ L.newPort d1_active
+    , L.newPort d1_fd_use
+    , L.newPort d1_fifo
+    , L.newPort d1_sig
+    , L.newPort d2
+    , L.newPort d3_active
+    , L.newPort d3_trans
+    , L.newPort d3_tt
+    , L.neutral (L.extPort d1_active) (L.extPort d2)
+    , L.neutral (L.extPort d1_active) (L.extPort d3_trans)
+    , L.neutral' (L.extPort d1_active) (L.extPort d3_tt)
+        [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationName d2_name]]
+
+    , L.neutral (L.extPort d3_active) (L.extPort d1_fd_use)
+    , L.neutral (L.extPort d3_active) (L.extPort d1_fifo)
+    , L.neutral (L.extPort d3_active) (L.extPort d1_sig)
+    ]
+  where
+    d1_active = L.mkName "d1_active"
+    d1_fd_use = L.mkName "d1_fd_use"
+    d1_fifo   = L.mkName "d1_fifo"
+    d1_sig    = L.mkName "d1_sigchld"
+    d2        = L.mkName "d2"
+    d3_active = L.mkName "d3_active"
+    d3_trans  = L.mkName "d3_transition"
+    d3_tt     = L.mkName "d3_type_transition"
+    d2_name   = L.mkName "d2_name"
+
+domtransDecl2 :: L.Decl
+domtransDecl2 =
+  L.newClass (L.mkName "Domtrans_pattern") [d2_name]
+    [ L.newPort d1_active
+    , L.newPort d1_fd
+    , L.newPort d1_fifo
+    , L.newPort d1_proc
+    , L.newPort d2_file
+    , L.newPort d3_active
+    , L.newPort d3_proc
+    , L.neutral' (L.extPort d1_active) (L.extPort d2_file)
+        [outputPerm (S.mkId "x_file_perms")]
+    , L.neutral' (L.extPort d1_active) (L.extPort d3_proc)
+        [outputPerm (S.mkId "transition"),
+         L.mkAnnotation (L.mkName "TypeTransition") [L.annotationName d2_name]]
+    , L.neutral' (L.extPort d3_active) (L.extPort d1_fd)
+        [outputPerm (S.mkId "use")]
+    , L.neutral' (L.extPort d3_active) (L.extPort d1_fifo)
+        [outputPerm (S.mkId "rw_fifo_file_perms")]
+    , L.neutral' (L.extPort d3_active) (L.extPort d1_proc)
+        [outputPerm (S.mkId "sigchld")]
+    ]
+  where
+    d1_active = L.mkName "d1_active"
+    d1_fd     = L.mkName "d1_fd"
+    d1_fifo   = L.mkName "d1_fifo_file"
+    d1_proc   = L.mkName "d1_process"
+    d2_file   = L.mkName "d2_file"
+    d3_active = L.mkName "d3_active"
+    d3_proc   = L.mkName "d3_process"
+    d2_name   = L.mkName "d2_name"
+
 outputLobster1 :: M4.Policy -> St -> [L.Decl]
 outputLobster1 policy st =
-  domtransDecl :
+  domtransDecl1 :
   classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
     ++ transitionDecls ++ domtransDecls
   where
@@ -628,40 +743,9 @@ outputLobster1 policy st =
     domtransDecls :: [L.Decl]
     domtransDecls = concat $ zipWith outputDomtransMacro1 [1..] (Set.toList (domtrans_macros st))
 
-    domtransDecl :: L.Decl
-    domtransDecl =
-      L.newClass (L.mkName "Domtrans_pattern") [d2_name]
-        [ L.newPort d1_active
-        , L.newPort d1_fd_use
-        , L.newPort d1_fifo
-        , L.newPort d1_sig
-        , L.newPort d2
-        , L.newPort d3_active
-        , L.newPort d3_trans
-        , L.newPort d3_tt
-        , L.neutral (L.extPort d1_active) (L.extPort d2)
-        , L.neutral (L.extPort d1_active) (L.extPort d3_trans)
-        , L.neutral' (L.extPort d1_active) (L.extPort d3_tt)
-            [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationName d2_name]]
-
-        , L.neutral (L.extPort d3_active) (L.extPort d1_fd_use)
-        , L.neutral (L.extPort d3_active) (L.extPort d1_fifo)
-        , L.neutral (L.extPort d3_active) (L.extPort d1_sig)
-        ]
-      where
-        d1_active = L.mkName "d1_active"
-        d1_fd_use = L.mkName "d1_fd_use"
-        d1_fifo   = L.mkName "d1_fifo"
-        d1_sig    = L.mkName "d1_sigchld"
-        d2        = L.mkName "d2"
-        d3_active = L.mkName "d3_active"
-        d3_trans  = L.mkName "d3_transition"
-        d3_tt     = L.mkName "d3_type_transition"
-        d2_name   = L.mkName "d2_name"
-
 outputLobster2 :: St -> [L.Decl]
 outputLobster2 st =
-  domtransDecl :
+  domtransDecl2 :
   domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
     ++ transitionDecls ++ domtransDecls
   where
@@ -702,41 +786,64 @@ outputLobster2 st =
     domtransDecls :: [L.Decl]
     domtransDecls = concat $ zipWith outputDomtransMacro2 [1..] (Set.toList (domtrans_macros st))
 
-    domtransDecl :: L.Decl
-    domtransDecl =
-      L.newClass (L.mkName "Domtrans_pattern") [d2_name]
-        [ L.newPort d1_active
-        , L.newPort d1_fd
-        , L.newPort d1_fifo
-        , L.newPort d1_proc
-        , L.newPort d2_file
-        , L.newPort d3_active
-        , L.newPort d3_proc
-        , L.neutral' (L.extPort d1_active) (L.extPort d2_file)
-            [outputPerm (S.mkId "x_file_perms")]
-        , L.neutral' (L.extPort d1_active) (L.extPort d3_proc)
-            [outputPerm (S.mkId "transition"),
-             L.mkAnnotation (L.mkName "TypeTransition") [L.annotationName d2_name]]
-        , L.neutral' (L.extPort d3_active) (L.extPort d1_fd)
-            [outputPerm (S.mkId "use")]
-        , L.neutral' (L.extPort d3_active) (L.extPort d1_fifo)
-            [outputPerm (S.mkId "rw_fifo_file_perms")]
-        , L.neutral' (L.extPort d3_active) (L.extPort d1_proc)
-            [outputPerm (S.mkId "sigchld")]
-        ]
+outputLobster3 :: St -> [L.Decl]
+outputLobster3 st =
+  domtransDecl2 :
+  [ L.anonDomain (toDom m) (L.newPort (L.mkName "ext") : reverse ds)
+    | (Just m, ds) <- Map.assocs groupedDecls ] ++
+  Map.findWithDefault [] Nothing groupedDecls
+  where
+    domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> (Maybe M4.ModuleId, L.Decl)
+    domainDecl (ty, classes) =
+      (Map.lookup (S.toId ty) (type_modules st),
+       L.anonDomain' (toDom ty) (header ++ stmts) [ann])
       where
-        d1_active = L.mkName "d1_active"
-        d1_fd     = L.mkName "d1_fd"
-        d1_fifo   = L.mkName "d1_fifo_file"
-        d1_proc   = L.mkName "d1_process"
-        d2_file   = L.mkName "d2_file"
-        d3_active = L.mkName "d3_active"
-        d3_proc   = L.mkName "d3_process"
-        d2_name   = L.mkName "d2_name"
+        header = map L.newPort [activePort, memberPort, attributePort]
+        stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
+        ann =
+          if Map.member (S.fromId (S.toId ty)) (attrib_members st)
+            then L.mkAnnotation (L.mkName "Attribute") []
+            else L.mkAnnotation (L.mkName "Type") []
+
+    domainDecls :: [(Maybe M4.ModuleId, L.Decl)]
+    domainDecls = map domainDecl (Map.assocs (object_classes st))
+
+    connectionDecls :: [(Maybe M4.ModuleId, L.Decl)]
+    connectionDecls = concatMap (outputAllowRule3 st) (Map.assocs (allow_rules st))
+
+    attributeDecls :: [(Maybe M4.ModuleId, L.Decl)]
+    attributeDecls = do
+      (attr, tys) <- Map.assocs (attrib_members st)
+      ty <- Set.toList tys
+      outputAttribute3 st ty attr
+
+    subAttributeDecls :: [(Maybe M4.ModuleId, L.Decl)]
+    subAttributeDecls = do
+      (sub, sup) <- subattributes
+      outputSubAttribute3 st sub sup
+
+{-
+    transitionDecls :: [(Maybe M4.ModuleId, L.Decl)]
+    transitionDecls = map outputTypeTransition2 (Set.toList (type_transitions st))
+
+    domtransDecls :: [(Maybe M4.ModuleId, L.Decl)]
+    domtransDecls = concat $ zipWith outputDomtransMacro2 [1..] (Set.toList (domtrans_macros st))
+-}
+
+    taggedDecls :: [(Maybe M4.ModuleId, L.Decl)]
+    taggedDecls =
+      domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
+{-
+        ++ transitionDecls ++ domtransDecls
+-}
+
+    groupedDecls :: Map (Maybe M4.ModuleId) [L.Decl] -- in reverse order
+    groupedDecls = Map.fromListWith (++) [ (m, [d]) | (m, d) <- taggedDecls ]
 
 outputLobster :: OutputMode -> M4.Policy -> St -> [L.Decl]
 outputLobster Mode1 policy = outputLobster1 policy
 outputLobster Mode2 _ = outputLobster2
+outputLobster Mode3 _ = outputLobster3
 
 ----------------------------------------------------------------------
 

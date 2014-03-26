@@ -49,6 +49,7 @@ defaultOptions = Options
 options :: [OptDescr (Options -> Options)]
 options =
   [ Option [] ["simple"] (NoArg (\o -> o{ outputMode = M4L.Mode2 })) ""
+  , Option [] ["modules"] (NoArg (\o -> o{ outputMode = M4L.Mode3 })) ""
 --  , Option [] ["multiple"] (ReqArg (\a o -> o{ path = a, isDir = True }) "FILE") ""
 --  , Option [] ["single"] (ReqArg (\a o -> o{ path = a, isDir = False }) "FILE") ""
 --  , Option [] ["infer-missing"] (NoArg (\o -> o{ inferMissing = True })) ""
@@ -65,6 +66,7 @@ printUsage = do
     , "  Generate lobster policy module(s) from selinux policy in <input directory>"
     , "Global options:"
     , "--simple           Generate one Lobster domain per type, one port per class"
+    , "--modules          Generate one Lobster domain per module, with one subdomain per type"
 --    , "--single <file>    Place all lobster definitions in a single <file>"
 --    , "--multiple <dir>   Generate multiple lobster files and place them in <dir>"
     , "--ifdefs <file>    Read ifdef declarations from <file>"
