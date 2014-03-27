@@ -580,6 +580,13 @@ outputTypeTransition2 (subj, rel, cls, new) =
     (L.domPort (toDom new) (toPort cls))
     [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationString (S.idString rel)]]
 
+outputTypeTransition3 :: St -> (S.TypeId, S.TypeId, S.ClassId, S.TypeId) -> [(Maybe M4.ModuleId, L.Decl)]
+outputTypeTransition3 st (subj, rel, cls, new) =
+  moduleEdges st
+    (S.toId subj, activePort)
+    (S.toId new, toPort cls)
+    [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationString (S.idString rel)]]
+
 outputDomtransMacro1 :: Int -> [S.TypeOrAttributeId] -> [L.Decl]
 outputDomtransMacro1 n ds = domDecl : map connectArg args
   where
@@ -624,6 +631,34 @@ outputDomtransMacro2 n ds = domDecl : map connectArg args
       L.neutral'
         (L.domPort (toDom (ds !! i)) port)
         (L.domPort d (L.mkName argname))
+        [L.mkAnnotation (L.mkName "MacroArg") []]
+
+    args :: [(Int, Port, String)]
+    args =
+      [ (0, activePort          , "d1_active"   )
+      , (0, L.mkName "fd"       , "d1_fd"       )
+      , (0, L.mkName "fifo_file", "d1_fifo_file")
+      , (0, L.mkName "process"  , "d1_process"  )
+      , (1, L.mkName "file"     , "d2_file"     )
+      , (2, activePort          , "d3_active"   )
+      , (2, L.mkName "process"  , "d3_process"  )
+      ]
+
+outputDomtransMacro3 :: St -> Int -> [S.TypeOrAttributeId] -> [(Maybe M4.ModuleId, L.Decl)]
+outputDomtransMacro3 st n ds = (Nothing, domDecl) : concatMap connectArg args
+  where
+    d :: Dom
+    d = L.mkName ("domtrans" ++ show n)
+
+    domDecl :: L.Decl
+    domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
+      [L.mkAnnotation (L.mkName "Macro") (map (L.annotationString . S.idString) ds)]
+
+    connectArg :: (Int, Port, String) -> [(Maybe M4.ModuleId, L.Decl)]
+    connectArg (i, port, argname) =
+      moduleEdges st
+        (S.toId (ds !! i), port)
+        (S.mkId (L.nameString d), L.mkName argname)
         [L.mkAnnotation (L.mkName "MacroArg") []]
 
     args :: [(Int, Port, String)]
@@ -822,20 +857,18 @@ outputLobster3 st =
       (sub, sup) <- subattributes
       outputSubAttribute3 st sub sup
 
-{-
     transitionDecls :: [(Maybe M4.ModuleId, L.Decl)]
-    transitionDecls = map outputTypeTransition2 (Set.toList (type_transitions st))
+    transitionDecls = do
+      tt <- Set.toList (type_transitions st)
+      outputTypeTransition3 st tt
 
     domtransDecls :: [(Maybe M4.ModuleId, L.Decl)]
-    domtransDecls = concat $ zipWith outputDomtransMacro2 [1..] (Set.toList (domtrans_macros st))
--}
+    domtransDecls = concat $ zipWith (outputDomtransMacro3 st) [1..] (Set.toList (domtrans_macros st))
 
     taggedDecls :: [(Maybe M4.ModuleId, L.Decl)]
     taggedDecls =
       domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
-{-
         ++ transitionDecls ++ domtransDecls
--}
 
     groupedDecls :: Map (Maybe M4.ModuleId) [L.Decl] -- in reverse order
     groupedDecls = Map.fromListWith (++) [ (m, [d]) | (m, d) <- taggedDecls ]
