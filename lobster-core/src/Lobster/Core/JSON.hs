@@ -51,7 +51,7 @@ instance ToJSON Span where
 
 domainJSON :: Module Span -> DomainId -> A.Value
 domainJSON m domId =
-  let dom = m ^?! moduleDomains . ix domId in
+  let dom = m ^. idDomain domId in
     object
       [ "name"              .= (dom ^. domainName)
       , "path"              .= (dom ^. domainPath)
@@ -66,7 +66,7 @@ domainJSON m domId =
 
 portJSON :: Module Span -> PortId -> A.Value
 portJSON m portId =
-  let port = m ^?! modulePorts . ix portId in
+  let port = m ^. idPort portId in
     object
       [ "name"          .= (port ^. portName)
       , "path"          .= (port ^. portPath)
@@ -85,7 +85,6 @@ connectionJSON m c =
     , "annotations" .= (c ^. connectionAnnotation)
     , "srcloc"      .= (c ^. connectionLabel)
     ]
-
 
 subdomainsJSON :: Module Span -> Domain Span -> A.Value
 subdomainsJSON m dom =
