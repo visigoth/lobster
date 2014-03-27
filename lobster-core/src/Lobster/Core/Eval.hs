@@ -14,6 +14,7 @@
 module Lobster.Core.Eval
   ( -- * Modules
     Module()
+  , Graph
   , moduleDomains
   , modulePorts
   , moduleGraph
@@ -39,10 +40,6 @@ module Lobster.Core.Eval
   , domainLabel
   , domainAnnotation
   , domainClassAnnotation
-
-    -- * Domain Trees
-  , DomTree(..)
-  , moduleDomTree
 
     -- * Ports
   , Port()
@@ -276,44 +273,6 @@ labelledGraph m = G.undir (G.emap goE (G.gmap goN (m ^. moduleGraph)))
     goN (preds, node, _, posts) =
       let name = m ^?! moduleDomains . ix (DomainId node) . domainPath in
       (preds, node, name, posts)
-
-----------------------------------------------------------------------
--- Domain Trees
-
--- | A view of the subdomain tree without indirection through IDs.
-data DomTree l = DomTree
-  { _domTreeDomainId    :: DomainId
-  , _domTreeDomain      :: Domain l
-  , _domTreeSubdomains  :: [DomTree l]
-  , _domTreePorts       :: [Port l]
-  } deriving (Show, Functor)
-
-makeLenses ''DomTree
-
-instance Eq (DomTree l) where
-  (==) d1 d2 = (d1 ^. domTreeDomainId) == (d2 ^. domTreeDomainId)
-
-instance Ord (DomTree l) where
-  compare d1 d2 = compare (d1 ^. domTreeDomainId) (d2 ^. domTreeDomainId)
-
--- TODO: Could this be better defined as a 'Fold'?
-moduleDomTree :: Module l -> DomTree l
-moduleDomTree m = domainTree m rootDomId rootDom
-  where
-    rootDomId = m ^. moduleRootDomain
-    rootDom   = m ^?! moduleDomains . ix rootDomId
-
-domainTree :: Module l -> DomainId -> Domain l -> DomTree l
-domainTree m domId dom = DomTree
-  { _domTreeDomainId    = domId
-  , _domTreeDomain      = dom
-  , _domTreeSubdomains  = map goSubdomains (S.toList $ dom ^. domainSubdomains)
-  , _domTreePorts       = map goPorts      (S.toList $ dom ^. domainPorts)
-  }
-  where
-    goSubdomains subDomId =
-      domainTree m subDomId (m ^?! moduleDomains . ix subDomId)
-    goPorts pid = m ^?! modulePorts . ix pid
 
 ----------------------------------------------------------------------
 -- Evaluator Monad

@@ -16,6 +16,8 @@ module Lobster.Core
   , module Lobster.Core.AST
   , module Lobster.Core.Error
   , module Lobster.Core.Eval
+  , module Lobster.Core.Traverse
+  , module Lobster.Core.JSON
   ) where
 
 import Control.Error (EitherT, hoistEither)
@@ -28,8 +30,9 @@ import Lobster.Core.Parser
 import Lobster.Core.AST
 import Lobster.Core.Error
 import Lobster.Core.Eval
+import Lobster.Core.Traverse
+import Lobster.Core.JSON
 import Lobster.Core.Pretty ()
-import Lobster.Core.JSON ()
 
 import qualified Data.ByteString.Lazy as LBS
 
