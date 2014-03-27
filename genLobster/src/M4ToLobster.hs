@@ -43,8 +43,9 @@ data St = St
   , attrib_members   :: !(Map S.AttributeId (Set S.TypeId))
   , allow_rules      :: !(Map AllowRule (Map S.PermissionId (Set P.Pos)))
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
-  , domtrans_macros  :: !(Set [S.TypeOrAttributeId])
+  , domtrans_macros  :: !(Set (S.Identifier, [S.TypeOrAttributeId]))
   , type_modules     :: !(Map S.Identifier M4.ModuleId)
+  , unique_supply    :: Int
   }
 
 processClassId :: S.ClassId
@@ -62,6 +63,7 @@ initSt = St
   , type_transitions = Set.empty
   , domtrans_macros  = Set.empty
   , type_modules     = Map.empty
+  , unique_supply    = 0
   }
 
 data Env = Env
@@ -90,6 +92,13 @@ addCond :: Bool -> S.CondExpr -> Env -> Env
 addCond b c e = e { envConditions = (Right c, b) : envConditions e }
 
 type M a = ReaderT Env (State St) a
+
+getUnique :: M Int
+getUnique = do
+  st <- get
+  let n = unique_supply st
+  put $ st { unique_supply = n + 1 }
+  return n
 
 ----------------------------------------------------------------------
 -- Processing of M4 policy
@@ -176,18 +185,20 @@ addTypeTransition subj rel cls new = modify f
       }
 
 addDomtransMacro :: [S.TypeOrAttributeId] -> M ()
-addDomtransMacro args = modify f
-  where
-    f st = st
+addDomtransMacro args = do
+  n <- getUnique
+  let i = S.mkId ("domtrans" ++ show n)
+  addDeclaration i
+  modify $ \ st -> st
       { object_classes =
           foldr ($) (object_classes st)
             [ Map.insertWith Set.union d cs | (d, cs) <- zip args argClasses ]
       , class_perms =
           insertMapSet (S.mkId "file") (S.mkId "x_file_perms") $
           class_perms st
-      , domtrans_macros = Set.insert args (domtrans_macros st)
+      , domtrans_macros = Set.insert (i, args) (domtrans_macros st)
       }
-
+  where
     argClasses :: [Set S.ClassId]
     argClasses =
       [ Set.fromList [processClassId, S.mkId "fd", S.mkId "fifo_file"]
@@ -587,11 +598,11 @@ outputTypeTransition3 st (subj, rel, cls, new) =
     (S.toId new, toPort cls)
     [L.mkAnnotation (L.mkName "TypeTransition") [L.annotationString (S.idString rel)]]
 
-outputDomtransMacro1 :: Int -> [S.TypeOrAttributeId] -> [L.Decl]
-outputDomtransMacro1 n ds = domDecl : map connectArg args
+outputDomtransMacro1 :: (S.Identifier, [S.TypeOrAttributeId]) -> [L.Decl]
+outputDomtransMacro1 (n, ds) = domDecl : map connectArg args
   where
     d :: L.Name
-    d = L.mkName ("domtrans" ++ show n)
+    d = L.mkName (S.idString n)
 
     domDecl :: L.Decl
     domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
@@ -616,11 +627,11 @@ outputDomtransMacro1 n ds = domDecl : map connectArg args
       , (2, processClassId    , S.mkId "type_transition"   , "d3_type_transition")
       ]
 
-outputDomtransMacro2 :: Int -> [S.TypeOrAttributeId] -> [L.Decl]
-outputDomtransMacro2 n ds = domDecl : map connectArg args
+outputDomtransMacro2 :: (S.Identifier, [S.TypeOrAttributeId]) -> [L.Decl]
+outputDomtransMacro2 (n, ds) = domDecl : map connectArg args
   where
     d :: Dom
-    d = L.mkName ("domtrans" ++ show n)
+    d = L.mkName (S.idString n)
 
     domDecl :: L.Decl
     domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
@@ -644,11 +655,14 @@ outputDomtransMacro2 n ds = domDecl : map connectArg args
       , (2, L.mkName "process"  , "d3_process"  )
       ]
 
-outputDomtransMacro3 :: St -> Int -> [S.TypeOrAttributeId] -> [(Maybe M4.ModuleId, L.Decl)]
-outputDomtransMacro3 st n ds = (Nothing, domDecl) : concatMap connectArg args
+outputDomtransMacro3 :: St -> (S.Identifier, [S.TypeOrAttributeId]) -> [(Maybe M4.ModuleId, L.Decl)]
+outputDomtransMacro3 st (n, ds) = (m, domDecl) : concatMap connectArg args
   where
     d :: Dom
-    d = L.mkName ("domtrans" ++ show n)
+    d = L.mkName (S.idString n)
+
+    m :: Maybe M4.ModuleId
+    m = Map.lookup n (type_modules st)
 
     domDecl :: L.Decl
     domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
@@ -776,7 +790,7 @@ outputLobster1 policy st =
     transitionDecls = map outputTypeTransition1 (Set.toList (type_transitions st))
 
     domtransDecls :: [L.Decl]
-    domtransDecls = concat $ zipWith outputDomtransMacro1 [1..] (Set.toList (domtrans_macros st))
+    domtransDecls = concatMap outputDomtransMacro1 (Set.toList (domtrans_macros st))
 
 outputLobster2 :: St -> [L.Decl]
 outputLobster2 st =
@@ -819,7 +833,7 @@ outputLobster2 st =
     transitionDecls = map outputTypeTransition2 (Set.toList (type_transitions st))
 
     domtransDecls :: [L.Decl]
-    domtransDecls = concat $ zipWith outputDomtransMacro2 [1..] (Set.toList (domtrans_macros st))
+    domtransDecls = concatMap outputDomtransMacro2 (Set.toList (domtrans_macros st))
 
 outputLobster3 :: St -> [L.Decl]
 outputLobster3 st =
@@ -863,7 +877,7 @@ outputLobster3 st =
       outputTypeTransition3 st tt
 
     domtransDecls :: [(Maybe M4.ModuleId, L.Decl)]
-    domtransDecls = concat $ zipWith (outputDomtransMacro3 st) [1..] (Set.toList (domtrans_macros st))
+    domtransDecls = concatMap (outputDomtransMacro3 st) (Set.toList (domtrans_macros st))
 
     taggedDecls :: [(Maybe M4.ModuleId, L.Decl)]
     taggedDecls =
