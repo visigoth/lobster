@@ -329,6 +329,11 @@ isTopSorted :: Eq a => [(a, a)] -> Bool
 isTopSorted [] = True
 isTopSorted (x : xs) = isTopSorted xs && snd x `notElem` map fst xs
 
+-- | (a, b) must not precede (b, c); otherwise (b, c) will be removed.
+ensureTopSorted :: Eq a => [(a, a)] -> [(a, a)]
+ensureTopSorted [] = []
+ensureTopSorted (x : ys) = x : ensureTopSorted [ y | y <- ys, fst y /= snd x ]
+
 -- | For each type t in attribute a, and class c used with a, note
 -- that c is also used with t.
 processAttributes :: M ()
@@ -361,11 +366,19 @@ processSubAttribute (x, y) = do
   let am' = Map.insertWith (flip Set.difference) y (MapSet.lookup x am) am
   put $ st { object_classes = oc', attrib_members = am' }
 
-processSubAttributes :: [(S.AttributeId, S.AttributeId)] -> M Bool
-processSubAttributes subs = do
-  oks <- mapM checkSubAttribute subs
-  mapM_ processSubAttribute subs
-  return (isTopSorted subs && and oks)
+isDeclared :: S.IsIdentifier i => i -> M Bool
+isDeclared i = do
+  st <- get
+  return (Map.member (S.toId i) (type_modules st))
+
+processSubAttributes :: [(S.AttributeId, S.AttributeId)] -> M [(S.AttributeId, S.AttributeId)]
+processSubAttributes subs0 = do
+  let subs1 = ensureTopSorted subs0 -- ^ (b < c) must come *before* (a < b)
+  subs2 <- filterM (isDeclared . fst) subs1
+  subs3 <- filterM (isDeclared . snd) subs2
+  subs4 <- filterM checkSubAttribute subs3
+  mapM_ processSubAttribute subs4
+  return subs4
 
 ----------------------------------------------------------------------
 -- Generation of Lobster code
@@ -749,8 +762,8 @@ domtransDecl2 =
     d3_proc   = L.mkName "d3_process"
     d2_name   = L.mkName "d2_name"
 
-outputLobster1 :: M4.Policy -> St -> [L.Decl]
-outputLobster1 policy st =
+outputLobster1 :: M4.Policy -> (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
+outputLobster1 policy (st, subattrs) =
   domtransDecl1 :
   classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
     ++ transitionDecls ++ domtransDecls
@@ -784,7 +797,7 @@ outputLobster1 policy st =
       outputAttributes1 st (S.fromId (S.toId ty)) (S.fromId (S.toId attr))
 
     subAttributeDecls :: [L.Decl]
-    subAttributeDecls = concatMap (outputSubAttributes1 st) subattributes
+    subAttributeDecls = concatMap (outputSubAttributes1 st) subattrs
 
     transitionDecls :: [L.Decl]
     transitionDecls = map outputTypeTransition1 (Set.toList (type_transitions st))
@@ -792,8 +805,8 @@ outputLobster1 policy st =
     domtransDecls :: [L.Decl]
     domtransDecls = concatMap outputDomtransMacro1 (Set.toList (domtrans_macros st))
 
-outputLobster2 :: St -> [L.Decl]
-outputLobster2 st =
+outputLobster2 :: (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
+outputLobster2 (st, subattrs) =
   domtransDecl2 :
   domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
     ++ transitionDecls ++ domtransDecls
@@ -827,7 +840,7 @@ outputLobster2 st =
 
     subAttributeDecls :: [L.Decl]
     subAttributeDecls =
-      [ outputSubAttribute2 sub sup | (sub, sup) <- subattributes ]
+      [ outputSubAttribute2 sub sup | (sub, sup) <- subattrs ]
 
     transitionDecls :: [L.Decl]
     transitionDecls = map outputTypeTransition2 (Set.toList (type_transitions st))
@@ -835,8 +848,8 @@ outputLobster2 st =
     domtransDecls :: [L.Decl]
     domtransDecls = concatMap outputDomtransMacro2 (Set.toList (domtrans_macros st))
 
-outputLobster3 :: St -> [L.Decl]
-outputLobster3 st =
+outputLobster3 :: (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
+outputLobster3 (st, subattrs) =
   domtransDecl2 :
   [ L.anonDomain (toDom m) (L.newPort (L.mkName "ext") : reverse ds)
     | (Just m, ds) <- Map.assocs groupedDecls ] ++
@@ -868,7 +881,7 @@ outputLobster3 st =
 
     subAttributeDecls :: [(Maybe M4.ModuleId, L.Decl)]
     subAttributeDecls = do
-      (sub, sup) <- subattributes
+      (sub, sup) <- subattrs
       outputSubAttribute3 st sub sup
 
     transitionDecls :: [(Maybe M4.ModuleId, L.Decl)]
@@ -887,7 +900,7 @@ outputLobster3 st =
     groupedDecls :: Map (Maybe M4.ModuleId) [L.Decl] -- in reverse order
     groupedDecls = Map.fromListWith (++) [ (m, [d]) | (m, d) <- taggedDecls ]
 
-outputLobster :: OutputMode -> M4.Policy -> St -> [L.Decl]
+outputLobster :: OutputMode -> M4.Policy -> (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
 outputLobster Mode1 policy = outputLobster1 policy
 outputLobster Mode2 _ = outputLobster2
 outputLobster Mode3 _ = outputLobster3
@@ -921,10 +934,8 @@ toLobster mode policy0 = do
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
   let action = processPolicy policy >> processAttributes >> processSubAttributes subattributes
-  let (ok, finalSt) = runState (runReaderT action initEnv) initSt
-  if ok
-    then return (outputLobster mode policy finalSt)
-    else Left (Error "subattribute check failed")
+  let (subattrs, finalSt) = runState (runReaderT action initEnv) initSt
+  return (outputLobster mode policy (finalSt, subattrs))
 
 capitalize :: String -> String
 capitalize "" = ""
