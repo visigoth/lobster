@@ -85,6 +85,10 @@ import qualified Lobster.Core.AST     as A
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM b f = b >>= (\x -> when x f)
 
+-- | "unless" with a monadic boolean condition.
+unlessM :: Monad m => m Bool -> m () -> m ()
+unlessM b f = b >>= (\x -> unless x f)
+
 ----------------------------------------------------------------------
 -- Environments
 
@@ -401,12 +405,15 @@ connLevel pidL pidR = do
      | isChild      -> return ConnLevelChild
      | otherwise    -> lose $ MiscError "internal error: invalid connection"
 
+-- | Return true if an edge already exists in the graph.
+edgeExists :: (Int, Int, Connection l) -> Eval l Bool
+edgeExists (nodeL, nodeR, _) = do
+  gr <- use moduleGraph
+  return $ elem nodeR (G.suc gr nodeL)   -- argh, O(n)
+
 -- | Add a connection (in a single direction) between two ports.
 addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
 addConnection l portL portR cty ann = do
-  -- TODO: check to see if the connection already exists?
-  --       once we have predicates we may want to 'or' them
-  --       together in this case?
   level <- connLevel portL portR
   unless (level == ConnLevelInternal) $ do
     domL  <- (^. portDomain) <$> getPort portL
@@ -420,7 +427,11 @@ addConnection l portL portR cty ann = do
                  , _connectionAnnotation = ann
                  }
     let edge = (nodeId domL, nodeId domR, conn)
-    moduleGraph %= G.insEdge edge
+    -- TODO: unify the connections rather than skip duplicate edges
+    --       we do this because fgl is very slow with lots of duplicate
+    --       edges...
+    unlessM (edgeExists edge) $
+      moduleGraph %= G.insEdge edge
 
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.
