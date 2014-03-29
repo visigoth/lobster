@@ -13,6 +13,7 @@ cabal-version:       >=1.10
 executable v3spa-server
   main-is:             Main.hs
   other-modules:       V3SPA.Server.Snap,
+                       V3SPA.Server.Parse,
                        V3SPA.Server.Import.SELinux,
                        V3SPA.Server.Import.IPTables,
                        V3SPA.Server.Version
@@ -27,6 +28,7 @@ executable v3spa-server
                        iptables-lobster,
                        genLobster,
                        scd,
+                       bytestring,
                        text,
                        aeson,
                        aeson-pretty
