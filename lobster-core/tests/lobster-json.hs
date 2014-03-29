@@ -29,7 +29,6 @@ import qualified Data.Text.IO               as TIO
 
 data Options = Options
   { optionDepth :: Maybe Int
-  , optionNames :: [Text]
   , optionPaths :: [Text]
   , optionIds   :: [DomainId]
   } deriving Show
@@ -37,22 +36,19 @@ data Options = Options
 defaultOptions :: Options
 defaultOptions = Options
   { optionDepth = Nothing
-  , optionNames = []
   , optionPaths = []
   , optionIds   = []
   }
 
 -- | Return true if no predicate options were supplied.
 isNoDomainPred :: Options -> Bool
-isNoDomainPred (Options Nothing [] [] []) = True
+isNoDomainPred (Options Nothing [] []) = True
 isNoDomainPred _ = False
 
 options :: [OptDescr (Endo Options)]
 options =
   [ Option ['d'] ["depth"] (ReqArg (Endo . opt_depth) "N")
     "maximum subdomain depth"
-  , Option ['n'] ["name"] (ReqArg (Endo . opt_name) "NAME")
-    "lobster domain names to expand"
   , Option ['p'] ["path"] (ReqArg (Endo . opt_path) "PATH")
     "domain paths to expand"
   , Option ['i'] ["id"] (ReqArg (Endo . opt_id) "ID")
@@ -60,7 +56,6 @@ options =
   ]
   where
     opt_depth x opts = opts { optionDepth = Just (read x) }
-    opt_name  x opts = opts { optionNames = pack x:optionNames opts }
     opt_path  x opts = opts { optionPaths = pack x:optionPaths opts }
     opt_id    x opts = opts { optionIds = DomainId (read x):optionIds opts }
 
@@ -106,7 +101,6 @@ optionsPred opts m
   | otherwise =
     runDomainPredBuilder $ do
       maybeM_ (addPred . maxDepth m) (optionDepth opts)
-      mapM_ (addPred . isDomainName) (optionNames opts)
       mapM_ (addPred . isDomainPath) (optionPaths opts)
       mapM_ (addPred . isDomainId) (optionIds opts)
 

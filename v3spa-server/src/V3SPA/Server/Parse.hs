@@ -31,7 +31,6 @@ maybeM_ f x = maybe (return ()) f x
 -- | Parser options from query parameters.
 data ParserOptions = ParserOptions
   { optDepth :: Maybe Int
-  , optNames :: [Text]
   , optPaths :: [Text]
   , optIds   :: [DomainId]
   } deriving Show
@@ -41,7 +40,6 @@ data ParserOptions = ParserOptions
 defaultOptions :: ParserOptions
 defaultOptions = ParserOptions
   { optDepth = Nothing
-  , optNames = []
   , optPaths = []
   , optIds   = []
   }
@@ -49,7 +47,7 @@ defaultOptions = ParserOptions
 
 -- | Return true if no options are set.
 isNoDomainPred :: ParserOptions -> Bool
-isNoDomainPred (ParserOptions Nothing [] [] []) = True
+isNoDomainPred (ParserOptions Nothing [] []) = True
 isNoDomainPred _ = False
 
 -- | Get a list of text values for a query parameter.
@@ -71,10 +69,6 @@ getMaxDepth = do
   r <- getQueryParam "maxdepth"
   return $ maybe Nothing ((fst <$>) . BS.readInt) r
 
--- | Get the list of filter domain names from query parameters.
-getNames :: V3Snap [Text]
-getNames = getTextParams "name"
-
 -- | Get the list of filter domain paths from query parameters.
 getPaths :: V3Snap [Text]
 getPaths = getTextParams "path"
@@ -87,7 +81,6 @@ getIds = (catMaybes . map readDomainId) <$> getTextParams "id"
 getParserOptions :: V3Snap ParserOptions
 getParserOptions =
   ParserOptions <$> getMaxDepth
-                <*> getNames
                 <*> getPaths
                 <*> getIds
 
@@ -104,7 +97,6 @@ queryPredFromOpts :: Module l -> ParserOptions -> V3Snap (DomainPred l)
 queryPredFromOpts m opts =
   return $ runDomainPredBuilder $ do
     maybeM_ (addPred . maxDepth m)   (optDepth opts)
-    mapM_   (addPred . isDomainName) (optNames opts)
     mapM_   (addPred . isDomainPath) (optPaths opts)
     mapM_   (addPred . isDomainId)   (optIds opts)
 

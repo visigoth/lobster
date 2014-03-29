@@ -123,12 +123,6 @@ maxDepth m x dom = depth m dom <= x
 isDomainId :: DomainId -> Domain l -> Bool
 isDomainId domId dom = domId == dom ^. domainId
 
--- | Predicate on the name of a domain.
---
--- XXX i think this is bogus, it's never what you want, use path instead
-isDomainName :: Text -> Domain l -> Bool
-isDomainName name dom = name == dom ^. domainName
-
 -- | Match a domain path against a path string.
 --
 -- The second path may end with a wildcard "*" which will match
