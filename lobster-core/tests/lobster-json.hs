@@ -87,7 +87,7 @@ die file err = do
 
 makeJSON :: Module Span -> Value
 makeJSON mod =
-  object [ "version" .= (2 :: Int)
+  object [ "version" .= (3 :: Int)
          , "result"  .= toJSON mod
          , "errors"  .= ([] :: [()])
          ]

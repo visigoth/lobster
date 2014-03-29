@@ -29,6 +29,10 @@ module V3SPA.Server.Version where
 --
 -- - changed Lobster JSON format to flat list of domains,
 --   ports, and connections
+--
+-- Version 3:
+--
+-- - added filter query parameters to "/parse".
 version :: Int
-version = 2
+version = 3
 
