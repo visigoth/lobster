@@ -114,4 +114,9 @@ exitErrors errs = do
 dirToLobster :: FilePath -> Options -> EitherT Error IO [L.Decl]
 dirToLobster iDir opts = do
   policy0 <- runIO $ readPolicy (ifdefDeclFile opts) iDir
-  hoistEither $ M4L.toLobster (outputMode opts) policy0
+  let file = iDir ++ "/subattributes"
+  ok <- runIO $ doesFileExist file
+  subattributes <- runIO $
+    if not ok then return []
+    else fmap M4L.parseSubAttributes (readFile file)
+  hoistEither $ M4L.toLobster (outputMode opts) subattributes policy0

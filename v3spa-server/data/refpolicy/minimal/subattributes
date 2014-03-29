@@ -1,0 +1,14 @@
+client_packet_type < packet_type
+server_packet_type < packet_type
+
+defined_port_type < port_type
+reserved_port_type < port_type
+unreserved_port_type < port_type
+rpc_port_type < reserved_port_type
+
+non_auth_file_type < file_type
+non_security_file_type < non_auth_file_type
+httpdcontent < non_security_file_type
+lockfile < non_security_file_type
+logfile < non_security_file_type
+pidfile < non_security_file_type

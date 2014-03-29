@@ -305,24 +305,16 @@ processPolicy policy = mapM_ processPolicyModule (M4.policyModules policy)
 ----------------------------------------------------------------------
 -- Sub-attributes
 
--- TODO: read these in from a file
-subattributes :: [(S.AttributeId, S.AttributeId)]
-subattributes = [ (S.mkId a, S.mkId b) | (a, b) <- attrs ]
+type SubAttribute = (S.AttributeId, S.AttributeId)
+
+parseSubAttributes :: String -> [SubAttribute]
+parseSubAttributes = parse . lines
   where
-    attrs =
-      [ ("client_packet_type", "packet_type")
-      , ("server_packet_type", "packet_type")
-      , ("defined_port_type", "port_type")
-      , ("reserved_port_type", "port_type")
-      , ("unreserved_port_type", "port_type")
-      , ("rpc_port_type", "reserved_port_type")
-      , ("non_auth_file_type", "file_type")
-      , ("non_security_file_type", "non_auth_file_type")
-      , ("httpdcontent", "non_security_file_type")
-      , ("lockfile", "non_security_file_type")
-      , ("logfile", "non_security_file_type")
-      , ("pidfile", "non_security_file_type")
-      ]
+    parse [] = []
+    parse (l : ls) =
+      case words l of
+        [sub, "<", sup] -> (S.mkId sub, S.mkId sup) : parse ls
+        _ -> parse ls
 
 -- | Requirement: isTopSorted subattributes
 isTopSorted :: Eq a => [(a, a)] -> Bool
@@ -348,7 +340,7 @@ processAttributes = do
 
 -- | Checking of sub-attribute membership: Ensure that all types t in
 -- attribute x are also in attribute y.
-checkSubAttribute :: (S.AttributeId, S.AttributeId) -> M Bool
+checkSubAttribute :: SubAttribute -> M Bool
 checkSubAttribute (x, y) = do
   m <- gets attrib_members
   return (Set.isSubsetOf (MapSet.lookup x m) (MapSet.lookup y m))
@@ -357,7 +349,7 @@ checkSubAttribute (x, y) = do
 -- | For each pair (x, y) (indicating that x is a sub-attribute of y)
 -- we 1) for any class c used with y, note that c is also used with x;
 -- 2) drop the explicit membership of t in y for any type t in x.
-processSubAttribute :: (S.AttributeId, S.AttributeId) -> M ()
+processSubAttribute :: SubAttribute -> M ()
 processSubAttribute (x, y) = do
   st <- get
   let oc = object_classes st
@@ -371,7 +363,7 @@ isDeclared i = do
   st <- get
   return (Map.member (S.toId i) (type_modules st))
 
-processSubAttributes :: [(S.AttributeId, S.AttributeId)] -> M [(S.AttributeId, S.AttributeId)]
+processSubAttributes :: [SubAttribute] -> M [SubAttribute]
 processSubAttributes subs0 = do
   let subs1 = ensureTopSorted subs0 -- ^ (b < c) must come *before* (a < b)
   subs2 <- filterM (isDeclared . fst) subs1
@@ -553,7 +545,7 @@ outputSubAttribute1 sub sup cls =
     (L.domPort (toIdentifier sup cls) attributePort)
     [L.mkAnnotation (L.mkName "SubAttribute") []]
 
-outputSubAttributes1 :: St -> (S.AttributeId, S.AttributeId) -> [L.Decl]
+outputSubAttributes1 :: St -> SubAttribute -> [L.Decl]
 outputSubAttributes1 st (sub, sup) = [ outputSubAttribute1 sub sup cls | cls <- classes ]
   where
     classesOf t = Map.findWithDefault Set.empty (S.fromId (S.toId t)) (object_classes st)
@@ -762,7 +754,7 @@ domtransDecl2 =
     d3_proc   = L.mkName "d3_process"
     d2_name   = L.mkName "d2_name"
 
-outputLobster1 :: M4.Policy -> (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
+outputLobster1 :: M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster1 policy (st, subattrs) =
   domtransDecl1 :
   classDecls policy st ++ domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
@@ -805,7 +797,7 @@ outputLobster1 policy (st, subattrs) =
     domtransDecls :: [L.Decl]
     domtransDecls = concatMap outputDomtransMacro1 (Set.toList (domtrans_macros st))
 
-outputLobster2 :: (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
+outputLobster2 :: (St, [SubAttribute]) -> [L.Decl]
 outputLobster2 (st, subattrs) =
   domtransDecl2 :
   domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
@@ -848,7 +840,7 @@ outputLobster2 (st, subattrs) =
     domtransDecls :: [L.Decl]
     domtransDecls = concatMap outputDomtransMacro2 (Set.toList (domtrans_macros st))
 
-outputLobster3 :: (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
+outputLobster3 :: (St, [SubAttribute]) -> [L.Decl]
 outputLobster3 (st, subattrs) =
   domtransDecl2 :
   [ L.anonDomain (toDom m) (L.newPort (L.mkName "ext") : reverse ds)
@@ -900,7 +892,7 @@ outputLobster3 (st, subattrs) =
     groupedDecls :: Map (Maybe M4.ModuleId) [L.Decl] -- in reverse order
     groupedDecls = Map.fromListWith (++) [ (m, [d]) | (m, d) <- taggedDecls ]
 
-outputLobster :: OutputMode -> M4.Policy -> (St, [(S.AttributeId, S.AttributeId)]) -> [L.Decl]
+outputLobster :: OutputMode -> M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster Mode1 policy = outputLobster1 policy
 outputLobster Mode2 _ = outputLobster2
 outputLobster Mode3 _ = outputLobster3
@@ -908,8 +900,8 @@ outputLobster Mode3 _ = outputLobster3
 ----------------------------------------------------------------------
 
 -- | Convert a policy to Lobster.
-toLobster :: OutputMode -> Policy -> Either Error [L.Decl]
-toLobster mode policy0 = do
+toLobster :: OutputMode -> [SubAttribute] -> Policy -> Either Error [L.Decl]
+toLobster mode subattributes policy0 = do
   let patternMacros =
         -- We handle domtrans_pattern macro as a special case, for now
         Map.delete (S.mkId "domtrans_pattern") $
