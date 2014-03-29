@@ -14,10 +14,13 @@
 module Lobster.Core.Eval
   ( -- * Modules
     Module()
+  , Graph
   , moduleDomains
   , modulePorts
   , moduleGraph
   , moduleRootDomain
+  , idDomain
+  , idPort
 
     -- * Evaluation
   , evalPolicy
@@ -26,6 +29,8 @@ module Lobster.Core.Eval
     -- * Domains
   , Domain()
   , DomainId(..)
+  , nodeId
+  , domainId
   , domainName
   , domainClassName
   , domainPath
@@ -36,13 +41,10 @@ module Lobster.Core.Eval
   , domainAnnotation
   , domainClassAnnotation
 
-    -- * Domain Trees
-  , DomTree(..)
-  , moduleDomTree
-
     -- * Ports
   , Port()
   , PortId(..)
+  , portId
   , portName
   , portPath
   , portPosition
@@ -82,6 +84,10 @@ import qualified Lobster.Core.AST     as A
 -- | "when" with a monadic boolean condition.
 whenM :: Monad m => m Bool -> m () -> m ()
 whenM b f = b >>= (\x -> when x f)
+
+-- | "unless" with a monadic boolean condition.
+unlessM :: Monad m => m Bool -> m () -> m ()
+unlessM b f = b >>= (\x -> unless x f)
 
 ----------------------------------------------------------------------
 -- Environments
@@ -136,7 +142,8 @@ newtype PortId = PortId Int
 
 -- | A port definition.
 data Port l = Port
-  { _portName       :: Text
+  { _portId         :: PortId
+  , _portName       :: Text
   , _portPath       :: Text
   , _portPosition   :: Maybe A.Position
   , _portDirection  :: Maybe A.Direction
@@ -156,7 +163,8 @@ nodeId (DomainId x) = x
 
 -- | A domain definition.
 data Domain l = Domain
-  { _domainName             :: Text
+  { _domainId               :: DomainId
+  , _domainName             :: Text
   , _domainClassName        :: Text
   , _domainPath             :: Text
   , _domainSubdomains       :: S.Set DomainId
@@ -171,9 +179,10 @@ instance A.Labeled Domain where
   label = _domainLabel
 
 -- | The initial top-level domain.
-topDomain :: l -> Domain l
-topDomain l = Domain
-  { _domainName             = "System"
+topDomain :: l -> DomainId -> Domain l
+topDomain l domId = Domain
+  { _domainId               = domId
+  , _domainName             = "System"
   , _domainClassName        = ""
   , _domainPath             = ""
   , _domainSubdomains       = S.empty
@@ -224,9 +233,9 @@ data Module l = Module
   , _moduleNextPortId   :: Int
   } deriving Show
 
-initialModule :: l -> Module l
-initialModule l = Module
-  { _moduleDomains      = M.singleton (DomainId 0) (topDomain l)
+emptyModule :: l -> Module l
+emptyModule l = Module
+  { _moduleDomains      = M.singleton (DomainId 0) (topDomain l (DomainId 0))
   , _modulePorts        = M.empty
   , _moduleGraph        = G.insNode (0, ()) G.empty
   , _moduleRootDomain   = (DomainId 0)
@@ -244,6 +253,14 @@ makeLenses ''Domain
 makeLenses ''Module
 makeLenses ''Connection
 
+-- | A partial lens for a domain by ID in a module.
+idDomain :: DomainId -> Lens' (Module l) (Domain l)
+idDomain domId = singular (moduleDomains . ix domId)
+
+-- | A partial lens for a port by ID in a module.
+idPort :: PortId -> Lens' (Module l) (Port l)
+idPort pid = singular (modulePorts . ix pid)
+
 -- test function to relabel the graph for use with graphviz
 labelledGraph :: Module l -> G.Gr Text Text
 labelledGraph m = G.undir (G.emap goE (G.gmap goN (m ^. moduleGraph)))
@@ -260,44 +277,6 @@ labelledGraph m = G.undir (G.emap goE (G.gmap goN (m ^. moduleGraph)))
     goN (preds, node, _, posts) =
       let name = m ^?! moduleDomains . ix (DomainId node) . domainPath in
       (preds, node, name, posts)
-
-----------------------------------------------------------------------
--- Domain Trees
-
--- | A view of the subdomain tree without indirection through IDs.
-data DomTree l = DomTree
-  { _domTreeDomainId    :: DomainId
-  , _domTreeDomain      :: Domain l
-  , _domTreeSubdomains  :: [DomTree l]
-  , _domTreePorts       :: [Port l]
-  } deriving (Show, Functor)
-
-makeLenses ''DomTree
-
-instance Eq (DomTree l) where
-  (==) d1 d2 = (d1 ^. domTreeDomainId) == (d2 ^. domTreeDomainId)
-
-instance Ord (DomTree l) where
-  compare d1 d2 = compare (d1 ^. domTreeDomainId) (d2 ^. domTreeDomainId)
-
--- TODO: Could this be better defined as a 'Fold'?
-moduleDomTree :: Module l -> DomTree l
-moduleDomTree m = domainTree m rootDomId rootDom
-  where
-    rootDomId = m ^. moduleRootDomain
-    rootDom   = m ^?! moduleDomains . ix rootDomId
-
-domainTree :: Module l -> DomainId -> Domain l -> DomTree l
-domainTree m domId dom = DomTree
-  { _domTreeDomainId    = domId
-  , _domTreeDomain      = dom
-  , _domTreeSubdomains  = map goSubdomains (S.toList $ dom ^. domainSubdomains)
-  , _domTreePorts       = map goPorts      (S.toList $ dom ^. domainPorts)
-  }
-  where
-    goSubdomains subDomId =
-      domainTree m subDomId (m ^?! moduleDomains . ix subDomId)
-    goPorts portId = m ^?! modulePorts . ix portId
 
 ----------------------------------------------------------------------
 -- Evaluator Monad
@@ -358,12 +337,12 @@ lookupPort pid@(A.QPortName _ (A.VarName l1 domN) (A.VarName l2 portN)) = do
 -- | Add a port definition to the current graph.
 addPort :: Port l -> Eval l PortId
 addPort port = do
-  portId <- PortId <$> (moduleNextPortId <<+= 1)
-  modulePorts . at portId ?= port
+  pid <- PortId <$> (moduleNextPortId <<+= 1)
+  modulePorts . at pid ?= port
   -- add port to current root domain
   rootId <- use moduleRootDomain
-  moduleDomains . ix rootId . domainPorts . contains portId .= True
-  return portId
+  moduleDomains . ix rootId . domainPorts . contains pid .= True
+  return pid
 
 -- | Get a port by ID.
 getPort :: PortId -> Eval l (Port l)
@@ -426,12 +405,15 @@ connLevel pidL pidR = do
      | isChild      -> return ConnLevelChild
      | otherwise    -> lose $ MiscError "internal error: invalid connection"
 
+-- | Return true if an edge already exists in the graph.
+edgeExists :: (Int, Int, Connection l) -> Eval l Bool
+edgeExists (nodeL, nodeR, _) = do
+  gr <- use moduleGraph
+  return $ elem nodeR (G.suc gr nodeL)   -- argh, O(n)
+
 -- | Add a connection (in a single direction) between two ports.
 addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
 addConnection l portL portR cty ann = do
-  -- TODO: check to see if the connection already exists?
-  --       once we have predicates we may want to 'or' them
-  --       together in this case?
   level <- connLevel portL portR
   unless (level == ConnLevelInternal) $ do
     domL  <- (^. portDomain) <$> getPort portL
@@ -445,7 +427,11 @@ addConnection l portL portR cty ann = do
                  , _connectionAnnotation = ann
                  }
     let edge = (nodeId domL, nodeId domR, conn)
-    moduleGraph %= G.insEdge edge
+    -- TODO: unify the connections rather than skip duplicate edges
+    --       we do this because fgl is very slow with lots of duplicate
+    --       edges...
+    unlessM (edgeExists edge) $
+      moduleGraph %= G.insEdge edge
 
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.
@@ -459,9 +445,11 @@ newEnv classes locals = Env
 
 -- | Create a new, empty domain given its name, path, and
 -- class.
-newDomain :: l -> Text -> Text -> Class l -> DomainId -> A.Annotation l -> Domain l
-newDomain l name path cls parent ann = Domain
-  { _domainName            = name
+newDomain :: l -> Text -> Text -> Class l -> DomainId
+          -> DomainId -> A.Annotation l -> Domain l
+newDomain l name path cls domId parent ann = Domain
+  { _domainId              = domId
+  , _domainName            = name
   , _domainPath            = path
   , _domainClassName       = cls ^. className . to A.getTypeName
   , _domainSubdomains      = S.empty
@@ -591,10 +579,11 @@ evalStmt ann (A.StmtPortDecl l (A.VarName _ name) _) = do
   -- create new port and add to graph
   path <- getMemberPath name
   domId <- use moduleRootDomain
-  let port = Port name path Nothing Nothing l ann domId
+  pid <- PortId <$> use moduleNextPortId
+  let port = Port pid name path Nothing Nothing l ann domId
   -- XXX ignoring port attributes for now
-  portId <- addPort port
-  moduleEnv . envPorts . at name ?= portId
+  _ <- addPort port
+  moduleEnv . envPorts . at name ?= pid
 
 evalStmt ann (A.StmtClassDecl l ty@(A.TypeName _ name) args body) = do
   whenM (isBound envClasses name) (lose $ DuplicateClass l name)
@@ -610,8 +599,10 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   -- create new domain and add it to the graph
   domPath <- getMemberPath name
   rootId  <- use moduleRootDomain
-  let dom = newDomain l name domPath cls rootId ann
-  domId <- addDomain dom
+  -- XXX kind of a hack, get the domain id first before adding it
+  domId <- DomainId <$> use moduleNextDomainId
+  let dom = newDomain l name domPath cls domId rootId ann
+  _ <- addDomain dom
   -- evaluate domain body in new environment
   subEnv <- inEnv domId env $ do
     evalStmts (cls ^. classBody)
@@ -651,4 +642,4 @@ evalStmts = mapM_ (evalStmt mempty)
 -- | Evaluate a policy and return its graph or an error.
 evalPolicy :: A.Policy l -> Either (Error l) (Module l)
 evalPolicy (A.Policy l stmts) =
-  execStateT (evalStmts stmts) (initialModule l)
+  execStateT (evalStmts stmts) (emptyModule l)

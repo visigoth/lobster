@@ -59,7 +59,7 @@ handleImportSELinux = method POST $ do
   refPath <- refPolicyDir (seReqRefpolicy req)
   policy0 <- liftIO $ readPolicy Nothing refPath
   policy1 <- foldM importModule policy0 (seReqModules req)
-  lsr     <- hoistMiscErr (fmapL show $ M.toLobster M.Mode2 policy1)
+  lsr     <- hoistMiscErr (fmapL show $ M.toLobster M.Mode3 policy1)
   respond (showLobster lsr)
 
 -- | Return the directory that contains reference policy versions.

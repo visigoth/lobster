@@ -23,6 +23,7 @@ library
                        Lobster.Core.Parser,
                        Lobster.Core.Pretty,
                        Lobster.Core.Eval,
+                       Lobster.Core.Traverse,
                        Lobster.Core.JSON
   build-depends:       base >= 4.6,
                        containers >= 0.5,

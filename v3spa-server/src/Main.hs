@@ -11,9 +11,8 @@ import Control.Monad.Reader
 import Data.Aeson
 import Snap
 
-import Lobster.Core
-
 import V3SPA.Server.Snap
+import V3SPA.Server.Parse
 import V3SPA.Server.Import.SELinux
 import V3SPA.Server.Import.IPTables
 
@@ -23,15 +22,6 @@ import V3SPA.Server.Import.IPTables
 -- | "GET /version" --- request web service version
 handleVersion :: V3Snap ()
 handleVersion = method GET $ respond Null
-
--- | "POST /parse" --- parse Lobster to JSON
-handleParse :: V3Snap ()
-handleParse = method POST $ do
-  modifyResponse $ setContentType "application/json"
-  body   <- readRequestBody 10000000
-  policy <- hoistErr $ parseByteString body
-  lsrmod <- hoistErr $ evalPolicy policy
-  respond lsrmod
 
 ----------------------------------------------------------------------
 -- Routing and Main

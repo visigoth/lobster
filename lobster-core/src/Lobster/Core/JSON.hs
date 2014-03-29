@@ -8,18 +8,18 @@
 -- All Rights Reserved.
 --
 
--- | This module only exports 'ToJSON' instances for Lobster
--- module types.
-module Lobster.Core.JSON () where
+module Lobster.Core.JSON where
 
 import Control.Lens hiding ((.=))
 import Data.Aeson as A
+import Data.Monoid (mempty)
 import Data.Text (Text)
 import Text.PrettyPrint.Mainland (pretty, ppr)
 
 import Lobster.Core.Lexer (Loc(..), Span(..))
 import Lobster.Core.Error
 import Lobster.Core.Eval
+import Lobster.Core.Traverse
 import Lobster.Core.Pretty()
 
 import qualified Data.Graph.Inductive       as G
@@ -28,15 +28,11 @@ import qualified Data.Set                   as S
 import qualified Data.Text                  as T
 import qualified Lobster.Core.AST           as A
 
-getDomKey :: Module l -> DomainId -> Text
--- to use qualified names as keys:
--- getDomKey m domId = (m ^?! moduleDomains . ix domId) ^. domainPath
-getDomKey _ (DomainId x) = T.pack $ show x
+getDomKey :: DomainId -> Text
+getDomKey (DomainId x) = T.pack $ show x
 
-getPortKey :: Module l -> PortId -> Text
--- to use qualified names as keys:
--- getPortKey m portId = (m ^?! modulePorts . ix portId) ^. portPath
-getPortKey _ (PortId x) = T.pack $ show x
+getPortKey :: PortId -> Text
+getPortKey (PortId x) = T.pack $ show x
 
 instance ToJSON Loc where
   toJSON NoLoc        = Null
@@ -49,51 +45,60 @@ instance ToJSON Span where
       , "end"   .= toJSON end
       ]
 
-domainJSON :: Module Span -> DomainId -> A.Value
-domainJSON m domId =
-  let dom = m ^?! moduleDomains . ix domId in
+domainJSON :: DomainTree Span -> A.Value
+domainJSON dt =
+  let dom = dt ^. domainTreeDomain in
     object
       [ "name"              .= (dom ^. domainName)
       , "path"              .= (dom ^. domainPath)
       , "class"             .= (dom ^. domainClassName)
-      , "subdomains"        .= subdomainsJSON m dom
-      , "parent"            .= maybe Null (toJSON . getDomKey m) (dom ^. domainParent)
-      , "ports"             .= portsJSON m dom
+      , "subdomains"        .= subdomainsJSON dom
+      , "parent"            .= maybe Null (toJSON . getDomKey) (dom ^. domainParent)
+      , "ports"             .= portsJSON dom
       , "classAnnotations"  .= (dom ^. domainClassAnnotation)
       , "domainAnnotations" .= (dom ^. domainAnnotation)
       , "srcloc"            .= toJSON (A.label dom)
       ]
 
-portJSON :: Module Span -> PortId -> A.Value
-portJSON m portId =
-  let port = m ^?! modulePorts . ix portId in
-    object
-      [ "name"          .= (port ^. portName)
-      , "path"          .= (port ^. portPath)
-      , "annotations"   .= (port ^. portAnnotation)
-      , "srcloc"        .= toJSON (A.label port)
-      , "domain"        .= (port ^. portDomain . to (getDomKey m))
-      ]
-
-connectionJSON :: Module Span -> Connection Span -> A.Value
-connectionJSON m c =
+portJSON :: Port Span -> A.Value
+portJSON port =
   object
-    [ "left"        .= (c ^. connectionLeft . to (getPortKey m))
-    , "right"       .= (c ^. connectionRight . to (getPortKey m))
+    [ "name"          .= (port ^. portName)
+    , "path"          .= (port ^. portPath)
+    , "annotations"   .= (port ^. portAnnotation)
+    , "srcloc"        .= toJSON (A.label port)
+    , "domain"        .= (port ^. portDomain . to getDomKey)
+    ]
+
+connectionJSON :: Connection Span -> A.Value
+connectionJSON c =
+  object
+    [ "left"        .= (c ^. connectionLeft . to getPortKey)
+    , "right"       .= (c ^. connectionRight . to getPortKey)
     , "level"       .= (c ^. connectionLevel)
     , "connection"  .= (c ^. connectionType)
     , "annotations" .= (c ^. connectionAnnotation)
     , "srcloc"      .= (c ^. connectionLabel)
     ]
 
+{-
+-- if we don't want to show filtered out subdomains
+subdomainsJSON :: DomainTree Span -> A.Value
+subdomainsJSON dt = toJSON $ dt ^.. subdomainKeys
+  where
+    subdomainKeys = domainTreeSubdomains . traverse . domainTreeDomain
+                                         . domainId . to getDomKey
+-}
 
-subdomainsJSON :: Module Span -> Domain Span -> A.Value
-subdomainsJSON m dom =
-  toJSON $ S.map (getDomKey m) $ dom ^. domainSubdomains
+-- if we do want to show filtered out subdomains
+subdomainsJSON :: Domain Span -> A.Value
+subdomainsJSON dom = toJSON $ dom ^.. subdomainKeys
+  where
+    subdomainKeys = domainSubdomains . folded . to getDomKey
 
-portsJSON :: Module Span -> Domain Span -> A.Value
-portsJSON m dom =
-  toJSON $ S.map (getPortKey m) $ dom ^. domainPorts
+portsJSON :: Domain Span -> A.Value
+portsJSON dom =
+  toJSON $ S.map getPortKey $ dom ^. domainPorts
 
 instance ToJSON ConnLevel where
   toJSON ConnLevelPeer   = "peer"
@@ -125,24 +130,28 @@ instance ToJSON (A.Annotation l) where
           , "args"  .= args
           ]
 
-connections :: Module Span -> [Connection Span]
-connections m = map go (G.labEdges $ m ^. moduleGraph)
+connections :: Module Span -> DomainPred Span -> [Connection Span]
+connections m p = map go $ G.labEdges gr
   where
     go (_, _, conn) = conn
+    gr = subgraphWith m p
+
+moduleJSON :: Module Span -> DomainPred Span -> A.Value
+moduleJSON m p =
+  object [ "domains"        .= toJSON domains
+         , "ports"          .= toJSON ports
+         , "connections"    .= toJSON (map connectionJSON (connections m p))
+         , "root"           .= toJSON (getDomKey (m ^. moduleRootDomain))
+         ]
+  where
+    domTree  = domainTreeWith m p
+    domains  = M.fromList $ map goD $ flattenDomainTree domTree
+    ports    = M.fromList $ map goP $ allPorts domTree
+    goD dt   = (getDomKey (dt ^. domainTreeDomain . domainId), domainJSON dt)
+    goP port = (getPortKey (port ^. portId), portJSON port)
 
 instance ToJSON (Module Span) where
-  toJSON m =
-    object
-      [ "domains"     .= toJSON domains
-      , "ports"       .= toJSON ports
-      , "connections" .= toJSON (map (connectionJSON m) (connections m))
-      , "root"        .= toJSON (getDomKey m (m ^. moduleRootDomain))
-      ]
-    where
-      domains = M.fromList . map goD . M.toList $ m ^. moduleDomains
-      ports   = M.fromList . map goP . M.toList $ m ^. modulePorts
-      goD (domId, _)   = (getDomKey m domId, domainJSON m domId)
-      goP (portId, _)  = (getPortKey m portId, portJSON m portId)
+  toJSON m = moduleJSON m mempty
 
 instance ToJSON (Error Span) where
   toJSON e =
