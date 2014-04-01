@@ -88,8 +88,21 @@ allDomains = foldDomainTree ((:[]) . (view domainTreeDomain))
 allPorts :: DomainTree l -> [Port l]
 allPorts = foldDomainTree (view domainTreePorts)
 
+-- | Return a list of all connections in which at least one of the
+-- domains satifies the given predicate.
+connectionsWith :: Module l -> DomainPred l -> [Connection l]
+connectionsWith m p = filter go (map (view _3) (G.labEdges (m ^. moduleGraph)))
+  where
+    getDomain x     = m ^. idDomain x
+    getPort   x     = m ^. idPort x
+    getPortDomain x = getDomain $ view portDomain (getPort x)
+    go conn = getDomainPred p (getPortDomain (conn ^. connectionLeft)) ||
+              getDomainPred p (getPortDomain (conn ^. connectionRight))
+
 ----------------------------------------------------------------------
 -- Domain Subgraphs
+
+-- XXX this is no longer used
 
 -- | Predicate that returns true for the root domain.
 isRootDomain :: DomainPred l

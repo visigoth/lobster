@@ -22,7 +22,6 @@ import Lobster.Core.Eval
 import Lobster.Core.Traverse
 import Lobster.Core.Pretty()
 
-import qualified Data.Graph.Inductive       as G
 import qualified Data.Map                   as M
 import qualified Data.Set                   as S
 import qualified Data.Text                  as T
@@ -130,23 +129,18 @@ instance ToJSON (A.Annotation l) where
           , "args"  .= args
           ]
 
-connections :: Module Span -> DomainPred Span -> [Connection Span]
-connections m p = map go $ G.labEdges gr
-  where
-    go (_, _, conn) = conn
-    gr = subgraphWith m p
-
 moduleJSON :: Module Span -> DomainPred Span -> A.Value
 moduleJSON m p =
   object [ "domains"        .= toJSON domains
          , "ports"          .= toJSON ports
-         , "connections"    .= toJSON (map connectionJSON (connections m p))
+         , "connections"    .= toJSON (map connectionJSON conns)
          , "root"           .= toJSON (getDomKey (m ^. moduleRootDomain))
          ]
   where
     domTree  = domainTreeWith m p
     domains  = M.fromList $ map goD $ flattenDomainTree domTree
     ports    = M.fromList $ map goP $ allPorts domTree
+    conns    = connectionsWith m p
     goD dt   = (getDomKey (dt ^. domainTreeDomain . domainId), domainJSON dt)
     goP port = (getPortKey (port ^. portId), portJSON port)
 
