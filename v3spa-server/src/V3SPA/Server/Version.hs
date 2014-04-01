@@ -33,6 +33,10 @@ module V3SPA.Server.Version where
 -- Version 3:
 --
 -- - added filter query parameters to "/parse".
+--
+-- Version 4:
+--
+-- - subdomains are now a map of keys to objects with their name
 version :: Int
-version = 3
+version = 4
 

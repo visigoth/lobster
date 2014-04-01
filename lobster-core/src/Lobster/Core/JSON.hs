@@ -44,14 +44,14 @@ instance ToJSON Span where
       , "end"   .= toJSON end
       ]
 
-domainJSON :: DomainTree Span -> A.Value
-domainJSON dt =
+domainJSON :: Module l -> DomainTree Span -> A.Value
+domainJSON m dt =
   let dom = dt ^. domainTreeDomain in
     object
       [ "name"              .= (dom ^. domainName)
       , "path"              .= (dom ^. domainPath)
       , "class"             .= (dom ^. domainClassName)
-      , "subdomains"        .= subdomainsJSON dom
+      , "subdomains"        .= subdomainsJSON m dom
       , "parent"            .= maybe Null (toJSON . getDomKey) (dom ^. domainParent)
       , "ports"             .= portsJSON dom
       , "classAnnotations"  .= (dom ^. domainClassAnnotation)
@@ -89,11 +89,14 @@ subdomainsJSON dt = toJSON $ dt ^.. subdomainKeys
                                          . domainId . to getDomKey
 -}
 
--- if we do want to show filtered out subdomains
-subdomainsJSON :: Domain Span -> A.Value
-subdomainsJSON dom = toJSON $ dom ^.. subdomainKeys
+subdomainJSON :: Module l -> DomainId -> (Text, Value)
+subdomainJSON m domId =
+  (getDomKey domId, object ["name" .= (m ^. idDomain domId . domainName)])
+
+subdomainsJSON :: Module l -> Domain Span -> A.Value
+subdomainsJSON m dom = toJSON $ M.fromList $ map (subdomainJSON m) subdomains
   where
-    subdomainKeys = domainSubdomains . folded . to getDomKey
+    subdomains = dom ^.. domainSubdomains . folded
 
 portsJSON :: Domain Span -> A.Value
 portsJSON dom =
@@ -141,7 +144,7 @@ moduleJSON m p =
     domains  = M.fromList $ map goD $ flattenDomainTree domTree
     ports    = M.fromList $ map goP $ allPorts domTree
     conns    = connectionsWith m p
-    goD dt   = (getDomKey (dt ^. domainTreeDomain . domainId), domainJSON dt)
+    goD dt   = (getDomKey (dt ^. domainTreeDomain . domainId), domainJSON m dt)
     goP port = (getPortKey (port ^. portId), portJSON port)
 
 instance ToJSON (Module Span) where
