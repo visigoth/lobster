@@ -223,14 +223,16 @@ genSynopsis ki i mlm = [ divc "synopsis" $
 
 genInterfaces :: HTMLOptions -> IdXrefMap -> KindInfo -> Interface -> [Content]
 genInterfaces hos xm ki (InterfaceModule md is) =
-     [ header 1 [ divc "summary" $ text (moduleSummary md) ]
-     , par "description" $ moduleDescription md
-     , par "required" [
-         text ("("++(if (required md) then "" else "not ")++"required"
-                  ++(if (null (requiredDescription md)) then ")"
-                     else ": "++requiredDescription md++")")) ]
+     [ header 1 [ divc "summary" $ text $ maybe "" moduleSummary md ]
+     , par "description" $ maybe [] moduleDescription md
+     , par "required" [text $ maybe "not required" requiredText md]
      ]
-  ++ concatMap (genInterfaceElement xm ki) (orderInterfaces hos is)
+     ++ concatMap (genInterfaceElement xm ki) (orderInterfaces hos is)
+  where
+    requiredText x =
+      ("("++(if (required x) then "" else "not ")++"required"
+          ++(if (null (requiredDescription x)) then ")"
+             else ": "++requiredDescription x++")"))
 
 orderInterfaces :: HTMLOptions -> [InterfaceElement] -> [InterfaceElement]
 orderInterfaces hos is = if sort hos then sortProj elementId is else is

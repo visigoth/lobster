@@ -36,7 +36,7 @@ import Text.XML.Light(unode, Attr(..), unqual, Content(Elem), ppContent, Element
 
 instance Pp Interface where
   pp (InterfaceModule ds mes) = 
-        pp ds
+        maybe empty pp ds
     $+$ text ""
     $+$ above mes
 

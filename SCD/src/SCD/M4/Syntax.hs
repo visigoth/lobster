@@ -148,7 +148,7 @@ data PolicyModule = PolicyModule{ layerModule    :: LayerModule
                                 }
   deriving (Typeable, Data, Eq, Read, Show)
 
-data Interface = InterfaceModule{ moduleDoc :: ModuleDoc
+data Interface = InterfaceModule{ moduleDoc :: Maybe ModuleDoc
                                 , interfaceElements :: [InterfaceElement]
                                 }
   deriving (Typeable, Data, Eq, Read, Show)

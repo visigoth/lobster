@@ -1163,6 +1163,10 @@ instance KC FilePath where
 instance KC FileContexts where
   kc (FileContexts fc) = kc fc
 
+moduleConf :: PolicyModule -> ModuleConfSetting
+moduleConf m = maybe Module go (moduleDoc (interface m))
+  where go x = if required x then Base else Module
+
 kcImplementation :: PolicyModule -> T ()
 kcImplementation m = kcExtendError (InImplementation lm) $ do
  case implementation m of
@@ -1176,7 +1180,7 @@ kcImplementation m = kcExtendError (InImplementation lm) $ do
       Nothing -> do kcError $ MissingModuleConfig mi
                     return Module
 -}
-    let mc = if required (moduleDoc (interface m)) then Base else Module
+    let mc = moduleConf m
     setInterfaceEnv emptyInterfaceEnv
     modify $ \s -> s{ parameterMap = Map.empty }
     kc ss

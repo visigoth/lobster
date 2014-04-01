@@ -207,10 +207,17 @@ Version                         { T _ (VERSION_IDENTIFIER $$) }
 %left 'eq' '!='
 %%
 
-interface_module        :: { Interface }
-interface_module        : xmldocs interface_elements {% return InterfaceModule `ap` 
-                                                        xmlParse XML.parseModule $1 `ap` 
-                                                        return (reverse $2) }
+                            --return InterfaceModule `ap` 
+                            --fmap Just (xmlParse XML.parseModule $1) `ap` 
+                            --return (reverse $2) }
+interface_module :: { Interface }
+interface_module : xmldocs interface_elements
+    {% return InterfaceModule `ap`
+       fmap Just (xmlParse XML.parseModule $1) `ap`
+       return (reverse $2)
+    }
+  | interface_elements
+    {% return $ InterfaceModule Nothing (reverse $1) }
 
 interface_elements      :: { [InterfaceElement] }
                         : interface_elements interface { $2 : $1 }
