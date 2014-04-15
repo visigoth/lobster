@@ -31,7 +31,8 @@ executable v3spa-server
                        bytestring,
                        text,
                        aeson,
-                       aeson-pretty
+                       aeson-pretty,
+                       directory >= 1.2
   hs-source-dirs:      src
   ghc-options:         -Wall
   default-language:    Haskell2010

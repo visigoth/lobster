@@ -14,6 +14,7 @@ module V3SPA.Server.Import.SELinux
 import Control.Error
 import Control.Monad.Reader
 import Data.Aeson
+import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 
 import SCD.M4.ModuleFiles
@@ -59,7 +60,12 @@ handleImportSELinux = method POST $ do
   refPath <- refPolicyDir (seReqRefpolicy req)
   policy0 <- liftIO $ readPolicy Nothing refPath
   policy1 <- foldM importModule policy0 (seReqModules req)
-  lsr     <- hoistMiscErr (fmapL show $ M.toLobster M.Mode3 policy1)
+  let subAttrFile = refPath ++ "/subattributes"
+  ok      <- liftIO $ doesFileExist subAttrFile
+  subAttr <- liftIO $
+    if not ok then return []
+    else fmap M.parseSubAttributes (readFile subAttrFile)
+  lsr     <- hoistMiscErr (fmapL show $ M.toLobster M.Mode3 subAttr policy1)
   respond (showLobster lsr)
 
 -- | Return the directory that contains reference policy versions.

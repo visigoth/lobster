@@ -15,7 +15,7 @@ import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text.Read (decimal)
 import Snap
-import Lobster.Core
+import Lobster.Core hiding (getPaths)
 
 import V3SPA.Server.Snap
 
