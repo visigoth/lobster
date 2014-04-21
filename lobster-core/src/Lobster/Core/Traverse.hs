@@ -19,6 +19,7 @@ import Data.Text (Text)
 import Lobster.Core.Eval
 
 import qualified Data.Graph.Inductive as G
+import qualified Data.Map             as M
 import qualified Data.Set             as S
 import qualified Data.Text            as T
 
@@ -91,6 +92,14 @@ allPorts = foldDomainTree (view domainTreePorts)
 -- | Return a list of all connections in which at least one of the
 -- domains satifies the given predicate.
 connectionsWith :: Module l -> DomainPred l -> [Connection l]
+connectionsWith m p = M.elems $ M.filter go (m ^. moduleConnections)
+  where
+    getDomain x     = m ^. idDomain x
+    getPort   x     = m ^. idPort x
+    getPortDomain x = getDomain $ view portDomain (getPort x)
+    go conn = getDomainPred p (getPortDomain (conn ^. connectionLeft)) ||
+              getDomainPred p (getPortDomain (conn ^. connectionRight))
+{-
 connectionsWith m p = filter go (map (view _3) (G.labEdges (m ^. moduleGraph)))
   where
     getDomain x     = m ^. idDomain x
@@ -98,10 +107,12 @@ connectionsWith m p = filter go (map (view _3) (G.labEdges (m ^. moduleGraph)))
     getPortDomain x = getDomain $ view portDomain (getPort x)
     go conn = getDomainPred p (getPortDomain (conn ^. connectionLeft)) ||
               getDomainPred p (getPortDomain (conn ^. connectionRight))
+-}
 
 ----------------------------------------------------------------------
 -- Domain Subgraphs
 
+{-
 -- XXX this is no longer used
 
 -- | Predicate that returns true for the root domain.
@@ -119,6 +130,7 @@ subgraphWith m p = G.efilter go gr
     go (n1, n2, _) =
       getDomainPred p' (m ^. idDomain (DomainId n1)) &&
       getDomainPred p' (m ^. idDomain (DomainId n2))
+-}
 
 ----------------------------------------------------------------------
 -- Domain Predicates

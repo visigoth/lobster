@@ -17,14 +17,13 @@ module Lobster.Core.Eval
   , Graph
   , moduleDomains
   , modulePorts
-  , moduleGraph
+  , moduleConnections
   , moduleRootDomain
   , idDomain
   , idPort
 
     -- * Evaluation
   , evalPolicy
-  , labelledGraph
 
     -- * Domains
   , Domain()
@@ -55,6 +54,7 @@ module Lobster.Core.Eval
  
     -- * Connections
   , ConnLevel(..)
+  , ConnectionId(..)
   , Connection()
   , connectionLeft
   , connectionRight
@@ -208,6 +208,11 @@ revLevel ConnLevelChild    = ConnLevelParent
 revLevel ConnLevelPeer     = ConnLevelPeer
 revLevel ConnLevelInternal = ConnLevelInternal
 
+-- | A unique identifier for a connection as parsed from the
+-- Lobster source.
+newtype ConnectionId = ConnectionId { getConnectionId :: Int }
+  deriving (Eq, Ord, Show)
+
 -- | Graph edge label type.
 data Connection l = Connection
   { _connectionLeft       :: PortId
@@ -224,24 +229,26 @@ instance A.Labeled Connection where
 type Graph l = G.Gr () (Connection l)
 
 data Module l = Module
-  { _moduleDomains      :: M.Map DomainId (Domain l)
-  , _modulePorts        :: M.Map PortId (Port l)
-  , _moduleGraph        :: Graph l
-  , _moduleRootDomain   :: DomainId
-  , _moduleEnv          :: Env l
-  , _moduleNextDomainId :: Int
-  , _moduleNextPortId   :: Int
+  { _moduleDomains          :: M.Map DomainId (Domain l)
+  , _modulePorts            :: M.Map PortId (Port l)
+  , _moduleConnections      :: M.Map ConnectionId (Connection l)
+  , _moduleRootDomain       :: DomainId
+  , _moduleEnv              :: Env l
+  , _moduleNextDomainId     :: Int
+  , _moduleNextPortId       :: Int
+  , _moduleNextConnectionId :: Int
   } deriving Show
 
 emptyModule :: l -> Module l
 emptyModule l = Module
-  { _moduleDomains      = M.singleton (DomainId 0) (topDomain l (DomainId 0))
-  , _modulePorts        = M.empty
-  , _moduleGraph        = G.insNode (0, ()) G.empty
-  , _moduleRootDomain   = (DomainId 0)
-  , _moduleEnv          = initialEnv
-  , _moduleNextDomainId = 1
-  , _moduleNextPortId   = 0
+  { _moduleDomains          = M.singleton (DomainId 0) (topDomain l (DomainId 0))
+  , _modulePorts            = M.empty
+  , _moduleConnections      = M.empty
+  , _moduleRootDomain       = (DomainId 0)
+  , _moduleEnv              = initialEnv
+  , _moduleNextDomainId     = 1
+  , _moduleNextPortId       = 0
+  , _moduleNextConnectionId = 0
   }
 
 makePrisms ''Value
@@ -261,6 +268,7 @@ idDomain domId = singular (moduleDomains . ix domId)
 idPort :: PortId -> Lens' (Module l) (Port l)
 idPort pid = singular (modulePorts . ix pid)
 
+{-
 -- test function to relabel the graph for use with graphviz
 labelledGraph :: Module l -> G.Gr Text Text
 labelledGraph m = G.undir (G.emap goE (G.gmap goN (m ^. moduleGraph)))
@@ -277,6 +285,7 @@ labelledGraph m = G.undir (G.emap goE (G.gmap goN (m ^. moduleGraph)))
     goN (preds, node, _, posts) =
       let name = m ^?! moduleDomains . ix (DomainId node) . domainPath in
       (preds, node, name, posts)
+-}
 
 ----------------------------------------------------------------------
 -- Evaluator Monad
@@ -357,7 +366,6 @@ addDomain :: Domain l -> Eval l DomainId
 addDomain dom = do
   domId <- DomainId <$> (moduleNextDomainId <<+= 1)
   moduleDomains . at domId ?= dom
-  moduleGraph %= G.insNode (nodeId domId, ())
   -- add domain as subdomain of current root
   rootId <- use moduleRootDomain
   moduleDomains . ix rootId . domainSubdomains . contains domId .= True
@@ -405,6 +413,7 @@ connLevel pidL pidR = do
      | isChild      -> return ConnLevelChild
      | otherwise    -> lose $ MiscError "internal error: invalid connection"
 
+{-
 -- | Return true if an edge already exists in the graph.
 edgeExists :: (Int, Int, Connection l) -> Eval l Bool
 edgeExists (nodeL, nodeR, _) = do
@@ -432,7 +441,24 @@ addConnection l portL portR cty ann = do
     --       edges...
     unlessM (edgeExists edge) $
       moduleGraph %= G.insEdge edge
+-}
 
+-- | Add a connection to the current module.
+addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
+addConnection l portL portR cty ann = do
+  level <- connLevel portL portR
+  unless (level == ConnLevelInternal) $ do
+    let conn = Connection
+                 { _connectionLeft       = portL
+                 , _connectionRight      = portR
+                 , _connectionLevel      = level
+                 , _connectionType       = cty
+                 , _connectionLabel      = l
+                 , _connectionAnnotation = ann
+                 }
+    connId <- ConnectionId <$> (moduleNextConnectionId <<+= 1)
+    moduleConnections . at connId ?= conn
+ 
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.
 newEnv :: M.Map Text (Class l) -> M.Map Text (Value l) -> Env l
@@ -624,7 +650,6 @@ evalStmt ann (A.StmtConnection l pidL (A.ConnOp _ cty) pidR) = do
   portL <- lookupPort pidL
   portR <- lookupPort pidR
   addConnection l portL portR cty ann
-  addConnection l portR portL (A.revConnType cty) ann
 
 evalStmt ann1 (A.StmtAnnotation _ ann2 stmt) = evalStmt (ann1 <> ann2) stmt
 

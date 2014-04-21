@@ -32,5 +32,5 @@ main = do
   result <- runEitherT $ readPolicy file
   case result of
     Left err -> error (show err)
-    Right m  -> putStrLn (G.graphviz' (labelledGraph m))
+    Right m  -> putStrLn "" -- (G.graphviz' (labelledGraph m))
 
