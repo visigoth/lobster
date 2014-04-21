@@ -14,7 +14,6 @@
 module Lobster.Core.Eval
   ( -- * Modules
     Module()
-  , Graph
   , moduleDomains
   , modulePorts
   , moduleConnections
@@ -75,7 +74,6 @@ import Data.Text (Text)
 
 import Lobster.Core.Error
 
-import qualified Data.Graph.Inductive as G
 import qualified Data.Map             as M
 import qualified Data.Set             as S
 import qualified Data.Text            as T
@@ -201,13 +199,6 @@ data ConnLevel = ConnLevelPeer      -- ports at same level
                | ConnLevelInternal  -- both ports in same domain
   deriving (Eq, Ord, Show)
 
--- | Reverse a connection level if a parent/child type.
-revLevel :: ConnLevel -> ConnLevel
-revLevel ConnLevelParent   = ConnLevelChild
-revLevel ConnLevelChild    = ConnLevelParent
-revLevel ConnLevelPeer     = ConnLevelPeer
-revLevel ConnLevelInternal = ConnLevelInternal
-
 -- | A unique identifier for a connection as parsed from the
 -- Lobster source.
 newtype ConnectionId = ConnectionId { getConnectionId :: Int }
@@ -226,7 +217,7 @@ data Connection l = Connection
 instance A.Labeled Connection where
   label = _connectionLabel
 
-type Graph l = G.Gr () (Connection l)
+-- type Graph l = G.Gr () (Connection l)
 
 data Module l = Module
   { _moduleDomains          :: M.Map DomainId (Domain l)

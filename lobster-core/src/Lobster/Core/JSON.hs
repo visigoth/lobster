@@ -59,12 +59,18 @@ domainJSON m dt =
       , "srcloc"            .= toJSON (A.label dom)
       ]
 
+instance ToJSON A.Position where
+  toJSON A.PosSubject = "subject"
+  toJSON A.PosObject  = "object"
+  toJSON A.PosUnknown = Null
+
 portJSON :: Port Span -> A.Value
 portJSON port =
   object
     [ "name"          .= (port ^. portName)
     , "path"          .= (port ^. portPath)
     , "annotations"   .= (port ^. portAnnotation)
+    , "position"      .= (port ^. portPosition)
     , "srcloc"        .= toJSON (A.label port)
     , "domain"        .= (port ^. portDomain . to getDomKey)
     ]

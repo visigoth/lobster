@@ -8,20 +8,135 @@
 -- All Rights Reserved.
 --
 
+-- TODO: Consider renaming this module to "Analysis"?
+
 module Lobster.Core.Traverse where
 
 import Control.Lens
+import Control.Monad.Trans.State
 import Control.Monad.Trans.Writer
-import Data.Maybe (isNothing)
 import Data.Monoid
 import Data.Text (Text)
 
+import Lobster.Core.AST
 import Lobster.Core.Eval
 
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map             as M
 import qualified Data.Set             as S
 import qualified Data.Text            as T
+
+----------------------------------------------------------------------
+-- Graph Building
+
+type Graph l = G.Gr () (Connection l)
+
+-- | Return true if an edge already exists in the graph.
+edgeExists :: Graph l -> (Int, Int, Connection l) -> Bool
+edgeExists gr (nodeL, nodeR, _) = elem nodeR (G.suc gr nodeL)   -- argh, O(n)
+
+addEdges :: Graph l -> [(Int, Int, Connection l)] -> Graph l
+addEdges gr edges = G.insEdges edges gr
+
+-- | Reverse a connection level if a parent/child type.
+revLevel :: ConnLevel -> ConnLevel
+revLevel ConnLevelParent   = ConnLevelChild
+revLevel ConnLevelChild    = ConnLevelParent
+revLevel ConnLevelPeer     = ConnLevelPeer
+revLevel ConnLevelInternal = ConnLevelInternal
+
+-- | Reverse annotations for a connection.  This switches "Lhs"
+-- to "Rhs" and vice versa.
+--
+-- XXX i'm not wild about this, but it seems necessary
+revAnnotation :: Annotation l -> Annotation l
+revAnnotation (Annotation xs) = Annotation (map go xs)
+  where
+    go (ty@(TypeName l name), args)
+      | name == "Lhs" = (TypeName l "Rhs", args)
+      | name == "Rhs" = (TypeName l "Lhs", args)
+      | otherwise     = (ty,                 args)
+
+revConn :: Connection l -> Connection l
+revConn conn = (`execState` conn) $ do
+  connectionLevel      %= revLevel
+  connectionType       %= revConnType
+  connectionAnnotation %= revAnnotation
+
+-- | Direction of the graph edge to create for a connection
+-- based on port position.
+data EdgeDirection = LeftToRight
+                   | RightToLeft
+                   | Bidirectional
+  deriving (Eq, Ord, Show)
+
+connLeftPos :: Module l -> Connection l -> Position
+connLeftPos m conn =
+  case level of
+    ConnLevelParent -> revPosition pos
+    _               -> pos
+  where
+    level = conn ^. connectionLevel
+    port  = m ^. idPort (conn ^. connectionLeft)
+    pos   = port ^. portPosition
+
+connRightPos :: Module l -> Connection l -> Position
+connRightPos m conn =
+  case level of
+    ConnLevelChild -> revPosition pos
+    _              -> pos
+  where
+    level = conn ^. connectionLevel
+    port  = m ^. idPort (conn ^. connectionRight)
+    pos   = port ^. portPosition
+
+{-
+edgeDirection :: Connection l -> EdgeDirection
+edgeDirection conn =
+  case (
+-}
+
+-- | Add a single connection between two ports.  If the ports are
+-- typed with a subject/object relationship, only a single edge
+-- will be created.
+addConnection :: Module l -> Graph l -> Connection l -> Graph l
+addConnection m gr conn = addEdges gr edges
+  where
+    portL = m ^. idPort (conn ^. connectionLeft)
+    portR = m ^. idPort (conn ^. connectionRight)
+    posL  = connLeftPos m conn
+    posR  = connRightPos m conn
+    domL  = portL ^. portDomain
+    domR  = portR ^. portDomain
+    fEdge = (nodeId domL, nodeId domR, conn)
+    bEdge = (nodeId domL, nodeId domR, revConn conn)
+    edges = case (posL, posR) of
+              (PosSubject, PosObject)  -> [fEdge]
+              (PosObject,  PosSubject) -> [bEdge]
+              _                        -> [fEdge, bEdge]
+                
+
+-- | Build a graph of connections between domains from a Lobster module.
+moduleGraph :: Module l -> Graph l
+moduleGraph m = M.foldl' (addConnection m) gr (m ^. moduleConnections)
+  where
+    domains = m ^. moduleDomains
+    gr = G.insNodes [(k, ()) | DomainId k <- M.keys domains] G.empty
+
+-- | Return a labelled graph for use with graphviz.
+labelledModuleGraph :: Module l -> G.Gr Text Text
+labelledModuleGraph m = G.emap goE (G.gmap goN (moduleGraph m))
+  where
+    getName :: PortId -> Text
+    getName p = m ^?! modulePorts . ix p . portName
+    goE conn =
+      let nameL = getName $ conn ^. connectionLeft
+          nameR = getName $ conn ^. connectionRight in
+        nameL <> " -- " <> nameR
+    -- goE = const ""
+    goN (preds, node, _, posts) =
+      let name = m ^?! moduleDomains . ix (DomainId node) . domainPath in
+      (preds, node, name, posts)
 
 ----------------------------------------------------------------------
 -- Domain Trees

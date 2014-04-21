@@ -13,6 +13,7 @@ module Lobster.Core.AST
   ( Labeled(..)
   , Direction(..)
   , Position(..)
+  , revPosition
   , ConnType(..)
   , LitInteger(..)
   , LitString(..)
@@ -74,6 +75,12 @@ data Position
   | PosObject
   | PosUnknown
   deriving (Eq, Ord, Show)
+
+-- | Reverse a known position.
+revPosition :: Position -> Position
+revPosition PosSubject = PosObject
+revPosition PosObject  = PosSubject
+revPosition PosUnknown = PosUnknown
 
 -- | The directionality of a connection.
 data ConnType

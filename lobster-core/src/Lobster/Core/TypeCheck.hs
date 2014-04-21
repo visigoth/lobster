@@ -65,12 +65,6 @@ addPortConns tcSt = tcPortConns .~ pcMap $ tcSt
     conns = tcSt ^. tcModule . moduleConnections
     pcMap = M.foldlWithKey' addPortConn M.empty conns
 
--- | Reverse a known position.
-revPos :: Position -> Position
-revPos PosSubject = PosObject
-revPos PosObject  = PosSubject
-revPos PosUnknown = PosUnknown
-
 -- | Return text for a position.
 ppPos :: Position -> Text
 ppPos PosUnknown = "unknown"
@@ -106,8 +100,8 @@ tcConn connId = do
   -- internal side of a port.
   let (lPos2, rPos2) =
         case level of
-          ConnLevelParent   -> (revPos lPos1, rPos1)
-          ConnLevelChild    -> (lPos1, revPos rPos1)
+          ConnLevelParent   -> (revPosition lPos1, rPos1)
+          ConnLevelChild    -> (lPos1, revPosition rPos1)
           ConnLevelPeer     -> (lPos1, rPos1)
           ConnLevelInternal -> error "internal connection"    -- ???
 
@@ -119,10 +113,10 @@ tcConn connId = do
     -- the position and re-add that ports connections to the TC set.
     (_, PosUnknown) -> tcInferPos rPid $ case level of
                          ConnLevelChild -> lPos2
-                         _              -> revPos lPos2
+                         _              -> revPosition lPos2
     (PosUnknown, _) -> tcInferPos lPid $ case level of
                          ConnLevelParent -> rPos2
-                         _               -> revPos rPos2
+                         _               -> revPosition rPos2
 
     -- if both positions are known, require them to agree
     (PosSubject, PosObject)  -> return ()
