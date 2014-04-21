@@ -20,6 +20,7 @@ module CoreSyn
   , anonDomain
   , anonDomain'
   , newPort
+  , newPortPos
   , newComment
 
   , domPort
@@ -68,6 +69,12 @@ anonDomain' binder decls xs =
 
 newPort :: Name -> Decl
 newPort nm = L.StmtPortDecl L.emptySpan nm []
+
+newPortPos :: Name -> L.Position -> Decl
+newPortPos name pos = L.StmtPortDecl L.emptySpan name [attr]
+  where
+    attr = L.PortAttr (mkName "position")
+                      (Just (L.ExpPosition (L.LitPosition L.emptySpan pos)))
 
 newComment :: Text.Text -> Decl
 newComment t = L.StmtComment L.emptySpan t

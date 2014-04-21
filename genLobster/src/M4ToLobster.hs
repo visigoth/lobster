@@ -807,8 +807,9 @@ outputLobster2 (st, subattrs) =
     domainDecl (ty, classes) =
       L.anonDomain' (toDom ty) (header ++ stmts) [ann1, ann2]
       where
-        header = map L.newPort [activePort, memberPort, attributePort]
-        stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
+        header = L.newPortPos activePort C.PosSubject :
+                  map L.newPort [memberPort, attributePort]
+        stmts = [ L.newPortPos (toPort c) C.PosObject | c <- Set.toList classes ]
         ann1 =
           if Map.member (S.fromId (S.toId ty)) (attrib_members st)
             then L.mkAnnotation (L.mkName "Attribute") []
@@ -852,8 +853,9 @@ outputLobster3 (st, subattrs) =
       (Map.lookup (S.toId ty) (type_modules st),
        L.anonDomain' (toDom ty) (header ++ stmts) [ann])
       where
-        header = map L.newPort [activePort, memberPort, attributePort]
-        stmts = [ L.newPort (toPort c) | c <- Set.toList classes ]
+        header = L.newPortPos activePort C.PosSubject :
+                  map L.newPort [memberPort, attributePort]
+        stmts = [ L.newPortPos (toPort c) C.PosObject | c <- Set.toList classes ]
         ann =
           if Map.member (S.fromId (S.toId ty)) (attrib_members st)
             then L.mkAnnotation (L.mkName "Attribute") []
