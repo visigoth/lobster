@@ -35,6 +35,7 @@ data Error l
   | UndefinedPort l Text
   | InternalConnection l Text Text
   | BadArguments l Int
+  | BadPosition l Text Text Text
   | TypeError l Text
   | MiscError String
   deriving (Show, Functor, Foldable)
@@ -67,6 +68,8 @@ errorMessage err =
       "undefined domain: '" <> t <> "'"
     UndefinedPort _ t ->
       "undefined port: '" <> t <> "'"
+    BadPosition _ p1 p2 t ->
+      "invalid connection from '" <> p1 <> "' to '" <> p2 <> "': " <> t
     InternalConnection _ t1 t2 ->
       "invalid internal connection from '" <> t1 <> "' to '" <> t2 <> "'"
     BadArguments _ n ->

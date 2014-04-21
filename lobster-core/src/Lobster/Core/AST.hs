@@ -72,6 +72,7 @@ data Direction
 data Position
   = PosSubject
   | PosObject
+  | PosUnknown
   deriving (Eq, Ord, Show)
 
 -- | The directionality of a connection.

@@ -16,6 +16,7 @@ module Lobster.Core
   , module Lobster.Core.AST
   , module Lobster.Core.Error
   , module Lobster.Core.Eval
+  , module Lobster.Core.TypeCheck
   , module Lobster.Core.Traverse
   , module Lobster.Core.JSON
   ) where
@@ -30,6 +31,7 @@ import Lobster.Core.Parser
 import Lobster.Core.AST
 import Lobster.Core.Error
 import Lobster.Core.Eval
+import Lobster.Core.TypeCheck
 import Lobster.Core.Traverse
 import Lobster.Core.JSON
 import Lobster.Core.Pretty ()
@@ -46,7 +48,7 @@ readPolicy path = do
   contents  <- liftIO $ LBS.readFile path
   hoistEither $ do
     policy <- parseByteString contents
-    evalPolicy policy
+    tc =<< evalPolicy policy
 
 ----------------------------------------------------------------------
 -- Utilities

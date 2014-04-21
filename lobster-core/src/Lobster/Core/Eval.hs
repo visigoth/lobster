@@ -145,7 +145,7 @@ data Port l = Port
   { _portId         :: PortId
   , _portName       :: Text
   , _portPath       :: Text
-  , _portPosition   :: Maybe A.Position
+  , _portPosition   :: A.Position
   , _portDirection  :: Maybe A.Direction
   , _portLabel      :: l
   , _portAnnotation :: A.Annotation l
@@ -597,16 +597,28 @@ getAnonClassName l t = do
   domId <- use moduleNextDomainId
   return (A.TypeName l ("Anon" <> T.pack (show domId) <> "#" <> t))
 
+-- | Look up a port position from its port attributes.
+getPortPos :: [A.PortAttr l] -> Eval l A.Position
+getPortPos [] = return A.PosUnknown
+getPortPos (A.PortAttr (A.VarName _ name) x:xs)
+  | Just expr <- x
+  , name == "position" = do
+      val <- evalExp expr
+      pos <- ofType val _ValuePosition "position"
+      return pos
+  | otherwise          = getPortPos xs
+
 -- | Evaluate a statement and build up the graph.
 evalStmt :: A.Annotation l -> A.Stmt l -> Eval l ()
-evalStmt ann (A.StmtPortDecl l (A.VarName _ name) _) = do
+evalStmt ann (A.StmtPortDecl l (A.VarName _ name) attrs) = do
   -- check for duplicate port definition
   whenM (isBound envPorts name) (lose $ DuplicatePort l name)
   -- create new port and add to graph
   path <- getMemberPath name
   domId <- use moduleRootDomain
   pid <- PortId <$> use moduleNextPortId
-  let port = Port pid name path Nothing Nothing l ann domId
+  pos <- getPortPos attrs
+  let port = Port pid name path pos Nothing l ann domId
   -- XXX ignoring port attributes for now
   _ <- addPort port
   moduleEnv . envPorts . at name ?= pid
