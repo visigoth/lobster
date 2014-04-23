@@ -32,7 +32,6 @@ data Options = Options
   , ifdefDeclFile :: Maybe FilePath
   , inferMissing :: Bool
 --   , kindErrors :: Bool
-  , outputMode :: M4L.OutputMode
   } deriving Show
 
 -- | Default options for reference policy processing
@@ -43,17 +42,14 @@ defaultOptions = Options
   , ifdefDeclFile = Nothing
   , inferMissing = False
 --   , kindErrors = False
-  , outputMode = M4L.Mode1
   }
 
 options :: [OptDescr (Options -> Options)]
 options =
-  [ Option [] ["simple"] (NoArg (\o -> o{ outputMode = M4L.Mode2 })) ""
-  , Option [] ["modules"] (NoArg (\o -> o{ outputMode = M4L.Mode3 })) ""
 --  , Option [] ["multiple"] (ReqArg (\a o -> o{ path = a, isDir = True }) "FILE") ""
 --  , Option [] ["single"] (ReqArg (\a o -> o{ path = a, isDir = False }) "FILE") ""
 --  , Option [] ["infer-missing"] (NoArg (\o -> o{ inferMissing = True })) ""
-  , Option [] ["ifdefs"] (ReqArg (\f o -> o{ ifdefDeclFile = Just f }) "FILE") ""
+  [ Option [] ["ifdefs"] (ReqArg (\f o -> o{ ifdefDeclFile = Just f }) "FILE") ""
 --   , Option [] ["kind-errors"] (NoArg (\o -> o{ kindErrors = True })) ""
   ]
 
@@ -119,4 +115,4 @@ dirToLobster iDir opts = do
   subattributes <- runIO $
     if not ok then return []
     else fmap M4L.parseSubAttributes (readFile file)
-  hoistEither $ M4L.toLobster (outputMode opts) subattributes policy0
+  hoistEither $ M4L.toLobster subattributes policy0

@@ -65,7 +65,7 @@ handleImportSELinux = method POST $ do
   subAttr <- liftIO $
     if not ok then return []
     else fmap M.parseSubAttributes (readFile subAttrFile)
-  lsr     <- hoistMiscErr (fmapL show $ M.toLobster M.Mode3 subAttr policy1)
+  lsr     <- hoistMiscErr (fmapL show $ M.toLobster subAttr policy1)
   respond (showLobster lsr)
 
 -- | Return the directory that contains reference policy versions.

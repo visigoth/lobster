@@ -129,11 +129,13 @@ labelledModuleGraph m = G.emap goE (G.gmap goN (moduleGraph m))
   where
     getName :: PortId -> Text
     getName p = m ^?! modulePorts . ix p . portName
+    {-
     goE conn =
       let nameL = getName $ conn ^. connectionLeft
           nameR = getName $ conn ^. connectionRight in
         nameL <> " -- " <> nameR
-    -- goE = const ""
+    -}
+    goE = const ""
     goN (preds, node, _, posts) =
       let name = m ^?! moduleDomains . ix (DomainId node) . domainPath in
       (preds, node, name, posts)
