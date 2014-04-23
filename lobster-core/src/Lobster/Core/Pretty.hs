@@ -98,16 +98,25 @@ instance Pretty (PortName a) where
   ppr (UPortName name) = ppr name
   ppr (QPortName _ n1 n2) = ppr n1 <> dot <> ppr n2
 
+ppExplicit :: Bool -> Doc
+ppExplicit True  = text "explicit" <> space
+ppExplicit False = empty
+
 instance Pretty (Stmt a) where
   -- Printing empty classes different from non-empty here
   -- to get idiomatic output.
-  ppr (StmtClassDecl _ name args []) =
-    text "class" <+> ppr name <> parens (pprCommaSep args) <+> braces empty
-  ppr (StmtClassDecl _ name args body) =
-    text "class" <+> ppr name <> parens (pprCommaSep args)
-                 </> lbrace
-                 </> indent 2 (pprStmts body)
-                 </> rbrace
+  ppr (StmtClassDecl _ isExp name args []) =
+    ppExplicit isExp <>  text "class"
+                     <+> ppr name
+                     <> parens (pprCommaSep args)
+                     <+> braces empty
+  ppr (StmtClassDecl _ isExp name args body) =
+    ppExplicit isExp <>  text "class"
+                     <+> ppr name
+                     <>  parens (pprCommaSep args)
+                     </> lbrace
+                     </> indent 2 (pprStmts body)
+                     </> rbrace
   ppr (StmtPortDecl _ name []) =
     text "port" <+> ppr name <> semi
   ppr (StmtPortDecl _ name attrs) =
@@ -117,11 +126,12 @@ instance Pretty (Stmt a) where
   ppr (StmtDomainDecl _ varName tyName args) =
     text "domain" <+> ppr varName <+> equals <+> ppr tyName
                   <> parens (pprCommaSep args) <> semi
-  ppr (StmtAnonDomainDecl _ varName body) =
-    text "domain" <+> ppr varName <+> equals <+> lbrace
-                  </> indent 2 (pprStmts body)
-                  </> rbrace
-                  <>  semi
+  ppr (StmtAnonDomainDecl _ isExp varName body) =
+    ppExplicit isExp <>  text "domain"
+                     <+> ppr varName <+> equals <+> lbrace
+                     </> indent 2 (pprStmts body)
+                     </> rbrace
+                     <>  semi
   ppr (StmtAssign _ varName expr) =
     ppr varName <+> equals <+> ppr expr <> semi
   ppr (StmtConnection _ e1 conn e2) =
@@ -141,7 +151,7 @@ instance Pretty (Stmt a) where
 --
 -- Statements with annotations are preceded by a blank line.
 stmtGroup :: Stmt a -> Stmt a -> Bool
-stmtGroup (StmtClassDecl _ _ [] []) (StmtClassDecl _ _ [] []) = True
+stmtGroup (StmtClassDecl _ _ _ [] []) (StmtClassDecl _ _ _ [] []) = True
 stmtGroup StmtClassDecl{}  StmtClassDecl{}  = False
 stmtGroup StmtPortDecl{}   StmtPortDecl{}   = True
 stmtGroup StmtDomainDecl{} StmtDomainDecl{} = True

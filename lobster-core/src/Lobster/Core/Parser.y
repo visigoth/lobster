@@ -25,6 +25,7 @@ import qualified Data.Text as T
   'bidirectional'   { Token _ _ (TokKeyword KwBidirectional) }
   'class'           { Token _ _ (TokKeyword KwClass) }
   'domain'          { Token _ _ (TokKeyword KwDomain) }
+  'explicit'        { Token _ _ (TokKeyword KwExplicit) }
   'input'           { Token _ _ (TokKeyword KwInput) }
   'object'          { Token _ _ (TokKeyword KwObject) }
   'output'          { Token _ _ (TokKeyword KwOutput) }
@@ -188,18 +189,23 @@ PortName
   : VarName { UPortName $1 }
   | VarName '.' VarName { QPortName (unionSpan (label $1) (label $3)) $1 $3 }
 
+ExplicitDecl :: { Bool }
+ExplicitDecl
+  : 'explicit'  { True }
+  | {- empty -} { False }
+
 -- A statement at top level or within a class.
 Stmt :: { Stmt Span }
 Stmt
-  : 'class' TypeName '(' VarNameList ')' '{' StmtList '}'
-    { StmtClassDecl (spanToks $1 $8) $2 $4 $7 }
+  : ExplicitDecl 'class' TypeName '(' VarNameList ')' '{' StmtList '}'
+    { StmtClassDecl (spanToks $2 $9) $1 $3 $5 $8 }
   | 'port' VarName PortType ';'
     { StmtPortDecl (spanToks $1 $4) $2 $3 }
   | 'domain' VarName '=' TypeName '(' ExpList ')' ';'
     { StmtDomainDecl (spanToks $1 $8) $2 $4 $6 }
   -- anonymous domains without a class definition
-  | 'domain' VarName '=' '{' StmtList '}' ';'
-    { StmtAnonDomainDecl (spanToks $1 $7) $2 $5 }
+  | ExplicitDecl 'domain' VarName '=' '{' StmtList '}' ';'
+    { StmtAnonDomainDecl (spanToks $2 $8) $1 $3 $6 }
   | VarName '=' Exp ';'
     { StmtAssign (unionSpan (label $1) (tokSpan $4)) $1 $3 }
   | PortName ConnOp PortName ';'

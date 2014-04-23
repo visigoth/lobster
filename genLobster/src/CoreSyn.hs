@@ -57,11 +57,11 @@ nameString (L.VarName _ s) = Text.unpack s
 
 newClass :: Name -> [Param] -> [Decl] -> Decl
 newClass (L.VarName s c) ps body =
-  L.StmtClassDecl L.emptySpan (L.TypeName s c) ps body
+  L.StmtClassDecl L.emptySpan False (L.TypeName s c) ps body
 
 anonDomain :: Name -> [Decl] -> Decl
 anonDomain binder decls =
-  L.StmtAnonDomainDecl L.emptySpan binder decls
+  L.StmtAnonDomainDecl L.emptySpan False binder decls
 
 anonDomain' :: Name -> [Decl] -> [ConnectAnnotation] -> Decl
 anonDomain' binder decls xs =

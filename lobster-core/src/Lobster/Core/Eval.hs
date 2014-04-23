@@ -38,6 +38,7 @@ module Lobster.Core.Eval
   , domainLabel
   , domainAnnotation
   , domainClassAnnotation
+  , domainIsExplicit
 
     -- * Ports
   , Port()
@@ -97,6 +98,7 @@ data Class l = Class
   , _classArgs        :: [A.VarName l]
   , _classBody        :: [A.Stmt l]
   , _classAnnotation  :: A.Annotation l
+  , _classIsExplicit  :: Bool
   } deriving (Show, Functor)
 
 -- | A domain's environment.
@@ -171,6 +173,7 @@ data Domain l = Domain
   , _domainLabel            :: l
   , _domainAnnotation       :: A.Annotation l
   , _domainClassAnnotation  :: A.Annotation l
+  , _domainIsExplicit       :: Bool
   } deriving (Show, Functor)
 
 instance A.Labeled Domain where
@@ -189,6 +192,7 @@ topDomain l domId = Domain
   , _domainLabel            = l
   , _domainAnnotation       = mempty
   , _domainClassAnnotation  = mempty
+  , _domainIsExplicit       = False
   }
 
 -- | Relationship between the left and right domains of a
@@ -475,6 +479,7 @@ newDomain l name path cls domId parent ann = Domain
   , _domainLabel           = l
   , _domainAnnotation      = ann
   , _domainClassAnnotation = cls ^. classAnnotation
+  , _domainIsExplicit      = cls ^. classIsExplicit
   }
 
 -- | Execute an action in a new environment for a domain.
@@ -614,10 +619,10 @@ evalStmt ann (A.StmtPortDecl l (A.VarName _ name) attrs) = do
   _ <- addPort port
   moduleEnv . envPorts . at name ?= pid
 
-evalStmt ann (A.StmtClassDecl l ty@(A.TypeName _ name) args body) = do
+evalStmt ann (A.StmtClassDecl l isExp ty@(A.TypeName _ name) args body) = do
   whenM (isBound envClasses name) (lose $ DuplicateClass l name)
   path <- getClassPath name
-  let cl = Class ty path args body ann
+  let cl = Class ty path args body ann isExp
   addClass ty cl
 
 evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
@@ -639,9 +644,9 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   -- add subdomain's environment to our environment
   moduleEnv . envSubdomains . at name ?= (domId, subEnv)
 
-evalStmt ann (A.StmtAnonDomainDecl l var@(A.VarName l2 name) body) = do
+evalStmt ann (A.StmtAnonDomainDecl l isExp var@(A.VarName l2 name) body) = do
   cls <- getAnonClassName l2 name
-  evalStmt mempty (A.StmtClassDecl l cls [] body)
+  evalStmt mempty (A.StmtClassDecl l isExp cls [] body)
   evalStmt ann (A.StmtDomainDecl l var cls [])
 
 evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do

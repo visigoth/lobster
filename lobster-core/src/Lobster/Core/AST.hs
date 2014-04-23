@@ -225,10 +225,10 @@ instance Labeled PortName where
 
 -- | A top-level statement in a Lobster module.
 data Stmt a
-  = StmtClassDecl      a (TypeName a) [VarName a] [Stmt a]
+  = StmtClassDecl      a Bool (TypeName a) [VarName a] [Stmt a]
   | StmtPortDecl       a (VarName a) [PortAttr a]
   | StmtDomainDecl     a (VarName a) (TypeName a) [Exp a]
-  | StmtAnonDomainDecl a (VarName a) [Stmt a]
+  | StmtAnonDomainDecl a Bool (VarName a) [Stmt a]
   | StmtAssign         a (VarName a) (Exp a)
   | StmtConnection     a (PortName a) (ConnOp a) (PortName a)
   | StmtAnnotation     a (Annotation a) (Stmt a)
@@ -236,14 +236,14 @@ data Stmt a
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
 
 instance Labeled Stmt where
-  label (StmtClassDecl      l _ _ _) = l
-  label (StmtPortDecl       l _ _)   = l
-  label (StmtDomainDecl     l _ _ _) = l
-  label (StmtAnonDomainDecl l _ _)   = l
-  label (StmtAssign         l _ _)   = l
-  label (StmtConnection     l _ _ _) = l
-  label (StmtAnnotation     l _ _)   = l
-  label (StmtComment        l _)     = l
+  label (StmtClassDecl      l _ _ _ _) = l
+  label (StmtPortDecl       l _ _)     = l
+  label (StmtDomainDecl     l _ _ _)   = l
+  label (StmtAnonDomainDecl l _ _ _)   = l
+  label (StmtAssign         l _ _)     = l
+  label (StmtConnection     l _ _ _)   = l
+  label (StmtAnnotation     l _ _)     = l
+  label (StmtComment        l _)       = l
 
 -- | A policy file, contains a list of statements.
 data Policy a = Policy a [Stmt a]

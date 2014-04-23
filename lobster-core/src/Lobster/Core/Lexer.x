@@ -85,6 +85,7 @@ $digit+             { tok tokInt }
 "class"             { kw KwClass }
 "domain"            { kw KwDomain }
 "exists"            { kw KwExists }
+"explicit"          { kw KwExplicit }
 "input"             { kw KwInput }
 "never"             { kw KwNever }
 "object"            { kw KwObject }
@@ -137,6 +138,7 @@ data Keyword
   | KwClass
   | KwDomain
   | KwExists
+  | KwExplicit
   | KwInput
   | KwNever
   | KwObject
