@@ -39,6 +39,7 @@ module Lobster.Core.Eval
   , domainAnnotation
   , domainClassAnnotation
   , domainIsExplicit
+  , domainNegativeConns
 
     -- * Ports
   , Port()
@@ -161,6 +162,19 @@ newtype DomainId = DomainId Int
 nodeId :: DomainId -> Int
 nodeId (DomainId x) = x
 
+-- | A 'negative connection' within a domain.  For implicit
+-- domains, this prohibits an internal connection between
+-- the two ports.  For explicit domains, this has no effect.
+--
+-- TODO: We might want to signal an error if there are
+-- conflicting positive and negative internal connections.
+data NegativeConn = NegativeConn
+  { _negativeConnLeft       :: PortId
+  , _negativeConnRight      :: PortId
+  } deriving (Eq, Show, Ord)
+
+makeLenses ''NegativeConn
+
 -- | A domain definition.
 data Domain l = Domain
   { _domainId               :: DomainId
@@ -174,6 +188,7 @@ data Domain l = Domain
   , _domainAnnotation       :: A.Annotation l
   , _domainClassAnnotation  :: A.Annotation l
   , _domainIsExplicit       :: Bool
+  , _domainNegativeConns    :: S.Set NegativeConn
   } deriving (Show, Functor)
 
 instance A.Labeled Domain where
@@ -193,6 +208,7 @@ topDomain l domId = Domain
   , _domainAnnotation       = mempty
   , _domainClassAnnotation  = mempty
   , _domainIsExplicit       = False
+  , _domainNegativeConns    = S.empty
   }
 
 -- | Relationship between the left and right domains of a
@@ -452,6 +468,13 @@ addConnection l portL portR cty ann = do
                }
   connId <- ConnectionId <$> (moduleNextConnectionId <<+= 1)
   moduleConnections . at connId ?= conn
+
+-- | Add a negative connection to the current module.
+addNegativeConn :: PortId -> PortId -> Eval l ()
+addNegativeConn pidL pidR = do
+  rootId <- use moduleRootDomain
+  let nconn = NegativeConn pidL pidR
+  moduleDomains . ix rootId . domainNegativeConns . contains nconn .= True
  
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.
@@ -479,6 +502,7 @@ newDomain l name path cls domId parent ann = Domain
   , _domainAnnotation      = ann
   , _domainClassAnnotation = cls ^. classAnnotation
   , _domainIsExplicit      = cls ^. classIsExplicit
+  , _domainNegativeConns   = S.empty
   }
 
 -- | Execute an action in a new environment for a domain.
@@ -652,6 +676,24 @@ evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
   whenM (isBound envVars name) (lose $ DuplicateVar l name)
   val <- evalExp e
   moduleEnv . envVars . at name ?= val
+
+-- 'ConnNegative' connections are handled specially.  Rather than
+-- adding a connection, add to the set of 'negative connections'
+-- for the current domain.  They must also be internal connections
+-- (between two ports in the same domain).
+evalStmt _ (A.StmtConnection _
+              pidL@(A.UPortName _)
+              (A.ConnOp _ A.ConnNegative)
+              pidR@(A.UPortName _)) = do
+  portL <- lookupPort pidL
+  portR <- lookupPort pidR
+  addNegativeConn portL portR
+
+evalStmt _ (A.StmtConnection l
+              pidL
+              (A.ConnOp _ A.ConnNegative)
+              pidR) =
+  lose $ BadNegativeConn l (fullPortName pidL) (fullPortName pidR)
 
 evalStmt ann (A.StmtConnection l pidL (A.ConnOp _ cty) pidR) = do
   portL <- lookupPort pidL

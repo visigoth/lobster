@@ -36,6 +36,7 @@ data Error l
   | InternalConnection l Text Text
   | BadArguments l Int
   | BadPosition l Text Text Text
+  | BadNegativeConn l Text Text
   | TypeError l Text
   | MiscError String
   deriving (Show, Functor, Foldable)
@@ -70,6 +71,8 @@ errorMessage err =
       "undefined port: '" <> t <> "'"
     BadPosition _ p1 p2 t ->
       "invalid connection from '" <> p1 <> "' to '" <> p2 <> "': " <> t
+    BadNegativeConn _ p1 p2 ->
+      "negative connection from '" <> p1 <> "' to '" <> p2 <> "' is not internal"
     InternalConnection _ t1 t2 ->
       "invalid internal connection from '" <> t1 <> "' to '" <> t2 <> "'"
     BadArguments _ n ->

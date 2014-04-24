@@ -39,6 +39,7 @@ instance Pretty ConnType where
   ppr ConnRightToLeft   = text "<--"
   ppr ConnBidirectional = text "<-->"
   ppr ConnNeutral       = text "--"
+  ppr ConnNegative      = text "-/-"
 
 instance Pretty BinaryOp where
   ppr BinaryOpAnd      = text "&&"

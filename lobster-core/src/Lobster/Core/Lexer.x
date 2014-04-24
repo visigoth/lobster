@@ -123,6 +123,7 @@ $digit+             { tok tokInt }
 "<--"               { connOp OpConnRightToLeft }
 "<-->"              { connOp OpConnBidirectional }
 "--"                { connOp OpConnNeutral }
+"-/-"               { connOp OpConnNegative }
 
 "&&"                { expOp ExpOpAnd }
 "||"                { expOp ExpOpOr }
@@ -182,6 +183,7 @@ data ConnOperator
   | OpConnRightToLeft
   | OpConnBidirectional
   | OpConnNeutral
+  | OpConnNegative
   deriving (Eq, Ord, Show)
 
 -- | A source location.

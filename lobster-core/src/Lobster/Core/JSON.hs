@@ -109,16 +109,17 @@ portsJSON dom =
   toJSON $ S.map getPortKey $ dom ^. domainPorts
 
 instance ToJSON ConnLevel where
-  toJSON ConnLevelPeer   = "peer"
-  toJSON ConnLevelParent = "parent"
-  toJSON ConnLevelChild  = "child"
-  toJSON _ = error "invalid conn level in JSON"
+  toJSON ConnLevelPeer     = "peer"
+  toJSON ConnLevelParent   = "parent"
+  toJSON ConnLevelChild    = "child"
+  toJSON ConnLevelInternal = "internal"
 
 instance ToJSON A.ConnType where
   toJSON A.ConnLeftToRight   = "left-to-right"
   toJSON A.ConnRightToLeft   = "right-to-left"
   toJSON A.ConnBidirectional = "bidirectional"
   toJSON A.ConnNeutral       = "neutral"
+  toJSON A.ConnNegative      = "negative"
 
 -- | Convert an unevaluated expression to JSON.  This is only
 -- used for annotations.

@@ -59,6 +59,7 @@ import qualified Data.Text as T
   '<--'             { Token _ _ (TokConnOperator OpConnRightToLeft) }
   '<-->'            { Token _ _ (TokConnOperator OpConnBidirectional) }
   '--'              { Token _ _ (TokConnOperator OpConnNeutral) }
+  '-/-'             { Token _ _ (TokConnOperator OpConnNegative) }
 
   '&&'              { Token _ _ (TokExpOperator ExpOpAnd) }
   '||'              { Token _ _ (TokExpOperator ExpOpOr) }
@@ -140,6 +141,7 @@ ConnOp
   | '<--'   { ConnOp (tokSpan $1) ConnRightToLeft }
   | '<-->'  { ConnOp (tokSpan $1) ConnBidirectional }
   | '--'    { ConnOp (tokSpan $1) ConnNeutral }
+  | '-/-'   { ConnOp (tokSpan $1) ConnNegative }
 
 ----------------------------------------------------------------------
 -- Port Type Definition

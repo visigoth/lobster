@@ -87,6 +87,7 @@ data ConnType
   | ConnRightToLeft
   | ConnBidirectional
   | ConnNeutral
+  | ConnNegative
   deriving (Eq, Ord, Show)
 
 -- | Reverse the directionality of a connection.
