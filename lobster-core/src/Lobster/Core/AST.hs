@@ -53,7 +53,6 @@ import Control.Lens
 import Data.Monoid ((<>), Monoid(..))
 import Data.Text (Text)
 import Data.Foldable (Foldable)
-import Data.Traversable (Traversable)
 
 -- | Class of AST objects labeled with arbitrary data.
 class Labeled a where

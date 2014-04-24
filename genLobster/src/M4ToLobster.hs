@@ -532,14 +532,14 @@ outputTypeTransition st (subj, rel, cls, new) =
 
 domtransDecl :: L.Decl
 domtransDecl =
-  L.newClass (L.mkName "Domtrans_pattern") [d2_name]
-    [ L.newPort d1_active
-    , L.newPort d1_fd
-    , L.newPort d1_fifo
-    , L.newPort d1_proc
-    , L.newPort d2_file
-    , L.newPort d3_active
-    , L.newPort d3_proc
+  L.newExplicitClass (L.mkName "Domtrans_pattern") [d2_name]
+    [ L.newPortPos d1_active C.PosObject
+    , L.newPortPos d1_fd     C.PosSubject
+    , L.newPortPos d1_fifo   C.PosSubject
+    , L.newPortPos d1_proc   C.PosSubject
+    , L.newPortPos d2_file   C.PosSubject
+    , L.newPortPos d3_active C.PosObject
+    , L.newPortPos d3_proc   C.PosSubject
     , L.neutral' (L.extPort d1_active) (L.extPort d2_file)
         [outputPerm (S.mkId "x_file_perms")]
     , L.neutral' (L.extPort d1_active) (L.extPort d3_proc)
@@ -575,25 +575,26 @@ outputDomtransMacro st (n, ds) = (m, domDecl) : concatMap connectArg args
     domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
       [L.mkAnnotation (L.mkName "Macro") (map (L.annotationString . S.idString) ds)]
 
-    connectArg :: (Int, Port, String) -> [(Maybe M4.ModuleId, L.Decl)]
-    connectArg (i, port, argname) = []
-      {-
+    connectArg :: (S.Identifier, L.Name, S.Identifier, L.Name) -> [(Maybe M4.ModuleId, L.Decl)]
+    connectArg (subjDom, subjPort, objDom, objPort) =
       moduleEdges st
-        (S.toId (ds !! i), port)
-        (S.mkId (L.nameString d), L.mkName argname)
+        (subjDom, subjPort)
+        (objDom,  objPort)
         [L.mkAnnotation (L.mkName "MacroArg") []]
-      -}
 
-    args :: [(Int, Port, String)]
+    args :: [(S.Identifier, L.Name, S.Identifier, L.Name)]
     args =
-      [ (0, activePort          , "d1_active"   )
-      , (0, L.mkName "fd"       , "d1_fd"       )
-      , (0, L.mkName "fifo_file", "d1_fifo_file")
-      , (0, L.mkName "process"  , "d1_process"  )
-      , (1, L.mkName "file"     , "d2_file"     )
-      , (2, activePort          , "d3_active"   )
-      , (2, L.mkName "process"  , "d3_process"  )
+      [ (argDom 0, activePort,              macroDom, L.mkName "d1_active")
+      , (macroDom, L.mkName "d1_fd",        argDom 0, L.mkName "fd")
+      , (macroDom, L.mkName "d1_fifo_file", argDom 0, L.mkName "fifo_file")
+      , (macroDom, L.mkName "d1_process",   argDom 0, L.mkName "process")
+      , (macroDom, L.mkName "d2_file",      argDom 1, L.mkName "file")
+      , (argDom 2, activePort,              macroDom, L.mkName "d3_active")
+      , (macroDom, L.mkName "d3_process",   argDom 2, L.mkName "process")
       ]
+      where
+        argDom n = S.toId (ds !! n)
+        macroDom = S.mkId (L.nameString d)
 
 outputLobster :: M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster _ (st, subattrs) =

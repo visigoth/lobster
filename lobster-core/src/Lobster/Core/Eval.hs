@@ -442,17 +442,16 @@ addConnection l portL portR cty ann = do
 addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
 addConnection l portL portR cty ann = do
   level <- connLevel portL portR
-  unless (level == ConnLevelInternal) $ do
-    let conn = Connection
-                 { _connectionLeft       = portL
-                 , _connectionRight      = portR
-                 , _connectionLevel      = level
-                 , _connectionType       = cty
-                 , _connectionLabel      = l
-                 , _connectionAnnotation = ann
-                 }
-    connId <- ConnectionId <$> (moduleNextConnectionId <<+= 1)
-    moduleConnections . at connId ?= conn
+  let conn = Connection
+               { _connectionLeft       = portL
+               , _connectionRight      = portR
+               , _connectionLevel      = level
+               , _connectionType       = cty
+               , _connectionLabel      = l
+               , _connectionAnnotation = ann
+               }
+  connId <- ConnectionId <$> (moduleNextConnectionId <<+= 1)
+  moduleConnections . at connId ?= conn
  
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.

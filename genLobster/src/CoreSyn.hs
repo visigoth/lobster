@@ -15,6 +15,7 @@ module CoreSyn
   , annotationName
 
   , newClass
+  , newExplicitClass
   , newDomain
   , newDomain'
   , anonDomain
@@ -58,6 +59,10 @@ nameString (L.VarName _ s) = Text.unpack s
 newClass :: Name -> [Param] -> [Decl] -> Decl
 newClass (L.VarName s c) ps body =
   L.StmtClassDecl L.emptySpan False (L.TypeName s c) ps body
+
+newExplicitClass :: Name -> [Param] -> [Decl] -> Decl
+newExplicitClass (L.VarName s c) ps body =
+  L.StmtClassDecl L.emptySpan True (L.TypeName s c) ps body
 
 anonDomain :: Name -> [Decl] -> Decl
 anonDomain binder decls =

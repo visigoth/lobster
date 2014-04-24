@@ -80,6 +80,10 @@ tcInferPos pid pos = do
   tcConnections %= S.union conns
 
 -- | Type check a single connection.
+--
+-- TODO: We could simplify all the cases on 'level' here by
+-- having some accessors on 'Connection' to return the positions
+-- of the left and right ports.
 tcConn :: ConnectionId -> TC l ()
 tcConn connId = do
   m <- use tcModule
@@ -103,7 +107,7 @@ tcConn connId = do
           ConnLevelParent   -> (revPosition lPos1, rPos1)
           ConnLevelChild    -> (lPos1, revPosition rPos1)
           ConnLevelPeer     -> (lPos1, rPos1)
-          ConnLevelInternal -> error "internal connection"    -- ???
+          ConnLevelInternal -> (revPosition lPos1, revPosition rPos1)
 
   case (lPos2, rPos2) of
     -- if both port postions are unknown, don't do anything
@@ -111,12 +115,17 @@ tcConn connId = do
 
     -- if one port position is unknown and the other is not, infer
     -- the position and re-add that ports connections to the TC set.
+    --
+    -- the inferred position is opposite the known position unless
+    -- the connection is to the inside of the unknown port.
     (_, PosUnknown) -> tcInferPos rPid $ case level of
-                         ConnLevelChild -> lPos2
-                         _              -> revPosition lPos2
+                         ConnLevelChild    -> lPos2
+                         ConnLevelInternal -> lPos2
+                         _                 -> revPosition lPos2
     (PosUnknown, _) -> tcInferPos lPid $ case level of
-                         ConnLevelParent -> rPos2
-                         _               -> revPosition rPos2
+                         ConnLevelParent   -> rPos2
+                         ConnLevelInternal -> rPos2
+                         _                 -> revPosition rPos2
 
     -- if both positions are known, require them to agree
     (PosSubject, PosObject)  -> return ()
@@ -126,11 +135,13 @@ tcConn connId = do
       let lPath = lPort ^. portPath
       let rPath = rPort ^. portPath
       let lExtra = case level of
-                     ConnLevelParent -> " (internal)"
-                     _               -> ""
+                     ConnLevelParent   -> " (internal)"
+                     ConnLevelInternal -> " (internal)"
+                     _                 -> ""
       let rExtra = case level of
-                     ConnLevelChild -> " (internal)"
-                     _              -> ""
+                     ConnLevelChild    -> " (internal)"
+                     ConnLevelInternal -> " (internal)"
+                     _                 -> ""
       throwE $ BadPosition (label conn) (lPath <> lExtra)
                            (rPath <> rExtra)
                            (ppPos lPos2 <> " to " <> ppPos rPos2)

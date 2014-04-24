@@ -10,17 +10,21 @@
 
 -- TODO: Consider renaming this module to "Analysis"?
 
+-- TODO: Tighten up exports.
 module Lobster.Core.Traverse where
 
+import Control.Applicative ((<|>))
 import Control.Lens
 import Control.Monad.Trans.State
 import Control.Monad.Trans.Writer
+import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Text (Text)
 
 import Lobster.Core.AST
 import Lobster.Core.Eval
 
+import qualified Data.Foldable        as F
 import qualified Data.Graph.Inductive as G
 import qualified Data.Map             as M
 import qualified Data.Set             as S
@@ -28,15 +32,78 @@ import qualified Data.Text            as T
 
 ----------------------------------------------------------------------
 -- Graph Building
+--
+-- The nodes in the graph are either domains or ports.
+--
+-- For explicit domains, we create a node for each port, and create
+-- an edge between ports for each connection.  This edge is directed
+-- if there is a subject/object relationship between the ports.
+--
+-- For implicit (normal) domains, we can merge all the ports into
+-- a single node.
 
-type Graph l = G.Gr () (Connection l)
+-- | Node label indicating whether the node is a domain or port.
+data GNode = GNodeDomain DomainId
+           | GNodePort   PortId
+  deriving (Eq, Ord, Show)
 
+-- | State of the graph builder.  We maintain a reverse mapping
+-- of domain and port IDs to their respective nodes.  When we
+-- create a connection, we first look to see if each port has
+-- a specific node, and use that if it exists.  If not, we connect
+-- to the port's owning domain.
+data GState l = GState
+  { _gstateModule       :: Module l
+  , _gstateGraph        :: G.Gr GNode (Connection l)
+  , _gstateNextNodeId   :: Int
+  , _gstateDomainMap    :: M.Map DomainId Int
+  , _gstatePortMap      :: M.Map PortId   Int
+  } deriving Show
+
+makeLenses ''GState
+
+data ModuleGraph l = ModuleGraph
+  { _moduleGraphGraph     :: G.Gr GNode (Connection l)
+  , _moduleGraphDomainMap :: M.Map DomainId Int
+  , _moduleGraphPortMap   :: M.Map PortId   Int
+  } deriving Show
+
+makeLenses ''ModuleGraph
+
+-- | State monad used internally during graph building.
+type G l a = State (GState l) a
+
+-- | Add a domain to the current graph.
+addDomain :: Domain l -> G l ()
+addDomain d
+  | d ^. domainIsExplicit = addExplicitDomain d
+  | otherwise             = addImplicitDomain d
+
+-- | Add an explicit domain to the current graph.
+addExplicitDomain :: Domain l -> G l ()
+addExplicitDomain d = F.mapM_ addPort (d ^. domainPorts)
+  where
+    addPort pid = do
+      nid <- gstateNextNodeId <<+= 1
+      gstateGraph %= G.insNode (nid, GNodePort pid)
+      gstatePortMap . at pid ?= nid
+
+-- | Add an implicit domain to the current graph.
+addImplicitDomain :: Domain l -> G l ()
+addImplicitDomain d = do
+  let domId = d ^. domainId
+  nid <- gstateNextNodeId <<+= 1
+  gstateGraph %= G.insNode (nid, GNodeDomain domId)
+  gstateDomainMap . at domId ?= nid
+
+{-
 -- | Return true if an edge already exists in the graph.
 edgeExists :: Graph l -> (Int, Int, Connection l) -> Bool
 edgeExists gr (nodeL, nodeR, _) = elem nodeR (G.suc gr nodeL)   -- argh, O(n)
 
 addEdges :: Graph l -> [(Int, Int, Connection l)] -> Graph l
 addEdges gr edges = G.insEdges edges gr
+-}
 
 -- | Reverse a connection level if a parent/child type.
 revLevel :: ConnLevel -> ConnLevel
@@ -63,18 +130,12 @@ revConn conn = (`execState` conn) $ do
   connectionType       %= revConnType
   connectionAnnotation %= revAnnotation
 
--- | Direction of the graph edge to create for a connection
--- based on port position.
-data EdgeDirection = LeftToRight
-                   | RightToLeft
-                   | Bidirectional
-  deriving (Eq, Ord, Show)
-
 connLeftPos :: Module l -> Connection l -> Position
 connLeftPos m conn =
   case level of
-    ConnLevelParent -> revPosition pos
-    _               -> pos
+    ConnLevelParent   -> revPosition pos
+    ConnLevelInternal -> revPosition pos
+    _                 -> pos
   where
     level = conn ^. connectionLevel
     port  = m ^. idPort (conn ^. connectionLeft)
@@ -83,61 +144,78 @@ connLeftPos m conn =
 connRightPos :: Module l -> Connection l -> Position
 connRightPos m conn =
   case level of
-    ConnLevelChild -> revPosition pos
-    _              -> pos
+    ConnLevelChild    -> revPosition pos
+    ConnLevelInternal -> revPosition pos
+    _                 -> pos
   where
     level = conn ^. connectionLevel
     port  = m ^. idPort (conn ^. connectionRight)
     pos   = port ^. portPosition
 
-{-
-edgeDirection :: Connection l -> EdgeDirection
-edgeDirection conn =
-  case (
--}
+-- | Get the node ID for a connection to a port.
+getNodeId :: Port l -> Domain l -> G l Int
+getNodeId port dom = do
+  portMap <- use gstatePortMap
+  domMap  <- use gstateDomainMap
+  return $ fromJust $
+    (portMap ^? ix (port ^. portId))   <|>
+    (domMap  ^? ix (dom  ^. domainId)) <|>
+    (error "internal error: node not found")    -- shouldn't happen
 
 -- | Add a single connection between two ports.  If the ports are
 -- typed with a subject/object relationship, only a single edge
 -- will be created.
-addConnection :: Module l -> Graph l -> Connection l -> Graph l
-addConnection m gr conn = addEdges gr edges
-  where
-    portL = m ^. idPort (conn ^. connectionLeft)
-    portR = m ^. idPort (conn ^. connectionRight)
-    posL  = connLeftPos m conn
-    posR  = connRightPos m conn
-    domL  = portL ^. portDomain
-    domR  = portR ^. portDomain
-    fEdge = (nodeId domL, nodeId domR, conn)
-    bEdge = (nodeId domL, nodeId domR, revConn conn)
-    edges = case (posL, posR) of
-              (PosSubject, PosObject)  -> [fEdge]
-              (PosObject,  PosSubject) -> [bEdge]
-              _                        -> [fEdge, bEdge]
-                
+addConnection :: Connection l -> G l ()
+addConnection conn = do
+  m <- use gstateModule
+  let portL = m ^. idPort (conn ^. connectionLeft)
+  let portR = m ^. idPort (conn ^. connectionRight)
+  let posL  = connLeftPos m conn
+  let posR  = connRightPos m conn
+  let domL  = m ^. idDomain (portL ^. portDomain)
+  let domR  = m ^. idDomain (portR ^. portDomain)
+  nodeL    <- getNodeId portL domL
+  nodeR    <- getNodeId portR domR
+  let fEdge = (nodeL, nodeR, conn)
+  let bEdge = (nodeR, nodeL, revConn conn)
+  let edges = case (posL, posR) of
+                (PosSubject, PosObject)  -> [fEdge]
+                (PosObject,  PosSubject) -> [bEdge]
+                _                        -> [fEdge, bEdge]
+  gstateGraph %= G.insEdges edges
 
 -- | Build a graph of connections between domains from a Lobster module.
-moduleGraph :: Module l -> Graph l
-moduleGraph m = M.foldl' (addConnection m) gr (m ^. moduleConnections)
+moduleGraph :: Module l -> ModuleGraph l
+moduleGraph m = evalState go st
   where
-    domains = m ^. moduleDomains
-    gr = G.insNodes [(k, ()) | DomainId k <- M.keys domains] G.empty
+    go = do
+      mapMOf_ (moduleDomains     . folded) addDomain m
+      mapMOf_ (moduleConnections . folded) addConnection m
+      gr      <- use gstateGraph
+      domMap  <- use gstateDomainMap
+      portMap <- use gstatePortMap
+      return $ ModuleGraph gr domMap portMap
+    st = GState m G.empty 0 M.empty M.empty
 
 -- | Return a labelled graph for use with graphviz.
 labelledModuleGraph :: Module l -> G.Gr Text Text
-labelledModuleGraph m = G.emap goE (G.gmap goN (moduleGraph m))
+labelledModuleGraph m = G.emap goE (G.gmap goN gr)
   where
+    {-
     getName :: PortId -> Text
     getName p = m ^?! modulePorts . ix p . portName
-    {-
     goE conn =
       let nameL = getName $ conn ^. connectionLeft
           nameR = getName $ conn ^. connectionRight in
         nameL <> " -- " <> nameR
     -}
+    gr = moduleGraph m ^. moduleGraphGraph
     goE = const ""
-    goN (preds, node, _, posts) =
-      let name = m ^?! moduleDomains . ix (DomainId node) . domainPath in
+    goN (preds, node, GNodeDomain domId, posts) =
+      let name = m ^?! moduleDomains . ix domId . domainPath in
+      (preds, node, name, posts)
+    goN (preds, node, GNodePort pid, posts) =
+      let name = m ^?! modulePorts . ix pid . portPath in
       (preds, node, name, posts)
 
 ----------------------------------------------------------------------

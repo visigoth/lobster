@@ -32,6 +32,7 @@ instance Pretty Direction where
 instance Pretty Position where
   ppr PosSubject        = text "subject"
   ppr PosObject         = text "object"
+  ppr PosUnknown        = error "printing unknown position"
 
 instance Pretty ConnType where
   ppr ConnLeftToRight   = text "-->"
