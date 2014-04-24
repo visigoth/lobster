@@ -47,6 +47,10 @@ data GNode = GNodeDomain DomainId
            | GNodePort   PortId
   deriving (Eq, Ord, Show)
 
+-- | A graph of domains and ports with edges labelled with
+-- connection information.
+type Graph l = G.Gr GNode (Connection l)
+
 -- | State of the graph builder.  We maintain a reverse mapping
 -- of domain and port IDs to their respective nodes.  When we
 -- create a connection, we first look to see if each port has
@@ -54,7 +58,7 @@ data GNode = GNodeDomain DomainId
 -- to the port's owning domain.
 data GState l = GState
   { _gstateModule       :: Module l
-  , _gstateGraph        :: G.Gr GNode (Connection l)
+  , _gstateGraph        :: Graph l
   , _gstateNextNodeId   :: Int
   , _gstateDomainMap    :: M.Map DomainId Int
   , _gstatePortMap      :: M.Map PortId   Int
@@ -63,7 +67,7 @@ data GState l = GState
 makeLenses ''GState
 
 data ModuleGraph l = ModuleGraph
-  { _moduleGraphGraph     :: G.Gr GNode (Connection l)
+  { _moduleGraphGraph     :: Graph l
   , _moduleGraphDomainMap :: M.Map DomainId Int
   , _moduleGraphPortMap   :: M.Map PortId   Int
   } deriving Show
@@ -294,38 +298,6 @@ connectionsWith m p = M.elems $ M.filter go (m ^. moduleConnections)
     getPortDomain x = getDomain $ view portDomain (getPort x)
     go conn = getDomainPred p (getPortDomain (conn ^. connectionLeft)) ||
               getDomainPred p (getPortDomain (conn ^. connectionRight))
-{-
-connectionsWith m p = filter go (map (view _3) (G.labEdges (m ^. moduleGraph)))
-  where
-    getDomain x     = m ^. idDomain x
-    getPort   x     = m ^. idPort x
-    getPortDomain x = getDomain $ view portDomain (getPort x)
-    go conn = getDomainPred p (getPortDomain (conn ^. connectionLeft)) ||
-              getDomainPred p (getPortDomain (conn ^. connectionRight))
--}
-
-----------------------------------------------------------------------
--- Domain Subgraphs
-
-{-
--- XXX this is no longer used
-
--- | Predicate that returns true for the root domain.
-isRootDomain :: DomainPred l
-isRootDomain = DomainPred (isNothing . view domainParent)
-
--- | Return a module's domain graph with domains that do not
--- match the predicate removed.
-subgraphWith :: Module l -> DomainPred l -> Graph l
-subgraphWith m p = G.efilter go gr
-  where
-    gr = m ^. moduleGraph
-    -- always retain root domain for consistency with domtrees
-    p' = isRootDomain <> p
-    go (n1, n2, _) =
-      getDomainPred p' (m ^. idDomain (DomainId n1)) &&
-      getDomainPred p' (m ^. idDomain (DomainId n2))
--}
 
 ----------------------------------------------------------------------
 -- Domain Predicates
