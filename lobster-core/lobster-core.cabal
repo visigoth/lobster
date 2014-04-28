@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 name:                lobster-core
-version:             0.1.0.0
+version:             0.2.0.0
 synopsis:            The Lobster information flow language
 -- description:         
 license:             BSD3
