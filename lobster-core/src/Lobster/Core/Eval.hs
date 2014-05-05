@@ -19,6 +19,7 @@ module Lobster.Core.Eval
   , moduleConnections
   , moduleRootDomain
   , idDomain
+  , pathDomain
   , idPort
 
     -- * Evaluation
@@ -57,6 +58,7 @@ module Lobster.Core.Eval
   , ConnLevel(..)
   , ConnectionId(..)
   , Connection()
+  , connectionId
   , connectionLeft
   , connectionRight
   , connectionLevel
@@ -226,13 +228,34 @@ newtype ConnectionId = ConnectionId { getConnectionId :: Int }
 
 -- | Graph edge label type.
 data Connection l = Connection
-  { _connectionLeft       :: PortId
-  , _connectionRight      :: PortId
-  , _connectionLevel      :: ConnLevel
-  , _connectionType       :: A.ConnType
-  , _connectionLabel      :: l
-  , _connectionAnnotation :: A.Annotation l
+  { _connectionId         :: !ConnectionId
+  , _connectionLeft       :: !PortId
+  , _connectionRight      :: !PortId
+  , _connectionLevel      :: !ConnLevel
+  , _connectionType       :: !A.ConnType
+  , _connectionLabel      :: !l
+  , _connectionAnnotation :: !(A.Annotation l)
   } deriving (Eq, Ord, Show, Functor)
+
+{-
+-- | Compare connections for equality, ignoring their label.
+instance Eq l => Eq (Connection l) where
+  (==) a b =
+    _connectionLeft       a == _connectionLeft       b &&
+    _connectionRight      a == _connectionRight      b &&
+    _connectionLevel      a == _connectionLevel      b &&
+    _connectionType       a == _connectionType       b &&
+    _connectionAnnotation a == _connectionAnnotation b
+
+-- | Compare connections, ignoring their label.
+instance Ord l => Ord (Connection l) where
+  compare a b =
+    compare (_connectionLeft       a) (_connectionLeft       b) <>
+    compare (_connectionRight      a) (_connectionRight      b) <>
+    compare (_connectionLevel      a) (_connectionLevel      b) <>
+    compare (_connectionType       a) (_connectionType       b) <>
+    compare (_connectionAnnotation a) (_connectionAnnotation b)
+-}
 
 instance A.Labeled Connection where
   label = _connectionLabel
@@ -278,6 +301,20 @@ idDomain domId = singular (moduleDomains . ix domId)
 -- | A partial lens for a port by ID in a module.
 idPort :: PortId -> Lens' (Module l) (Port l)
 idPort pid = singular (modulePorts . ix pid)
+
+-- | Look up a domain by path name.
+pathDomain :: Module l -> Text -> Maybe (Domain l)
+pathDomain m t =
+  case go (m ^. moduleRootDomain) (m ^. moduleEnv) (T.split (== '.') t) of
+    Just domId -> Just $ m ^. idDomain domId
+    Nothing    -> Nothing
+  where
+    go domId env [] = Just domId
+    go domId env (x:xs) =
+      case M.lookup x (env ^. envSubdomains) of
+        Just (subDomId, subEnv) ->
+          go subDomId subEnv xs
+        Nothing -> Nothing
 
 {-
 -- test function to relabel the graph for use with graphviz
@@ -457,16 +494,17 @@ addConnection l portL portR cty ann = do
 -- | Add a connection to the current module.
 addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
 addConnection l portL portR cty ann = do
-  level <- connLevel portL portR
+  level  <- connLevel portL portR
+  connId <- ConnectionId <$> (moduleNextConnectionId <<+= 1)
   let conn = Connection
-               { _connectionLeft       = portL
+               { _connectionId         = connId
+               , _connectionLeft       = portL
                , _connectionRight      = portR
                , _connectionLevel      = level
                , _connectionType       = cty
                , _connectionLabel      = l
                , _connectionAnnotation = ann
                }
-  connId <- ConnectionId <$> (moduleNextConnectionId <<+= 1)
   moduleConnections . at connId ?= conn
 
 -- | Add a negative connection to the current module.
