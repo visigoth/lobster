@@ -449,6 +449,24 @@ forwardEdges = G.lsuc'
 backwardEdges :: EdgeF l
 backwardEdges = G.lpre'
 
+-- | Graph traversal edge predicate.  This accepts the graph
+-- node being traversed, the incoming connection, and the
+-- outgoing connection, and returns true if the outgoing
+-- connection should be followed.
+type EdgeP l = Module l {--> GNode-} -> Maybe GConn -> GConn -> Bool
+
+-- | Predicate that stops when a path hits a domain with a "Type"
+-- annotation with a non-empty incoming connection.  This should
+-- really be in the SELinux module.
+endAtType :: EdgeP l
+endAtType m (Just inc) _ =
+  let port = m ^. idPort (inc ^. gconnRight) in
+  let dom  = m ^. idDomain (port ^. portDomain) in
+  case lookupAnnotation "Type" (dom ^. domainAnnotation) of
+    Just x  -> False
+    Nothing -> True
+endAtType _ _ _ = True
+
 -- | Combine two connection predicates.
 unionPred :: Maybe GConnPred -> Maybe GConnPred -> Maybe GConnPred
 unionPred Nothing  Nothing  = Nothing
@@ -545,6 +563,15 @@ getPaths1 m f gr st node maxD d =
         Just gc -> [Node gc forest]
         Nothing -> forest
   where
+    -- TODO: Consider breaking this out into a predicate on the incoming
+    -- and outgoing connections so we can customize the traversal.
+    --
+    -- It would be interesting to run custom traversals like:
+    --
+    -- - Only generate paths until they end at an object port
+    --   in a domain with the "Type" attribute.
+    --
+    -- - Disable all implicit connections within a domain.
     notNeg l =
       case st ^. gtstateIncoming of
         Just inc -> isntNegativeConn m (inc ^. gconnRight) (l ^. gconnLeft)
