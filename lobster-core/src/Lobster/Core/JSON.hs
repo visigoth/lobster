@@ -33,6 +33,9 @@ getDomKey (DomainId x) = T.pack $ show x
 getPortKey :: PortId -> Text
 getPortKey (PortId x) = T.pack $ show x
 
+getConnKey :: ConnectionId -> Text
+getConnKey (ConnectionId x) = T.pack $ show x
+
 instance ToJSON Loc where
   toJSON NoLoc        = Null
   toJSON (Loc (l, c)) = object ["line" .= l, "col" .= c]
@@ -143,16 +146,17 @@ moduleJSON :: Module Span -> DomainPred Span -> A.Value
 moduleJSON m p =
   object [ "domains"        .= toJSON domains
          , "ports"          .= toJSON ports
-         , "connections"    .= toJSON (map connectionJSON conns)
+         , "connections"    .= toJSON conns
          , "root"           .= toJSON (getDomKey (m ^. moduleRootDomain))
          ]
   where
     domTree  = domainTreeWith m p
     domains  = M.fromList $ map goD $ flattenDomainTree domTree
     ports    = M.fromList $ map goP $ allPorts domTree
-    conns    = connectionsWith m p
+    conns    = M.fromList $ map goC $ connectionsWith m p
     goD dt   = (getDomKey (dt ^. domainTreeDomain . domainId), domainJSON m dt)
     goP port = (getPortKey (port ^. portId), portJSON port)
+    goC conn = (getConnKey (conn ^. connectionId), connectionJSON conn)
 
 instance ToJSON (Module Span) where
   toJSON m = moduleJSON m mempty
