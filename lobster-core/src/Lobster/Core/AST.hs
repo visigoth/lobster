@@ -17,6 +17,7 @@ module Lobster.Core.AST
   , ConnType(..)
   , LitInteger(..)
   , LitString(..)
+  , getLitString
   , LitBool(..)
   , LitDirection(..)
   , LitPosition(..)
@@ -113,6 +114,10 @@ instance Labeled LitInteger where
 -- | A string literal.
 data LitString a = LitString a Text
   deriving (Eq, Ord, Show, Functor, Foldable, Traversable)
+
+-- | Extract the string from a string literal.
+getLitString :: LitString a -> Text
+getLitString (LitString _ x) = x
 
 instance Labeled LitString where
   label (LitString l _) = l

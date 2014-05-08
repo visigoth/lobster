@@ -8,6 +8,7 @@
 
 import Control.Error (runEitherT)
 import Control.Lens
+import Control.Monad (unless)
 import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Tree
@@ -61,10 +62,19 @@ leaves m (Node _ xs : ys) =
   S.union (leaves m xs) (leaves m ys)
 
 ppConn :: Module l -> GConn -> Text
-ppConn m conn =
-  let lPort = m ^. idPort (conn ^. gconnLeft) in
-  let rPort = m ^. idPort (conn ^. gconnRight) in
+ppConn m gc =
+  let conn  = m ^. idConnection (gc ^. gconnId) in
+  let lPort = m ^. idPort (gc ^. gconnLeft) in
+  let rPort = m ^. idPort (gc ^. gconnRight) in
   view portPath lPort <> " -- " <> view portPath rPort
+
+ppPerms :: Module l -> GConn -> Text
+ppPerms m gc =
+  let conn  = m ^. idConnection (gc ^. gconnId) in
+  let anns = lookupAnnotations "Perm" (conn ^. connectionAnnotation) in
+  case anns of
+    [] -> ""
+    _  -> T.intercalate " " (anns ^.. folded . folded . _ExpString . to getLitString)
 
 pathQuery :: Eq l => Module l -> Domain l -> IO ()
 pathQuery m dom = do
@@ -94,6 +104,9 @@ pathQuery m dom = do
           T.putStrLn "  via path:"
           F.forM_ path $ \conn -> do
             T.putStrLn ("    " <> ppConn m conn <> " ")
+            let perms = ppPerms m conn
+            unless (T.null perms) $
+              T.putStrLn ("     {" <> perms <> "}")
             -- putStr (show (getConnectionId connId) <> " ")
           T.putStrLn ""
       Nothing -> return ()
