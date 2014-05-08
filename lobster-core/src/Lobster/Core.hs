@@ -8,6 +8,7 @@
 
 module Lobster.Core
   ( readPolicy
+  , readPolicyBS
   , parseByteString
   , spanErrorMessage
 
@@ -49,6 +50,12 @@ readPolicy path = do
   hoistEither $ do
     policy <- parseByteString contents
     tc =<< evalPolicy policy
+
+-- | Read a policy from a bytestring.
+readPolicyBS :: LBS.ByteString -> Either (Error Span) (Module Span)
+readPolicyBS s = do
+  policy <- runAlex s parsePolicy
+  tc =<< evalPolicy policy
 
 ----------------------------------------------------------------------
 -- Utilities
