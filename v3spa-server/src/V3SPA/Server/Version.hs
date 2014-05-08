@@ -37,6 +37,11 @@ module V3SPA.Server.Version where
 -- Version 4:
 --
 -- - subdomains are now a map of keys to objects with their name
+--
+-- Version 5:
+--
+-- - connections are now a map indexed by connection ID
+-- - added '/paths?id=N' for path queries starting at domain N
 version :: Int
-version = 4
+version = 5
 
