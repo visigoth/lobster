@@ -16,7 +16,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Lobster.SELinux.Filter
+  exposed-modules:     Lobster.SELinux.Export
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base >= 4.6,

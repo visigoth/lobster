@@ -3,6 +3,7 @@
 SUBPROJECTS :=                 \
   lobster                      \
   lobster-core                 \
+	lobster-selinux              \
   SCD                          \
   genLobster                   \
   v3spa-server                 \
@@ -11,7 +12,7 @@ SUBPROJECTS :=                 \
 
 .PHONY: all
 all: .cabal-sandbox
-	@cabal install lobster-core genLobster v3spa-server iptables-lobster
+	@cabal install $(SUBPROJECTS)
 
 .PHONY: clean
 clean:
