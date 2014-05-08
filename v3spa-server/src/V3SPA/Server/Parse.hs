@@ -105,7 +105,6 @@ handleParse :: V3Snap ()
 handleParse = method POST $ do
   modifyResponse $ setContentType "application/json"
   body   <- readRequestBody 10000000
-  policy <- hoistErr $ parseByteString body
-  lsrmod <- hoistErr $ evalPolicy policy
+  lsrmod <- hoistErr $ readPolicyBS body
   p      <- queryPred lsrmod
   respond (moduleJSON lsrmod p)

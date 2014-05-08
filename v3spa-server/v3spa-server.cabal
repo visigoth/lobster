@@ -14,13 +14,16 @@ executable v3spa-server
   main-is:             Main.hs
   other-modules:       V3SPA.Server.Snap,
                        V3SPA.Server.Parse,
+                       V3SPA.Server.Paths,
                        V3SPA.Server.Import.SELinux,
                        V3SPA.Server.Import.IPTables,
                        V3SPA.Server.Version
   build-depends:       base >=4.6 && <4.7,
+                       containers >= 0.5,
                        transformers,
                        mtl >= 2.1,
                        MonadCatchIO-transformers >= 0.3,
+                       lens >= 4.1,
                        filepath,
                        errors,
                        snap,

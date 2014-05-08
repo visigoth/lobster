@@ -13,6 +13,7 @@ import Snap
 
 import V3SPA.Server.Snap
 import V3SPA.Server.Parse
+import V3SPA.Server.Paths
 import V3SPA.Server.Import.SELinux
 import V3SPA.Server.Import.IPTables
 
@@ -30,6 +31,7 @@ handleVersion = method GET $ respond Null
 site :: V3Snap ()
 site = route
   [ ("/parse",           handleParse)
+  , ("/paths",           handlePaths)
   , ("/version",         handleVersion)
   , ("/import/iptables", handleImportIptables)
   , ("/import/selinux",  handleImportSELinux)
