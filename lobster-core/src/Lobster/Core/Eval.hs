@@ -21,6 +21,8 @@ module Lobster.Core.Eval
   , idDomain
   , pathDomain
   , idPort
+  , idConnection
+  , isntNegativeConn
 
     -- * Evaluation
   , evalPolicy
@@ -171,8 +173,8 @@ nodeId (DomainId x) = x
 -- TODO: We might want to signal an error if there are
 -- conflicting positive and negative internal connections.
 data NegativeConn = NegativeConn
-  { _negativeConnLeft       :: PortId
-  , _negativeConnRight      :: PortId
+  { _negativeConnLeft       :: !PortId
+  , _negativeConnRight      :: !PortId
   } deriving (Eq, Show, Ord)
 
 makeLenses ''NegativeConn
@@ -302,6 +304,10 @@ idDomain domId = singular (moduleDomains . ix domId)
 idPort :: PortId -> Lens' (Module l) (Port l)
 idPort pid = singular (modulePorts . ix pid)
 
+-- | A partial lens for a connection by ID.
+idConnection :: ConnectionId -> Lens' (Module l) (Connection l)
+idConnection connId = singular (moduleConnections . ix connId)
+
 -- | Look up a domain by path name.
 pathDomain :: Module l -> Text -> Maybe (Domain l)
 pathDomain m t =
@@ -309,8 +315,8 @@ pathDomain m t =
     Just domId -> Just $ m ^. idDomain domId
     Nothing    -> Nothing
   where
-    go domId env [] = Just domId
-    go domId env (x:xs) =
+    go domId _    [] = Just domId
+    go _     env (x:xs) =
       case M.lookup x (env ^. envSubdomains) of
         Just (subDomId, subEnv) ->
           go subDomId subEnv xs
@@ -513,7 +519,14 @@ addNegativeConn pidL pidR = do
   rootId <- use moduleRootDomain
   let nconn = NegativeConn pidL pidR
   moduleDomains . ix rootId . domainNegativeConns . contains nconn .= True
- 
+
+-- | Check for a negative connection during traversal.
+isntNegativeConn :: Module l -> PortId -> PortId -> Bool
+isntNegativeConn m pidL pidR =
+  let domId = m ^. idPort pidL . portDomain in
+  let dom   = m ^. idDomain domId in
+  not $ dom ^. domainNegativeConns . contains (NegativeConn pidL pidR)
+
 -- | Create a new environment given a set of class definitions
 -- inherited from the parent environment and a set of local variables.
 newEnv :: M.Map Text (Class l) -> M.Map Text (Value l) -> Env l
@@ -726,6 +739,7 @@ evalStmt _ (A.StmtConnection _
   portL <- lookupPort pidL
   portR <- lookupPort pidR
   addNegativeConn portL portR
+  addNegativeConn portR portL
 
 evalStmt _ (A.StmtConnection l
               pidL

@@ -19,6 +19,7 @@ module CoreSyn
   , newDomain
   , newDomain'
   , anonDomain
+  , anonExplicitDomain
   , anonDomain'
   , newPort
   , newPortPos
@@ -30,6 +31,7 @@ module CoreSyn
   , left
   , right
   , neutral
+  , negative
   , bidi
   , connect
   , neutral'
@@ -71,6 +73,10 @@ anonDomain binder decls =
 anonDomain' :: Name -> [Decl] -> [ConnectAnnotation] -> Decl
 anonDomain' binder decls xs =
   annotateDecl xs (anonDomain binder decls)
+
+anonExplicitDomain :: Name -> [Decl] -> Decl
+anonExplicitDomain binder decls =
+  L.StmtAnonDomainDecl L.emptySpan True binder decls
 
 newPort :: Name -> Decl
 newPort nm = L.StmtPortDecl L.emptySpan nm []
@@ -127,6 +133,9 @@ neutral = connect L.ConnNeutral
 
 neutral' :: DomPort -> DomPort -> [ConnectAnnotation] -> Decl
 neutral' = connect' L.ConnNeutral
+
+negative :: DomPort -> DomPort -> Decl
+negative = connect L.ConnNegative
 
 bidi :: DomPort -> DomPort -> Decl
 bidi = connect L.ConnBidirectional

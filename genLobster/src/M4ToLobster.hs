@@ -599,7 +599,7 @@ outputDomtransMacro st (n, ds) = (m, domDecl) : concatMap connectArg args
 outputLobster :: M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster _ (st, subattrs) =
   domtransDecl :
-  [ L.anonDomain (toDom m) (moduleSubjPort : moduleObjPort : reverse ds)
+  [ L.anonExplicitDomain (toDom m) (moduleSubjPort : moduleObjPort : reverse ds)
     | (Just m, ds) <- Map.assocs groupedDecls ] ++
   Map.findWithDefault [] Nothing groupedDecls
   where
@@ -609,7 +609,7 @@ outputLobster _ (st, subattrs) =
     domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> (Maybe M4.ModuleId, L.Decl)
     domainDecl (ty, classes) =
       (Map.lookup (S.toId ty) (type_modules st),
-       L.anonDomain' (toDom ty) (header ++ stmts) [ann])
+       L.anonDomain' (toDom ty) (header ++ negatives ++ stmts) [ann])
       where
         header = [ L.newPortPos activePort     C.PosSubject
                  , L.newPortPos subjMemberPort C.PosSubject
@@ -617,6 +617,9 @@ outputLobster _ (st, subattrs) =
                  , L.newPortPos objMemberPort  C.PosObject
                  , L.newPortPos objAttrPort    C.PosSubject
                  ]
+        negatives = [ L.negative (L.extPort subjMemberPort) (L.extPort objMemberPort)
+                    , L.negative (L.extPort subjAttrPort)   (L.extPort objAttrPort)
+                    ]
         stmts = [ L.newPortPos (toPort c) C.PosObject | c <- Set.toList classes ]
         ann =
           if Map.member (S.fromId (S.toId ty)) (attrib_members st)

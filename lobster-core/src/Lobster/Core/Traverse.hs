@@ -463,6 +463,12 @@ checkPort m pid dName pName =
   let dom  = m ^. idDomain (port ^. portDomain) in
   dom ^. domainName == dName && port ^. portName == pName
 
+-- | Return the domain of the right-hand port of a connection.
+rightDomain :: Module l -> GConn -> DomainId
+rightDomain m conn =
+  let port = m ^. idPort (conn ^. gconnRight) in
+  port ^. portDomain
+
 -- | Evaluate a connection predicate given the incoming connection
 -- and current state.  Returns true if the connection should be
 -- followed, and a new state for the next level of the graph.
@@ -499,7 +505,25 @@ evalPred m conn st =
 getPaths :: Module l -> EdgeF l -> Int -> Graph l -> G.Node -> [Tree GConn]
 getPaths m f maxD gr node = getPaths1 m f gr initialGTState node maxD 0
 
--- internal path traversal function
+-- | Result of a path query---a mapping of leaf domains to the paths
+-- from the initial node.
+type PathSet = M.Map DomainId (S.Set [GConn])
+
+makePathSet :: Module l -> Tree GConn -> PathSet
+makePathSet m t = go M.empty [] t
+  where
+    go ps path (Node x []) =
+      ps & at (rightDomain m x) . non S.empty %~ S.insert (reverse (x : path))
+    go ps path (Node x xs) =
+      M.unionsWith S.union (map (go ps (x : path)) xs)
+
+getPathSet :: Module l -> [Tree GConn] -> PathSet
+getPathSet m ts = M.unionsWith S.union (map (makePathSet m) ts)
+
+-- Internal path traversal function:
+--
+-- This is a modified depth first search to find all simple paths
+-- that match the connection predicates, up to a maximum depth.
 getPaths1 :: Module l
           -> EdgeF l
           -> Graph l
@@ -521,12 +545,14 @@ getPaths1 m f gr st node maxD d =
         Just gc -> [Node gc forest]
         Nothing -> forest
   where
+    notNeg l =
+      case st ^. gtstateIncoming of
+        Just inc -> isntNegativeConn m (inc ^. gconnRight) (l ^. gconnLeft)
+        Nothing  -> True
     go g ts1 (n, l) =
       let (b, st1) = evalPred m l st in
-      if b
-        then
-          let st2 = st1 & gtstateIncoming .~ (Just l) in
-          let ts2 = getPaths1 m f g st2 n maxD (d + 1) in
-          ts1 ++ ts2
-        else
-          ts1
+      if b && notNeg l
+        then let st2 = st1 & gtstateIncoming .~ (Just l) in
+             let ts2 = getPaths1 m f g st2 n maxD (d + 1) in
+             ts1 ++ ts2
+        else ts1
