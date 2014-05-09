@@ -73,18 +73,18 @@ executable pp-test
                         mainland-pretty >= 0.2.7,
                         lobster-core
 
-executable eval-test
-  hs-source-dirs:       tests
-  main-is:              eval-test.hs
-  default-language:     Haskell2010
-  ghc-options:          -Wall
-  build-depends:        base >= 4.6,
-                        errors >= 1.4,
-                        bytestring >= 0.10,
-                        mainland-pretty >= 0.2.7,
-                        fgl >= 5.4,
-                        lens,
-                        lobster-core
+-- executable eval-test
+--   hs-source-dirs:       tests
+--   main-is:              eval-test.hs
+--   default-language:     Haskell2010
+--   ghc-options:          -Wall
+--   build-depends:        base >= 4.6,
+--                         errors >= 1.4,
+--                         bytestring >= 0.10,
+--                         mainland-pretty >= 0.2.7,
+--                         fgl >= 5.4,
+--                         lens,
+--                         lobster-core
 
 executable path-test
   hs-source-dirs:       tests
