@@ -42,6 +42,7 @@ module V3SPA.Server.Version where
 --
 -- - connections are now a map indexed by connection ID
 -- - added '/paths?id=N' for path queries starting at domain N
+-- - added 'left_dom' and 'right_dom' to connections
 version :: Int
 version = 5
 
