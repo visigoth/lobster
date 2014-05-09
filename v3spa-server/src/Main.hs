@@ -16,6 +16,7 @@ import V3SPA.Server.Parse
 import V3SPA.Server.Paths
 import V3SPA.Server.Import.SELinux
 import V3SPA.Server.Import.IPTables
+import V3SPA.Server.Export.SELinux
 
 ----------------------------------------------------------------------
 -- Request Handlers
@@ -35,6 +36,7 @@ site = route
   , ("/version",         handleVersion)
   , ("/import/iptables", handleImportIptables)
   , ("/import/selinux",  handleImportSELinux)
+  , ("/export/selinux",  handleExportSELinux)
   ]
 
 main :: IO ()

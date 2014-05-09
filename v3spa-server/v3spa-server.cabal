@@ -17,6 +17,7 @@ executable v3spa-server
                        V3SPA.Server.Paths,
                        V3SPA.Server.Import.SELinux,
                        V3SPA.Server.Import.IPTables,
+                       V3SPA.Server.Export.SELinux,
                        V3SPA.Server.Version
   build-depends:       base >=4.6 && <4.7,
                        containers >= 0.5,
@@ -28,6 +29,7 @@ executable v3spa-server
                        errors,
                        snap,
                        lobster-core,
+                       lobster-selinux,
                        iptables-lobster,
                        genLobster,
                        scd,
