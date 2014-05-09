@@ -15,6 +15,7 @@ import Data.Tree
 import System.Environment
 import System.Exit
 import System.IO
+import Text.PrettyPrint.Mainland
 
 import Lobster.Core
 
@@ -102,12 +103,20 @@ pathQuery m dom = do
         T.putStrLn $ d ^. domainPath <> ":"
         F.forM_ paths $ \path -> do
           T.putStrLn "  via path:"
-          F.forM_ path $ \conn -> do
+          F.forM_ path $ \node -> do
+            let conn = node ^. pathNodeConn
             T.putStrLn ("    " <> ppConn m conn <> " ")
             let perms = ppPerms m conn
             unless (T.null perms) $
               T.putStrLn ("     {" <> perms <> "}")
             -- putStr (show (getConnectionId connId) <> " ")
+          case path of
+            [] -> return ()
+            _  -> do
+              let lastNode = last path
+              case lastNode ^. pathNodeExp of
+                Just e  -> putStrLn $ "  condition: " <> (pretty 1000 (ppr e))
+                Nothing -> return ()
           T.putStrLn ""
       Nothing -> return ()
 

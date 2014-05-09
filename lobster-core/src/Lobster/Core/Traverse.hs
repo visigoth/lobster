@@ -94,6 +94,14 @@ instance Ord GConn where
 
 makeLenses ''GConn
 
+-- | Return the conditional expression for a connection, if any.
+gconnCond :: Module l -> GConn -> Maybe (Exp l)
+gconnCond m gc =
+  let conn = m ^. idConnection (gc ^. gconnId) in
+  case lookupAnnotation "CondExpr" (conn ^. connectionAnnotation) of
+    Just (e:[]) -> Just e
+    _           -> Nothing
+
 -- | A graph of domains and ports with edges labelled with
 -- connection information.
 type Graph l = GP.Gr GNode GConn
@@ -428,13 +436,15 @@ data GTState l = GTState
   { _gtstateIncoming  :: !(Maybe GConn)
   -- predicate on outgoing connections
   , _gtstateNextPred  :: !(Maybe GConnPred)
+  -- conditional expression for this path
+  , _gtstateCond      :: !(Maybe (Exp l))
   } deriving (Show, Eq, Ord)
 
 makeLenses ''GTState
 
 -- | Initial graph traversal state.
 initialGTState :: GTState l
-initialGTState = GTState Nothing Nothing
+initialGTState = GTState Nothing Nothing Nothing
 
 -- | Graph traversal edge function.  Given the current traversal
 -- state and a graph context, return the list of outgoing
@@ -463,7 +473,7 @@ endAtType m (Just inc) _ =
   let port = m ^. idPort (inc ^. gconnRight) in
   let dom  = m ^. idDomain (port ^. portDomain) in
   case lookupAnnotation "Type" (dom ^. domainAnnotation) of
-    Just x  -> False
+    Just _  -> False
     Nothing -> True
 endAtType _ _ _ = True
 
@@ -473,6 +483,15 @@ unionPred Nothing  Nothing  = Nothing
 unionPred (Just x) Nothing  = Just x
 unionPred Nothing  (Just y) = Just y
 unionPred (Just x) (Just y) = Just (And x y)
+
+-- | Combine two conditional expressions.
+unionCond :: Maybe (Exp l) -> Maybe (Exp l) -> Maybe (Exp l)
+unionCond Nothing   Nothing   = Nothing
+unionCond (Just e1) Nothing   = Just e1
+unionCond Nothing   (Just e2) = Just e2
+unionCond (Just e1) (Just e2) =
+  -- XXX using source position of first expression only
+  Just (ExpBinaryOp (label e1) e1 BinaryOpAnd e2)
 
 -- | Return true if a port matches a predicate's name.
 checkPort :: Module l -> PortId -> Text -> Text -> Bool
@@ -518,24 +537,32 @@ evalPred m conn st =
     -- successor port: add an 'EqPort' to the next hop
     go (SuccPort t1 t2) = (True, Just (EqPort t1 t2))
 
+data PathNode = PathNode
+  { _pathNodeConn   :: !GConn
+  , _pathNodeExp    :: !(Maybe (Exp ()))
+  } deriving (Show, Eq, Ord)
+
+makeLenses ''PathNode
+
 -- | Return a forest of possible paths through a module's graph given
 -- an edge function.
-getPaths :: Module l -> EdgeF l -> Int -> Graph l -> G.Node -> [Tree GConn]
+getPaths :: Module l -> EdgeF l -> Int -> Graph l -> G.Node -> [Tree PathNode]
 getPaths m f maxD gr node = getPaths1 m f gr initialGTState node maxD 0
 
 -- | Result of a path query---a mapping of leaf domains to the paths
 -- from the initial node.
-type PathSet = M.Map DomainId (S.Set [GConn])
+type PathSet = M.Map DomainId (S.Set [PathNode])
 
-makePathSet :: Module l -> Tree GConn -> PathSet
+makePathSet :: forall l. Module l -> Tree PathNode -> PathSet
 makePathSet m t = go M.empty [] t
   where
+    go :: PathSet -> [PathNode] -> Tree PathNode -> PathSet
     go ps path (Node x []) =
-      ps & at (rightDomain m x) . non S.empty %~ S.insert (reverse (x : path))
+      ps & at (rightDomain m (x ^. pathNodeConn)) . non S.empty %~ S.insert (reverse (x : path))
     go ps path (Node x xs) =
       M.unionsWith S.union (map (go ps (x : path)) xs)
 
-getPathSet :: Module l -> [Tree GConn] -> PathSet
+getPathSet :: Module l -> [Tree PathNode] -> PathSet
 getPathSet m ts = M.unionsWith S.union (map (makePathSet m) ts)
 
 -- Internal path traversal function:
@@ -549,7 +576,7 @@ getPaths1 :: Module l
           -> G.Node
           -> Int
           -> Int
-          -> [Tree GConn]
+          -> [Tree PathNode]
 getPaths1 _ _ _  _  _ maxD d
   | d > maxD = []
 getPaths1 m f gr st node maxD d =
@@ -560,7 +587,9 @@ getPaths1 m f gr st node maxD d =
       let edges  = f ctx in
       let forest = foldl' (go g1) [] edges in
       case inc of
-        Just gc -> [Node gc forest]
+        Just gc ->
+          let cond = fmap (fmap (const ())) (st ^. gtstateCond) in
+            [Node (PathNode gc cond) forest]
         Nothing -> forest
   where
     -- TODO: Consider breaking this out into a predicate on the incoming
@@ -577,9 +606,11 @@ getPaths1 m f gr st node maxD d =
         Just inc -> isntNegativeConn m (inc ^. gconnRight) (l ^. gconnLeft)
         Nothing  -> True
     go g ts1 (n, l) =
-      let (b, st1) = evalPred m l st in
+      let (b, st1) = evalPred m l st
+          cond     = gconnCond m l in
       if b && notNeg l
-        then let st2 = st1 & gtstateIncoming .~ (Just l) in
-             let ts2 = getPaths1 m f g st2 n maxD (d + 1) in
+        then let st2 = st1 & gtstateIncoming .~ (Just l)
+                           & gtstateCond     %~ unionCond cond
+                 ts2 = getPaths1 m f g st2 n maxD (d + 1) in
              ts1 ++ ts2
         else ts1

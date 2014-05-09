@@ -30,8 +30,8 @@ paramDomainId = do
   return $ maybe Nothing ((DomainId . fst <$>) . BS.readInt) r
 
 -- | Output a single path as JSON.
-pathJSON :: [GConn] -> Value
-pathJSON xs = toJSON (map (getConnectionId . view gconnId) xs)
+pathJSON :: [PathNode] -> Value
+pathJSON xs = toJSON (map (getConnectionId . view (pathNodeConn . gconnId)) xs)
 
 -- | Output a path set as JSON.
 pathSetJSON :: PathSet -> Value
