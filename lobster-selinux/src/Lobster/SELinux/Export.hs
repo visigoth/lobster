@@ -12,6 +12,7 @@ module Lobster.SELinux.Export (
   exportSELinux
   ) where
 
+import Control.Applicative
 import Control.Lens
 import Data.List (find)
 import Data.Maybe (isJust, catMaybes, fromMaybe)
@@ -48,7 +49,32 @@ portSEName :: Port l -> SEName
 portSEName = SEName . view portName
 
 -- | Information about an SELinux allow rule.
-data Allow = Allow !SEName !SEName !SEName !(S.Set SEName)
+data Allow = Allow !SEName !SEName !SEName !(S.Set SEName) (Maybe SEBoolExp)
+  deriving (Eq, Ord, Show)
+
+-- | An SELinux boolean expression.
+data SEBoolExp
+  = SEBoolVar  !SEName
+  | SEBoolLit  Bool
+  | SENot      SEBoolExp
+  | SEAnd      SEBoolExp SEBoolExp
+  | SEOr       SEBoolExp SEBoolExp
+  | SEEqual    SEBoolExp SEBoolExp
+  | SENotEqual SEBoolExp SEBoolExp
+  deriving (Eq, Ord, Show)
+
+-- | Convert a Lobster expression to an SELinux boolean expression.
+expSE :: Exp l -> Maybe SEBoolExp
+expSE e =
+  case e of
+    ExpBool (LitBool _ b)                -> return (SEBoolLit b)
+    ExpVar (VarName _ n)                 -> return (SEBoolVar (SEName n))
+    ExpUnaryOp  _    UnaryOpNot       e  -> SENot <$> expSE e
+    ExpBinaryOp _ e1 BinaryOpAnd      e2 -> SEAnd <$> expSE e1 <*> expSE e2
+    ExpBinaryOp _ e1 BinaryOpOr       e2 -> SEOr  <$> expSE e1 <*> expSE e2
+    ExpBinaryOp _ e1 BinaryOpEqual    e2 -> SEEqual <$> expSE e1 <*> expSE e2
+    ExpBinaryOp _ e1 BinaryOpNotEqual e2 -> SENotEqual <$> expSE e1 <*> expSE e2
+    _                                    -> Nothing
 
 -- | A statement in an SELinux policy.  We generate a limited set
 -- of forms of the actual allowed syntax for simplicity.
@@ -59,9 +85,22 @@ data SEStmt
   | SEAllow    !Allow
   | SETrans    !SEName !SEName !SEName !SEName
   | SECall     !SEName [SEName]   -- m4 macro call
+  deriving (Eq, Ord, Show)
 
 instance Pretty SEName where
   ppr (SEName x) = fromText x
+
+-- XXX not worrying about eliminating unnecessary parentheses
+-- here for now using fixity/associativity...
+instance Pretty SEBoolExp where
+  ppr (SEBoolVar name)   = ppr name
+  ppr (SEBoolLit True)   = text "true"
+  ppr (SEBoolLit False)  = text "false"
+  ppr (SENot e)          = parens (text "!" <> parens (ppr e))
+  ppr (SEAnd e1 e2)      = parens (ppr e1 <+> text "&&" <+> ppr e1)
+  ppr (SEOr e1 e2)       = parens (ppr e1 <+> text "||" <+> ppr e2)
+  ppr (SEEqual e1 e2)    = parens (ppr e1 <+> text "==" <+> ppr e2)
+  ppr (SENotEqual e1 e2) = parens (ppr e1 <+> text "!=" <+> ppr e2)
 
 instance Pretty SEStmt where
   ppr (SEAttr name) =
@@ -70,7 +109,11 @@ instance Pretty SEStmt where
     text "type" <+> ppr name <> semi
   ppr (SETypeAttr ty attr) =
     text "typeattribute" <+> ppr ty <+> ppr attr <> semi
-  ppr (SEAllow (Allow subj obj cls perms)) =
+  ppr (SEAllow (Allow subj obj cls perms (Just e))) =
+    text "if" <+> parens (ppr e) <+> lbrace
+              </> indent 2 (ppr (SEAllow (Allow subj obj cls perms Nothing)))
+              </> rbrace
+  ppr (SEAllow (Allow subj obj cls perms Nothing)) =
     text "allow" <+> ppr subj <+> ppr obj <+> colon <+> ppr cls
                  <+> lbrace <+> (sep $ map ppr $ S.toList perms) <+> rbrace
                  <>  semi
@@ -206,6 +249,13 @@ connPerms conn = S.fromList (anns ^.. folded . folded . expStringSEName)
   where
     anns = lookupAnnotations "Perm" (conn ^. connectionAnnotation)
 
+-- | Return the conditional expression for a connection if any.
+connConditional :: Connection l -> Maybe SEBoolExp
+connConditional conn =
+  case lookupAnnotation "CondExpr" (conn ^. connectionAnnotation) of
+    Just (e:[]) -> expSE e
+    _           -> Nothing
+
 -- | Return the subject, object, class, and permissions for a
 -- connection if it represents an allow rule.
 connIsAllow :: Module l -> Connection l -> Maybe Allow
@@ -214,15 +264,16 @@ connIsAllow m conn =
       domL  = m ^. idDomain (portL ^. portDomain)
       portR = m ^. idPort (rightPort m conn)
       domR  = m ^. idDomain (portR ^. portDomain)
+      cond  = connConditional conn
       perms = connPerms conn in
     if | domainIsTypeOrAttr domL && domainIsTypeOrAttr domR && not (S.null perms) ->
          case (portL ^. portPosition, portR ^. portPosition) of
            (PosSubject, PosObject) ->
              Just (Allow (domSEName domL) (domSEName domR)
-                         (portSEName portR) perms)
+                         (portSEName portR) perms cond)
            (PosObject, PosSubject) ->
              Just (Allow (domSEName domR) (domSEName domL)
-                         (portSEName portL) perms)
+                         (portSEName portL) perms cond)
            _ -> Nothing
        | otherwise -> Nothing
 
