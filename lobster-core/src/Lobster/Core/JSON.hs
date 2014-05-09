@@ -78,11 +78,13 @@ portJSON port =
     , "domain"        .= (port ^. portDomain . to getDomKey)
     ]
 
-connectionJSON :: Connection Span -> A.Value
-connectionJSON c =
+connectionJSON :: Module Span -> Connection Span -> A.Value
+connectionJSON m c =
   object
     [ "left"        .= (c ^. connectionLeft . to getPortKey)
+    , "left_dom"    .= ((m ^. idPort (c ^. connectionLeft)) ^. portDomain . to getDomKey)
     , "right"       .= (c ^. connectionRight . to getPortKey)
+    , "right_dom"   .= ((m ^. idPort (c ^. connectionRight)) ^. portDomain . to getDomKey)
     , "level"       .= (c ^. connectionLevel)
     , "connection"  .= (c ^. connectionType)
     , "annotations" .= (c ^. connectionAnnotation)
@@ -156,7 +158,7 @@ moduleJSON m p =
     conns    = M.fromList $ map goC $ connectionsWith m p
     goD dt   = (getDomKey (dt ^. domainTreeDomain . domainId), domainJSON m dt)
     goP port = (getPortKey (port ^. portId), portJSON port)
-    goC conn = (getConnKey (conn ^. connectionId), connectionJSON conn)
+    goC conn = (getConnKey (conn ^. connectionId), connectionJSON m conn)
 
 instance ToJSON (Module Span) where
   toJSON m = moduleJSON m mempty
