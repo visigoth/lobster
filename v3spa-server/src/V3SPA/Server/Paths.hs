@@ -51,7 +51,8 @@ handlePaths = method POST $ do
   dom    <- hoistMiscErr (note "domain not found" $ m ^? moduleDomains . ix domId)
   let mg  = moduleGraph m
   let gr  = mg ^. moduleGraphGraph
-  n      <- hoistMiscErr (note "domain not found" $ mg ^? moduleGraphDomainMap . ix (dom ^. domainId))
+  let mdm = mg ^. moduleGraphDomainMap
+  n      <- hoistMiscErr (note "domain not eligible" $ mdm ^? ix (dom ^. domainId))
 
   let ts  = getPaths m forwardEdges 10 gr n
   let ps  = getPathSet m ts
