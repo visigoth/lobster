@@ -40,6 +40,13 @@ pathSetJSON ps =
          | (DomainId domId, s) <- M.toList ps
          ]
 
+-- | Helper to filter non-type domains from a path set.
+isType :: Module l -> DomainId -> a -> Bool
+isType m domId _ = isJust ann
+  where
+    dom = m ^. idDomain domId
+    ann = lookupAnnotation "Type" (dom ^. domainAnnotation)
+
 -- | "POST /paths?id=N" --- path query
 handlePaths :: V3Snap ()
 handlePaths = method POST $ do
@@ -55,5 +62,5 @@ handlePaths = method POST $ do
   n      <- hoistMiscErr (note "domain not eligible" $ mdm ^? ix (dom ^. domainId))
 
   let ts  = getPaths m forwardEdges 10 gr n
-  let ps  = getPathSet m ts
+  let ps  = M.filterWithKey (isType m) (getPathSet m ts)
   respond (pathSetJSON ps)
