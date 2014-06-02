@@ -16,7 +16,7 @@ module Lobster.Core.Traverse where
 
 import Control.Applicative ((<|>))
 import Control.Lens
-import Control.Monad (foldM, forM_, unless)
+import Control.Monad (foldM, forM_, unless, when)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Writer
 import Data.List (find, foldl1')
@@ -472,13 +472,14 @@ initialGTEnv m f maxD limit =
 -- | Graph traversal state.  This contains data that is modified
 -- during the traversal independent of recursive depth.
 data GTState l = GTState
-  deriving (Show, Eq, Ord)
+  { _gtstateLeaves    :: S.Set G.Node
+  } deriving (Show, Eq, Ord)
 
 makeLenses ''GTState
 
 -- | Initial graph traversal state.
 initialGTState :: GTState l
-initialGTState = GTState
+initialGTState = GTState S.empty
 
 -- | A path node in a traversal result.  Contains the connection
 -- that was followed, along with the conditional expression that
@@ -621,6 +622,15 @@ withConnState l f = RWS.local go f
         env & gtenvIncoming .~ Just l
             & gtenvCond     %~ unionCond cond
 
+withQueryLimit :: a -> GT l a -> GT l a
+withQueryLimit z f = do
+  lim  <- RWS.asks (view gtenvLimit)
+  size <- RWS.gets (S.size . view gtstateLeaves)
+  case lim of
+    Just n | size < n  -> f
+           | otherwise -> return z
+    Nothing            -> f
+
 -- | Return a forest of possible paths through a module's graph given
 -- an edge function.
 getPaths :: Module l -> EdgeF l -> Int -> Graph l -> G.Node -> [Tree PathNode]
@@ -630,6 +640,23 @@ getPaths m f maxD gr node =
     GTPartial ts -> ts
   where
     env = initialGTEnv m f maxD Nothing
+    st  = initialGTState
+
+-- | Return a forest of possible paths through a module's graph
+-- given an edge function and a limit of leaf nodes to return.
+getPathsWithLimit :: Module l
+                  -> EdgeF l
+                  -> Int
+                  -> Int
+                  -> Graph l
+                  -> G.Node
+                  -> ([Tree PathNode], Bool)
+getPathsWithLimit m f maxD lim gr node =
+  case fst $ RWS.evalRWS (getPaths1 gr node 0) env st of
+    GTFull ts    -> (ts, True)
+    GTPartial ts -> (ts, False)
+  where
+    env = initialGTEnv m f maxD (Just lim)
     st  = initialGTState
 
 getPaths1 :: Graph l -> G.Node -> Int -> GT l GTResult
@@ -645,21 +672,28 @@ getPaths2 gr node d =
   case G.match node gr of
     (Nothing, _)    -> return mempty
     (Just ctx, gr') -> do
-      env       <- RWS.ask
-      let inc    = env ^. gtenvIncoming
-      let edgeF  = env ^. gtenvEdgeF
+      edgeF     <- RWS.asks (view gtenvEdgeF)
       let edges  = edgeF ctx
-      forest    <- foldM (go gr') mempty edges
-      case inc of
-        Just gc ->
-          let cond = unlabelCond $ env ^. gtenvCond in
-            return $ mapGTResult (return . Node (PathNode gc cond)) forest
-        Nothing -> return forest
+      when (null edges) $ do
+        let n = G.node' ctx
+        gtstateLeaves . contains n .= True
+      getPaths3 gr' edges d
+
+getPaths3 :: Graph l -> [(G.Node, GConn)] -> Int -> GT l GTResult
+getPaths3 gr edges d = do
+  env    <- RWS.ask
+  let inc = env ^. gtenvIncoming
+  forest <- foldM (go gr) mempty edges
+  case inc of
+    Just gc ->
+      let cond = unlabelCond $ env ^. gtenvCond in
+        return $ mapGTResult (return . Node (PathNode gc cond)) forest
+    Nothing -> return forest
   where
     go g ts1 (n, l) =
       withConnPred l ts1 $
         withConnState l $ do
-          ts2 <- getPaths1 g n (d + 1)
+          ts2 <- withQueryLimit (GTPartial []) (getPaths1 g n (d + 1))
           return (ts1 <> ts2)
 
 ----------------------------------------------------------------------
@@ -682,5 +716,3 @@ makePathSet m t = go M.empty [] t
 -- | Create a path set from a forest of path trees.
 getPathSet :: Module l -> [Tree PathNode] -> PathSet
 getPathSet m ts = M.unionsWith S.union (map (makePathSet m) ts)
-
-
