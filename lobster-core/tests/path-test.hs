@@ -26,26 +26,27 @@ import qualified Data.Text.IO  as T
 
 usage :: IO a
 usage = do
-  hPutStrLn stderr "usage: path-test FILENAME START_DOMAIN"
+  hPutStrLn stderr "usage: path-test FILENAME START_DOMAIN [LIMIT]"
   exitFailure
 
-parseArgs :: IO (FilePath, String)
+parseArgs :: IO (FilePath, String, Maybe Int)
 parseArgs = do
   args <- getArgs
   case args of
-    a:b:_ -> return (a, b)
-    _     -> usage
+    a:b:[]   -> return (a, b, Nothing)
+    a:b:c:[] -> return (a, b, Just (read c))
+    _        -> usage
 
 main :: IO ()
 main = do
-  (file, d) <- parseArgs
-  result    <- runEitherT $ readPolicy file
+  (file, d, limit) <- parseArgs
+  result           <- runEitherT $ readPolicy file
   case result of
     Left err -> error (show err)
     Right m  -> do
       let mdom = pathDomain m (T.pack d)
       case mdom of
-        Just dom -> pathQuery m dom
+        Just dom -> pathQuery m dom limit
         Nothing  -> do hPutStrLn stderr ("no such domain: " ++ d)
                        exitFailure
 
@@ -77,8 +78,8 @@ ppPerms m gc =
     [] -> ""
     _  -> T.intercalate " " (anns ^.. folded . folded . _ExpString . to getLitString)
 
-pathQuery :: Eq l => Module l -> Domain l -> IO ()
-pathQuery m dom = do
+pathQuery :: Eq l => Module l -> Domain l -> Maybe Int -> IO ()
+pathQuery m dom limit = do
   case lookupAnnotation "Type" (dom ^. domainAnnotation) of
     Just _  -> return ()
     Nothing -> do hPutStrLn stderr "domain is not a type"
@@ -86,16 +87,11 @@ pathQuery m dom = do
   let mg = moduleGraph m
   let gr = mg ^. moduleGraphGraph
   let n  = mg ^?! moduleGraphDomainMap . ix (dom ^. domainId)
-  let ts = getPaths m forwardEdges 10 gr n
-  {-
-  forMOf_ folded (leaves m ts) $ \domId -> do
-    let d = m ^. idDomain domId
-    -- only print domains that are types
-    case lookupAnnotation "Type" (d ^. domainAnnotation) of
-      Just _  -> T.putStrLn $ d ^. domainPath
-      Nothing -> return ()
-  let ps = getPathSet m ts
-  -}
+  let (ts, full) =
+        case limit of
+          Nothing -> (getPaths m forwardEdges 10 gr n, True)
+          Just l  -> getPathsWithLimit m forwardEdges 10 l gr n
+  unless full (T.putStrLn "partial results:\n")
   iforMOf_ ifolded (getPathSet m ts) $ \domId paths -> do
     let d = m ^. idDomain domId
     case lookupAnnotation "Type" (d ^. domainAnnotation) of
