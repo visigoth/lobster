@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiWayIf #-}
 --
 -- Paths.hs --- Path queries on a Lobster module.
 --
@@ -23,6 +24,15 @@ import qualified Data.ByteString.Char8 as BS
 import qualified Data.Map.Strict       as M
 import qualified Data.Set              as S
 
+-- | Path query direction.
+data GTDirection = GTForward | GTBackward
+  deriving (Eq, Ord, Show)
+
+-- | Return the edge function given a direction.
+dirEdgeF :: GTDirection -> EdgeF l
+dirEdgeF GTForward  = forwardEdges
+dirEdgeF GTBackward = backwardEdges
+
 -- | Get the domain ID from query parameters.
 paramDomainId :: V3Snap (Maybe DomainId)
 paramDomainId = do
@@ -34,6 +44,17 @@ paramLimit :: V3Snap (Maybe Int)
 paramLimit = do
   r <- getQueryParam "limit"
   return $ maybe Nothing ((fst <$>) . BS.readInt) r
+
+-- | Get the query direction from HTTP parameters.
+paramDirection :: V3Snap (Either (Error l) GTDirection)
+paramDirection = do
+  r <- getQueryParam "direction"
+  case r of
+    Nothing -> return (Right GTForward)
+    Just x
+      | x == "forward"  -> return (Right GTForward)
+      | x == "backward" -> return (Right GTBackward)
+      | otherwise       -> return (Left (MiscError "invalid direction"))
 
 -- | Output a single path as JSON.
 pathJSON :: [PathNode] -> Value
@@ -62,6 +83,8 @@ handlePaths = method POST $ do
 
   domId  <- hoistMiscErr =<< (note "parameter 'id' not supplied" <$> paramDomainId)
   dom    <- hoistMiscErr (note "domain not found" $ m ^? moduleDomains . ix domId)
+  qdir   <- hoistErr =<< paramDirection
+  let f   = dirEdgeF qdir
   limit  <- paramLimit
   let mg  = moduleGraph m
   let gr  = mg ^. moduleGraphGraph
@@ -70,7 +93,7 @@ handlePaths = method POST $ do
 
   let (ts, full) =
         case limit of
-          Nothing -> (getPaths m forwardEdges 10 gr n, True)
-          Just l  -> getPathsWithLimit m forwardEdges 10 l gr n
+          Nothing -> (getPaths m f 10 gr n, True)
+          Just l  -> getPathsWithLimit m f 10 l gr n
   let ps  = M.filterWithKey (isType m) (getPathSet m ts)
   respond (pathSetJSON ps full)
