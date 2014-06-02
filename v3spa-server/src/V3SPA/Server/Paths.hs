@@ -29,16 +29,22 @@ paramDomainId = do
   r <- getQueryParam "id"
   return $ maybe Nothing ((DomainId . fst <$>) . BS.readInt) r
 
+-- | Get the query limit from HTTP parameters.
+paramLimit :: V3Snap (Maybe Int)
+paramLimit = do
+  r <- getQueryParam "limit"
+  return $ maybe Nothing ((fst <$>) . BS.readInt) r
+
 -- | Output a single path as JSON.
 pathJSON :: [PathNode] -> Value
 pathJSON xs = toJSON (map (getConnectionId . view (pathNodeConn . gconnId)) xs)
 
 -- | Output a path set as JSON.
-pathSetJSON :: PathSet -> Value
-pathSetJSON ps =
-  object [ (pack $ show domId) .= (map pathJSON (S.toList s))
-         | (DomainId domId, s) <- M.toList ps
-         ]
+pathSetJSON :: PathSet -> Bool -> Value
+pathSetJSON ps full =
+  object $ [ (pack $ show domId) .= (map pathJSON (S.toList s))
+           | (DomainId domId, s) <- M.toList ps
+           ] ++ ["truncated" .= not full]
 
 -- | Helper to filter non-type domains from a path set.
 isType :: Module l -> DomainId -> a -> Bool
@@ -56,11 +62,15 @@ handlePaths = method POST $ do
 
   domId  <- hoistMiscErr =<< (note "parameter 'id' not supplied" <$> paramDomainId)
   dom    <- hoistMiscErr (note "domain not found" $ m ^? moduleDomains . ix domId)
+  limit  <- paramLimit
   let mg  = moduleGraph m
   let gr  = mg ^. moduleGraphGraph
   let mdm = mg ^. moduleGraphDomainMap
   n      <- hoistMiscErr (note "domain not eligible" $ mdm ^? ix (dom ^. domainId))
 
-  let ts  = getPaths m forwardEdges 10 gr n
+  let (ts, full) =
+        case limit of
+          Nothing -> (getPaths m forwardEdges 10 gr n, True)
+          Just l  -> getPathsWithLimit m forwardEdges 10 l gr n
   let ps  = M.filterWithKey (isType m) (getPathSet m ts)
-  respond (pathSetJSON ps)
+  respond (pathSetJSON ps full)
