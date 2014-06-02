@@ -16,10 +16,10 @@ module Lobster.Core.Traverse where
 
 import Control.Applicative ((<|>))
 import Control.Lens
-import Control.Monad (forM_, unless)
+import Control.Monad (foldM, forM_, unless)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Writer
-import Data.List (find, foldl', foldl1')
+import Data.List (find, foldl1')
 import Data.Maybe (fromJust, isJust, mapMaybe)
 import Data.Monoid
 import Data.Text (Text)
@@ -28,6 +28,7 @@ import Data.Tree
 import Lobster.Core.AST
 import Lobster.Core.Eval
 
+import qualified Control.Monad.Trans.RWS.Strict    as RWS
 import qualified Data.Foldable                     as F
 import qualified Data.Graph.Inductive              as G
 import qualified Data.Graph.Inductive.PatriciaTree as GP
@@ -426,29 +427,11 @@ runDomainPredBuilder :: DomainPredBuilder l a -> DomainPred l
 runDomainPredBuilder = execWriter
 
 ----------------------------------------------------------------------
--- Graph Traversal
+-- Graph Traversal Types
 
--- | The graph traversal state is the incoming connection, along
--- with the set of symbolic conditional expressions accumulated
--- along the path.
-data GTState l = GTState
-  -- incoming connection
-  { _gtstateIncoming  :: !(Maybe GConn)
-  -- predicate on outgoing connections
-  , _gtstateNextPred  :: !(Maybe GConnPred)
-  -- conditional expression for this path
-  , _gtstateCond      :: !(Maybe (Exp l))
-  } deriving (Show, Eq, Ord)
-
-makeLenses ''GTState
-
--- | Initial graph traversal state.
-initialGTState :: GTState l
-initialGTState = GTState Nothing Nothing Nothing
-
--- | Graph traversal edge function.  Given the current traversal
--- state and a graph context, return the list of outgoing
--- edges that should be followed during a graph traversal.
+-- | Graph traversal edge function.  Given the current graph
+-- context, return the list of outgoing edges that should be
+-- followed during a graph traversal.
 type EdgeF l = GContext l -> [(G.Node, GConn)]
 
 -- | Edge function to traverse forward from subject to object.
@@ -459,23 +442,79 @@ forwardEdges = G.lsuc'
 backwardEdges :: EdgeF l
 backwardEdges = G.lpre'
 
--- | Graph traversal edge predicate.  This accepts the graph
--- node being traversed, the incoming connection, and the
--- outgoing connection, and returns true if the outgoing
--- connection should be followed.
-type EdgeP l = Module l {--> GNode-} -> Maybe GConn -> GConn -> Bool
+-- | Graph traversal environment.  This contains data that is
+-- either invariant across the entire traversal, or locally
+-- rebound at each level during traversal.
+data GTEnv l = GTEnv
+  { _gtenvModule   :: Module l           -- ^ lobster module
+  , _gtenvEdgeF    :: EdgeF l            -- ^ edge function
+  , _gtenvMaxDepth :: Int                -- ^ maximum depth
+  , _gtenvLimit    :: Maybe Int          -- ^ leaf node limit
+  , _gtenvIncoming :: Maybe GConn        -- ^ incoming connection
+  , _gtenvNextPred :: Maybe GConnPred    -- ^ predicate on outgoing conn
+  , _gtenvCond     :: Maybe (Exp l)      -- ^ conditional expr for this path
+  }
 
--- | Predicate that stops when a path hits a domain with a "Type"
--- annotation with a non-empty incoming connection.  This should
--- really be in the SELinux module.
-endAtType :: EdgeP l
-endAtType m (Just inc) _ =
-  let port = m ^. idPort (inc ^. gconnRight) in
-  let dom  = m ^. idDomain (port ^. portDomain) in
-  case lookupAnnotation "Type" (dom ^. domainAnnotation) of
-    Just _  -> False
-    Nothing -> True
-endAtType _ _ _ = True
+makeLenses ''GTEnv
+
+-- | Create an initial environment given a set of parameters.
+initialGTEnv :: Module l -> EdgeF l -> Int -> Maybe Int -> GTEnv l
+initialGTEnv m f maxD limit =
+  GTEnv { _gtenvModule    = m
+        , _gtenvEdgeF     = f
+        , _gtenvMaxDepth  = maxD
+        , _gtenvLimit     = limit
+        , _gtenvIncoming  = Nothing
+        , _gtenvNextPred  = Nothing
+        , _gtenvCond      = Nothing
+        }
+
+-- | Graph traversal state.  This contains data that is modified
+-- during the traversal independent of recursive depth.
+data GTState l = GTState
+  deriving (Show, Eq, Ord)
+
+makeLenses ''GTState
+
+-- | Initial graph traversal state.
+initialGTState :: GTState l
+initialGTState = GTState
+
+-- | A path node in a traversal result.  Contains the connection
+-- that was followed, along with the conditional expression that
+-- must be satisfied.
+data PathNode = PathNode
+  { _pathNodeConn   :: !GConn
+  , _pathNodeExp    :: !(Maybe (Exp ()))
+  } deriving (Show, Eq, Ord)
+
+makeLenses ''PathNode
+
+-- | A graph traversal result---either a full or partial tree
+-- of paths originating from the start node.
+data GTResult = GTFull    [Tree PathNode]
+              | GTPartial [Tree PathNode]
+
+-- | Map a function over the forest in a traversal result.
+--
+-- (this is just monomorphic fmap)
+mapGTResult :: ([Tree PathNode] -> [Tree PathNode]) -> GTResult -> GTResult
+mapGTResult f (GTFull xs) = GTFull (f xs)
+mapGTResult f (GTPartial xs) = GTPartial (f xs)
+
+-- | Monoid instance for a traversal result.
+instance Monoid GTResult where
+  mempty = GTFull []
+  mappend (GTFull a)    (GTFull    b) = GTFull    (a ++ b)
+  mappend (GTFull a)    (GTPartial b) = GTPartial (a ++ b)
+  mappend (GTPartial a) (GTFull    b) = GTPartial (a ++ b)
+  mappend (GTPartial a) (GTPartial b) = GTPartial (a ++ b)
+
+-- | Combined reader/state monad used during graph traversal.
+type GT l a = RWS.RWS (GTEnv l) () (GTState l) a
+
+----------------------------------------------------------------------
+-- Graph Traversal Predicates
 
 -- | Combine two connection predicates.
 unionPred :: Maybe GConnPred -> Maybe GConnPred -> Maybe GConnPred
@@ -493,6 +532,10 @@ unionCond (Just e1) (Just e2) =
   -- XXX using source position of first expression only
   Just (ExpBinaryOp (label e1) e1 BinaryOpAnd e2)
 
+-- | Unlabel a conditional expression.
+unlabelCond :: Maybe (Exp l) -> Maybe (Exp ())
+unlabelCond = fmap (fmap (const ()))
+
 -- | Return true if a port matches a predicate's name.
 checkPort :: Module l -> PortId -> Text -> Text -> Bool
 checkPort m pid dName pName =
@@ -506,53 +549,127 @@ rightDomain m conn =
   let port = m ^. idPort (conn ^. gconnRight) in
   port ^. portDomain
 
--- | Evaluate a connection predicate given the incoming connection
--- and current state.  Returns true if the connection should be
--- followed, and a new state for the next level of the graph.
-evalPred :: Module l -> GConn -> GTState l -> (Bool, GTState l)
-evalPred m conn st =
-  -- union the state's predicate with the connection's
-  let predicate = unionPred (conn ^. gconnPred) (st ^. gtstateNextPred) in
-  -- trace ("evalPred: " ++ show pred) $
-  case predicate of
-    Just x  -> let (b, p) = go x in
-                 (b, st & gtstateNextPred .~ p)
-    Nothing -> (True, st)
+-- | Evaluate a predicate against a connection and environment.
+--
+-- Returns a boolean and any additional predicates to union
+-- into the next hop.
+evalPred :: GTEnv l -> GConn -> GConnPred -> (Bool, Maybe GConnPred)
+evalPred env conn (And x y) =
+  let (b1, p1) = evalPred env conn x in
+  let (b2, p2) = evalPred env conn y in
+  if b1 && b2
+    then (True, unionPred p1 p2)
+    else (False, Nothing)
+-- equal port: check right port of current connection
+evalPred env conn (EqPort t1 t2) =
+  (checkPort (env ^. gtenvModule) (conn ^. gconnRight) t1 t2, Nothing)
+-- predeccessor port: check left port of incoming connection
+evalPred env _ (PredPort t1 t2) =
+  case env ^. gtenvIncoming of
+    Just x   -> (checkPort (env ^. gtenvModule) (x ^. gconnLeft) t1 t2, Nothing)
+    Nothing  -> (False, Nothing)
+-- successor port: add an 'EqPort' to the next hop
+evalPred _ _ (SuccPort t1 t2) =
+  (True, Just (EqPort t1 t2))
+
+-- | Return true if a connection is non-negative during traversal.
+isntNegative :: GConn -> GT l Bool
+isntNegative l = do
+  env <- RWS.ask
+  let m = env ^. gtenvModule
+  case env ^. gtenvIncoming of
+    Just inc -> return $! isntNegativeConn m (inc ^. gconnRight) (l ^. gconnLeft)
+    Nothing  -> return $! True
+ 
+-- | Evaluate a connection's predicate against the current
+-- traversal environment, executing the body in a locally
+-- modified environment if the connection should be followed,
+-- or returning a default value if not.  This also checks for
+-- negative connections.
+withConnPred :: GConn -> a -> GT l a -> GT l a
+withConnPred conn z f = do
+  -- union the current predicate with the connection's
+  env       <- RWS.ask
+  let pred1  = env ^. gtenvNextPred
+  let pred2  = conn ^. gconnPred
+  let pred3  = unionPred pred1 pred2
+  case pred3 of
+    Just x -> do
+      let (b, pred4) = evalPred env conn x
+      notNeg <- isntNegative conn
+      -- predicate exists, if it is true, execute body
+      -- with locally bound next hop predicate
+      if b && notNeg
+        then RWS.local (gtenvNextPred .~ pred4) f
+        else return z
+    -- no predicate, execute body in unmodified env
+    -- if connection is non-negative
+    Nothing -> do
+      notNeg <- isntNegative conn
+      if notNeg
+        then f
+        else return z
+
+-- | Locally bind the environment's incoming connection and
+-- conditional expression for a connection that is about to
+-- be traversed.
+withConnState :: GConn -> GT l a -> GT l a
+withConnState l f = RWS.local go f
   where
-    -- check a predicate and return any additional predicates
-    -- to 'and' into the state for the next hop
-    go (And x y) =
-      let (b1, p1) = go x in
-      let (b2, p2) = go y in
-      if b1 && b2
-        then (True, unionPred p1 p2)
-        else (False, Nothing)
-    -- equal port: check right port of current connection
-    go (EqPort t1 t2) = (checkPort m (conn ^. gconnRight) t1 t2, Nothing)
-    -- predeccessor port: check left port of incoming connection
-    go (PredPort t1 t2) =
-      case st ^. gtstateIncoming of
-        Just inc -> (checkPort m (inc ^. gconnLeft) t1 t2, Nothing)
-        Nothing  -> (False, Nothing)
-    -- successor port: add an 'EqPort' to the next hop
-    go (SuccPort t1 t2) = (True, Just (EqPort t1 t2))
-
-data PathNode = PathNode
-  { _pathNodeConn   :: !GConn
-  , _pathNodeExp    :: !(Maybe (Exp ()))
-  } deriving (Show, Eq, Ord)
-
-makeLenses ''PathNode
+    go env =
+      let cond = gconnCond (env ^. gtenvModule) l in
+        env & gtenvIncoming .~ Just l
+            & gtenvCond     %~ unionCond cond
 
 -- | Return a forest of possible paths through a module's graph given
 -- an edge function.
 getPaths :: Module l -> EdgeF l -> Int -> Graph l -> G.Node -> [Tree PathNode]
-getPaths m f maxD gr node = getPaths1 m f gr initialGTState node maxD 0
+getPaths m f maxD gr node =
+  case fst $ RWS.evalRWS (getPaths1 gr node 0) env st of
+    GTFull ts    -> ts
+    GTPartial ts -> ts
+  where
+    env = initialGTEnv m f maxD Nothing
+    st  = initialGTState
+
+getPaths1 :: Graph l -> G.Node -> Int -> GT l GTResult
+getPaths1 gr node d = do
+  env <- RWS.ask
+  let maxD = env ^. gtenvMaxDepth
+  if d > maxD
+    then return mempty
+    else getPaths2 gr node d
+
+getPaths2 :: Graph l -> G.Node -> Int -> GT l GTResult
+getPaths2 gr node d =
+  case G.match node gr of
+    (Nothing, _)    -> return mempty
+    (Just ctx, gr') -> do
+      env       <- RWS.ask
+      let inc    = env ^. gtenvIncoming
+      let edgeF  = env ^. gtenvEdgeF
+      let edges  = edgeF ctx
+      forest    <- foldM (go gr') mempty edges
+      case inc of
+        Just gc ->
+          let cond = unlabelCond $ env ^. gtenvCond in
+            return $ mapGTResult (return . Node (PathNode gc cond)) forest
+        Nothing -> return forest
+  where
+    go g ts1 (n, l) =
+      withConnPred l ts1 $
+        withConnState l $ do
+          ts2 <- getPaths1 g n (d + 1)
+          return (ts1 <> ts2)
+
+----------------------------------------------------------------------
+-- Path Sets
 
 -- | Result of a path query---a mapping of leaf domains to the paths
 -- from the initial node.
 type PathSet = M.Map DomainId (S.Set [PathNode])
 
+-- | Create a path set from a single path tree.
 makePathSet :: forall l. Module l -> Tree PathNode -> PathSet
 makePathSet m t = go M.empty [] t
   where
@@ -562,55 +679,8 @@ makePathSet m t = go M.empty [] t
     go ps path (Node x xs) =
       M.unionsWith S.union (map (go ps (x : path)) xs)
 
+-- | Create a path set from a forest of path trees.
 getPathSet :: Module l -> [Tree PathNode] -> PathSet
 getPathSet m ts = M.unionsWith S.union (map (makePathSet m) ts)
 
--- Internal path traversal function:
---
--- This is a modified depth first search to find all simple paths
--- that match the connection predicates, up to a maximum depth.
-getPaths1 :: Module l
-          -> EdgeF l
-          -> Graph l
-          -> GTState l
-          -> G.Node
-          -> Int
-          -> Int
-          -> [Tree PathNode]
-getPaths1 _ _ _  _  _ maxD d
-  | d > maxD = []
-getPaths1 m f gr st node maxD d =
-  case G.match node gr of
-    (Nothing, _)   -> []
-    (Just ctx, g1) ->
-      let inc    = st ^. gtstateIncoming in
-      let edges  = f ctx in
-      let forest = foldl' (go g1) [] edges in
-      case inc of
-        Just gc ->
-          let cond = fmap (fmap (const ())) (st ^. gtstateCond) in
-            [Node (PathNode gc cond) forest]
-        Nothing -> forest
-  where
-    -- TODO: Consider breaking this out into a predicate on the incoming
-    -- and outgoing connections so we can customize the traversal.
-    --
-    -- It would be interesting to run custom traversals like:
-    --
-    -- - Only generate paths until they end at an object port
-    --   in a domain with the "Type" attribute.
-    --
-    -- - Disable all implicit connections within a domain.
-    notNeg l =
-      case st ^. gtstateIncoming of
-        Just inc -> isntNegativeConn m (inc ^. gconnRight) (l ^. gconnLeft)
-        Nothing  -> True
-    go g ts1 (n, l) =
-      let (b, st1) = evalPred m l st
-          cond     = gconnCond m l in
-      if b && notNeg l
-        then let st2 = st1 & gtstateIncoming .~ (Just l)
-                           & gtstateCond     %~ unionCond cond
-                 ts2 = getPaths1 m f g st2 n maxD (d + 1) in
-             ts1 ++ ts2
-        else ts1
+
