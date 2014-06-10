@@ -427,10 +427,11 @@ outputModule i =
   L.mkAnnotation (L.mkName "Module")
     [L.annotationString (S.idString i)]
 
-outputPerm :: S.PermissionId -> L.ConnectAnnotation
-outputPerm p =
+outputPerm :: S.ClassId -> S.PermissionId -> L.ConnectAnnotation
+outputPerm cls p =
   L.mkAnnotation (L.mkName "Perm")
-    [L.annotationString (S.idString p)]
+    [ L.annotationString (S.idString cls)
+    , L.annotationString (S.idString p)]
 
 outputPos :: P.Pos -> L.ConnectAnnotation
 outputPos (P.Pos fname _ l c) =
@@ -493,7 +494,7 @@ outputAllowRule st (AllowRule subject object cls conds, m) =
   moduleEdges st
     (S.toId subject, activePort)
     (S.toId object, toPort cls)
-    (map outputPerm perms ++ map outputCond conds ++ map outputPos ps)
+    (map (outputPerm cls) perms ++ map outputCond conds ++ map outputPos ps)
   where
     perms = Map.keys m
     ps = Set.toList (Set.unions (Map.elems m))
@@ -541,16 +542,16 @@ domtransDecl =
     , L.newPortPos d3_active C.PosObject
     , L.newPortPos d3_proc   C.PosSubject
     , L.neutral' (L.extPort d1_active) (L.extPort d2_file)
-        [outputPerm (S.mkId "x_file_perms")]
+        (map (perm (S.mkId "file")) ["getattr", "open", "read", "execute"])
     , L.neutral' (L.extPort d1_active) (L.extPort d3_proc)
-        [outputPerm (S.mkId "transition"),
+        [outputPerm (S.mkId "process") (S.mkId "transition"),
          L.mkAnnotation (L.mkName "TypeTransition") [L.annotationName d2_name]]
     , L.neutral' (L.extPort d3_active) (L.extPort d1_fd)
-        [outputPerm (S.mkId "use")]
+        [outputPerm (S.mkId "fd") (S.mkId "use")]
     , L.neutral' (L.extPort d3_active) (L.extPort d1_fifo)
-        [outputPerm (S.mkId "rw_fifo_file_perms")]
+        (map (perm (S.mkId "fifo_file")) ["getattr", "open", "read", "write", "append", "ioctl", "lock"])
     , L.neutral' (L.extPort d3_active) (L.extPort d1_proc)
-        [outputPerm (S.mkId "sigchld")]
+        [outputPerm (S.mkId "process") (S.mkId "sigchld")]
     ]
   where
     d1_active = L.mkName "d1_active"
@@ -561,6 +562,7 @@ domtransDecl =
     d3_active = L.mkName "d3_active"
     d3_proc   = L.mkName "d3_process"
     d2_name   = L.mkName "d2_name"
+    perm cls  = outputPerm cls . S.mkId
 
 outputDomtransMacro :: St -> (S.Identifier, [S.TypeOrAttributeId]) -> [(Maybe M4.ModuleId, L.Decl)]
 outputDomtransMacro st (n, ds) = (m, domDecl) : concatMap connectArg args
@@ -693,8 +695,7 @@ toLobster subattributes policy0 = do
   let classSetMacros =
         Map.fromList
           [ (i, toList ids)
-          | ClassPermissionDef i ids _ <- classPermissionDefs policy0
-          , "_class_set" `isSuffixOf` S.idString i ]
+          | ClassPermissionDef i ids _ <- classPermissionDefs policy0 ]
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
   let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
   let action = processPolicy policy >> processAttributes >> processSubAttributes subattributes

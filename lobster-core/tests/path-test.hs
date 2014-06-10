@@ -6,12 +6,14 @@
 -- All Rights Reserved.
 --
 
+import Control.Applicative ((<$>))
 import Control.Error (runEitherT)
 import Control.Lens
 import Control.Monad (unless)
-import Data.Monoid ((<>))
+import Data.Maybe (catMaybes)
+import Data.Monoid
 import Data.Text (Text)
-import Data.Tree
+import System.Console.GetOpt
 import System.Environment
 import System.Exit
 import System.IO
@@ -24,51 +26,102 @@ import qualified Data.Set      as S
 import qualified Data.Text     as T
 import qualified Data.Text.IO  as T
 
-usage :: IO a
-usage = do
-  hPutStrLn stderr "usage: path-test FILENAME START_DOMAIN [LIMIT]"
+----------------------------------------------------------------------
+-- Option Processing
+
+data GTDirection = GTForward | GTBackward
+  deriving (Eq, Ord, Show)
+
+data Options = Options
+  { optionLimit       :: Maybe Int
+  , optionDirection   :: GTDirection
+  , optionPerms       :: Maybe (S.Set Perm)
+  , optionTransPerms  :: Maybe (S.Set Perm)
+  } deriving (Eq, Ord, Show)
+
+defaultOptions :: Options
+defaultOptions = Options
+  { optionLimit       = Nothing
+  , optionDirection   = GTForward
+  , optionPerms       = Nothing
+  , optionTransPerms  = Nothing
+  }
+
+parsePerms :: Text -> S.Set Perm
+parsePerms t = S.fromList (catMaybes (map parsePerm xs))
+  where
+    xs = T.splitOn "," t
+
+options :: [OptDescr (Endo Options)]
+options =
+  [ Option ['l'] ["limit"] (ReqArg (Endo . opt_limit) "N")
+    "maximum number of leaves to return"
+  , Option ['d'] ["direction"] (ReqArg (Endo . opt_direction) "DIR")
+    "traversal direction, 'forward' or 'backward'"
+  , Option ['p'] ["perms"] (ReqArg (Endo . opt_perms) "PERM1,PERM2...")
+    "filter starting connections on permission list"
+  , Option ['t'] ["trans-perms"] (ReqArg (Endo . opt_trans_perms) "PERM1,PERM2...")
+    "filter transitive connections on permission list"
+  ]
+    where
+      opt_limit x opts =
+        opts { optionLimit = Just (read x) }
+      opt_direction x opts
+        | x == "forward"  = opts { optionDirection = GTForward }
+        | x == "backward" = opts { optionDirection = GTBackward }
+        | otherwise       = error "invalid direction"
+      opt_perms x opts =
+        opts { optionPerms = Just $ parsePerms (T.pack x) }
+      opt_trans_perms x opts =
+        opts { optionTransPerms = Just $ parsePerms (T.pack x) }
+
+usageHeader :: String
+usageHeader =
+  "Usage: path-test [OPTIONS] FILENAME START_DOMAIN\n" ++
+  "Perform a path query on a Lobster module.\n"
+
+usage :: String -> IO a
+usage s = do
+  unless (null s) $
+    hPutStrLn stderr s
+  hPutStrLn stderr (usageInfo usageHeader options)
   exitFailure
 
-parseArgs :: IO (FilePath, String, Maybe Int)
+parseArgs :: IO (Options, FilePath, String)
 parseArgs = do
   args <- getArgs
-  case args of
-    a:b:[]   -> return (a, b, Nothing)
-    a:b:c:[] -> return (a, b, Just (read c))
-    _        -> usage
+  case getOpt Permute options args of
+    (f, (file:dom:[]), []) ->
+      return (appEndo (mconcat f) defaultOptions, file, dom)
+    (_, _, [])   -> usage ""
+    (_, _, errs) -> usage (concat errs)
+
+----------------------------------------------------------------------
+-- Main Program
 
 main :: IO ()
 main = do
-  (file, d, limit) <- parseArgs
-  result           <- runEitherT $ readPolicy file
+  (opts, file, d) <- parseArgs
+  print opts
+  result          <- runEitherT $ readPolicy file
   case result of
     Left err -> error (show err)
     Right m  -> do
       let mdom = pathDomain m (T.pack d)
       case mdom of
-        Just dom -> pathQuery m dom limit
+        Just dom -> pathQuery m dom opts
         Nothing  -> do hPutStrLn stderr ("no such domain: " ++ d)
                        exitFailure
 
-gconnRightDomain :: Module l -> GConn -> DomainId
-gconnRightDomain m conn = dom ^. domainId
-  where
-    port = m ^. idPort (conn ^. gconnRight)
-    dom  = m ^. idDomain (port ^. portDomain)
-
-leaves :: Module l -> [Tree GConn] -> S.Set DomainId
-leaves _ [] = S.empty
-leaves m (Node x [] : ys) =
-  S.union (S.singleton $ gconnRightDomain m x) (leaves m ys)
-leaves m (Node _ xs : ys) =
-  S.union (leaves m xs) (leaves m ys)
-
 ppConn :: Module l -> GConn -> Text
 ppConn m gc =
-  let conn  = m ^. idConnection (gc ^. gconnId) in
   let lPort = m ^. idPort (gc ^. gconnLeft) in
   let rPort = m ^. idPort (gc ^. gconnRight) in
   view portPath lPort <> " -- " <> view portPath rPort
+
+ppPermAnn :: [Exp l] -> Text
+ppPermAnn [ExpString (LitString _ c), ExpString (LitString _ p)] = c <> "." <> p
+ppPermAnn _ = "INVALID_PERM"
 
 ppPerms :: Module l -> GConn -> Text
 ppPerms m gc =
@@ -76,10 +129,20 @@ ppPerms m gc =
   let anns = lookupAnnotations "Perm" (conn ^. connectionAnnotation) in
   case anns of
     [] -> ""
-    _  -> T.intercalate " " (anns ^.. folded . folded . _ExpString . to getLitString)
+    _  -> T.intercalate " " (anns ^.. folded . to ppPermAnn)
 
-pathQuery :: Eq l => Module l -> Domain l -> Maybe Int -> IO ()
-pathQuery m dom limit = do
+dirEdgeF :: GTDirection -> EdgeF l
+dirEdgeF GTForward  = forwardEdges
+dirEdgeF GTBackward = backwardEdges
+
+optEdgeP :: Options -> Maybe [EdgeP l]
+optEdgeP opts = mconcat [a, b]
+  where
+    a = (return . filterPerm) <$> optionPerms opts
+    b = (return . filterTransPerm) <$> optionTransPerms opts
+
+pathQuery :: Eq l => Module l -> Domain l -> Options -> IO ()
+pathQuery m dom opts = do
   case lookupAnnotation "Type" (dom ^. domainAnnotation) of
     Just _  -> return ()
     Nothing -> do hPutStrLn stderr "domain is not a type"
@@ -87,10 +150,10 @@ pathQuery m dom limit = do
   let mg = moduleGraph m
   let gr = mg ^. moduleGraphGraph
   let n  = mg ^?! moduleGraphDomainMap . ix (dom ^. domainId)
-  let (ts, full) =
-        case limit of
-          Nothing -> (getPaths m forwardEdges 10 gr n, True)
-          Just l  -> getPathsWithLimit m forwardEdges 10 l gr n
+  let limit = optionLimit opts
+  let edgeF = dirEdgeF (optionDirection opts)
+  let edgeP = optEdgeP opts
+  let (ts, full) = getPaths m edgeF edgeP 10 limit gr n
   unless full (T.putStrLn "partial results:\n")
   iforMOf_ ifolded (getPathSet m ts) $ \domId paths -> do
     let d = m ^. idDomain domId
@@ -105,7 +168,6 @@ pathQuery m dom limit = do
             let perms = ppPerms m conn
             unless (T.null perms) $
               T.putStrLn ("     {" <> perms <> "}")
-            -- putStr (show (getConnectionId connId) <> " ")
           case path of
             [] -> return ()
             _  -> do

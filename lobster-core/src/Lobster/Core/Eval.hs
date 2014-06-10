@@ -519,6 +519,8 @@ addNegativeConn pidL pidR = do
   rootId <- use moduleRootDomain
   let nconn = NegativeConn pidL pidR
   moduleDomains . ix rootId . domainNegativeConns . contains nconn .= True
+  let nconn2 = NegativeConn pidR pidL
+  moduleDomains . ix rootId . domainNegativeConns . contains nconn2 .= True
 
 -- | Check for a negative connection during traversal.
 isntNegativeConn :: Module l -> PortId -> PortId -> Bool

@@ -38,6 +38,7 @@ library
                        fgl >= 5.4,
                        aeson >= 0.6.2,
                        aeson-pretty,
+                       parsec >= 3.1,
                        lens
   hs-source-dirs:      src
   build-tools:         alex, happy

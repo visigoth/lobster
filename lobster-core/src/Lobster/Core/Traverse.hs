@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ExistentialQuantification #-}
 --
 -- Traverse.hs --- Lobster graph traversal.
 --
@@ -14,16 +15,21 @@
 -- TODO: Tighten up exports.
 module Lobster.Core.Traverse where
 
-import Control.Applicative ((<|>))
+import Control.Applicative
+import Control.Error (hush)
 import Control.Lens
 import Control.Monad (foldM, forM_, unless, when)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Writer
-import Data.List (find, foldl1')
+import Data.List (find, foldl', foldl1')
 import Data.Maybe (fromJust, isJust, mapMaybe)
 import Data.Monoid
 import Data.Text (Text)
 import Data.Tree
+import Text.Parsec hiding (State, label, (<|>))
+import Text.Parsec.Text ()
+
+import Debug.Trace
 
 import Lobster.Core.AST
 import Lobster.Core.Eval
@@ -71,6 +77,13 @@ data GConnPred
 
 makePrisms ''GConnPred
 
+-- | Reverse a graph predicate.
+revPred :: GConnPred -> GConnPred
+revPred (PredPort a b) = SuccPort a b
+revPred (SuccPort a b) = PredPort a b
+revPred (EqPort a b)   = EqPort a b
+revPred (And a b)      = And (revPred a) (revPred b)
+
 -- | A graph connection.  This is "cooked" from the AST 'Connection'
 -- type so that we don't have to repeatedly parse string-based
 -- annotations and such.
@@ -79,19 +92,22 @@ data GConn = GConn
   , _gconnRight       :: !PortId
   , _gconnPred        :: !(Maybe GConnPred)
   , _gconnId          :: !ConnectionId
+  , _gconnLevel       :: !ConnLevel
   } deriving Show
 
 instance Eq GConn where
   (==) a b =
     _gconnLeft  a == _gconnLeft  b &&
     _gconnRight a == _gconnRight b &&
-    _gconnPred  a == _gconnPred  b
+    _gconnPred  a == _gconnPred  b &&
+    _gconnLevel a == _gconnLevel b
 
 instance Ord GConn where
   compare a b =
     compare (_gconnLeft  a) (_gconnLeft  b) <>
     compare (_gconnRight a) (_gconnRight b) <>
-    compare (_gconnPred  a) (_gconnPred  b)
+    compare (_gconnPred  a) (_gconnPred  b) <>
+    compare (_gconnLevel a) (_gconnLevel b)
 
 makeLenses ''GConn
 
@@ -102,6 +118,11 @@ gconnCond m gc =
   case lookupAnnotation "CondExpr" (conn ^. connectionAnnotation) of
     Just (e:[]) -> Just e
     _           -> Nothing
+
+-- | Return the annotation for a connection.
+gconnAnnotation :: Module l -> GConn -> Annotation l
+gconnAnnotation m gc =
+  m ^. idConnection (gc ^. gconnId) . connectionAnnotation
 
 -- | A graph of domains and ports with edges labelled with
 -- connection information.
@@ -159,6 +180,7 @@ gconn conn =
         , _gconnRight  = conn ^. connectionRight
         , _gconnPred   = annPred $ conn ^. connectionAnnotation
         , _gconnId     = conn ^. connectionId
+        , _gconnLevel  = conn ^. connectionLevel
         }
 
 -- | Add a domain to the current graph.
@@ -210,6 +232,16 @@ revConn conn = (`execState` conn) $ do
   connectionAnnotation %= revAnnotation
   connectionLeft       .= portR
   connectionRight      .= portL
+
+-- | Reverse the direction of a connection.
+revGConn :: GConn -> GConn
+revGConn gc =
+  GConn { _gconnLeft    = gc ^. gconnRight
+        , _gconnRight   = gc ^. gconnLeft
+        , _gconnPred    = revPred <$> gc ^. gconnPred
+        , _gconnId      = gc ^. gconnId
+        , _gconnLevel   = revLevel (gc ^. gconnLevel)
+        }
 
 connLeftPos :: Module l -> Connection l -> Position
 connLeftPos m conn =
@@ -440,7 +472,32 @@ forwardEdges = G.lsuc'
 
 -- | Edge function to traverse backward from objects to subjects.
 backwardEdges :: EdgeF l
-backwardEdges = G.lpre'
+backwardEdges ctx = [ (n, revGConn c)
+                    | (n, c) <- G.lpre' ctx
+                    ]
+
+-- | A user-supplied stateful predicate to filter connections
+-- that should be followed.
+--
+-- argh, this is still wrong.  we don't want to globally modify
+-- the state of the predicate, only locally rebind it for that
+-- subtree.  sigh...
+data EdgeP l = forall st. EdgeP st (GTEnv l -> GConn -> State st Bool)
+
+-- | Run an edge predicate, updating its internal state.
+runEdgeP :: GTEnv l -> GConn -> EdgeP l -> (Bool, EdgeP l)
+runEdgeP env conn (EdgeP s f) =
+  let (a, s') = runState (f env conn) s in
+  (a, EdgeP s' f)
+
+-- | Run a list of edge predicates, updating each predicates
+-- internal state and returning the logical AND of the
+-- return values and an updated list of predicates.
+runEdgePs :: GTEnv l -> GConn -> [EdgeP l] -> (Bool, [EdgeP l])
+runEdgePs env conn ps = foldl' go (True, []) ps'
+  where
+    ps' = map (runEdgeP env conn) ps
+    go (b, ys) (a, x) = (a && b, x : ys)
 
 -- | Graph traversal environment.  This contains data that is
 -- either invariant across the entire traversal, or locally
@@ -448,6 +505,7 @@ backwardEdges = G.lpre'
 data GTEnv l = GTEnv
   { _gtenvModule   :: Module l           -- ^ lobster module
   , _gtenvEdgeF    :: EdgeF l            -- ^ edge function
+  , _gtenvEdgeP    :: Maybe [EdgeP l]    -- ^ user edge predicate
   , _gtenvMaxDepth :: Int                -- ^ maximum depth
   , _gtenvLimit    :: Maybe Int          -- ^ leaf node limit
   , _gtenvIncoming :: Maybe GConn        -- ^ incoming connection
@@ -458,10 +516,16 @@ data GTEnv l = GTEnv
 makeLenses ''GTEnv
 
 -- | Create an initial environment given a set of parameters.
-initialGTEnv :: Module l -> EdgeF l -> Int -> Maybe Int -> GTEnv l
-initialGTEnv m f maxD limit =
+initialGTEnv :: Module l
+             -> EdgeF l
+             -> Maybe [EdgeP l]
+             -> Int
+             -> Maybe Int
+             -> GTEnv l
+initialGTEnv m f ps maxD limit =
   GTEnv { _gtenvModule    = m
         , _gtenvEdgeF     = f
+        , _gtenvEdgeP     = ps
         , _gtenvMaxDepth  = maxD
         , _gtenvLimit     = limit
         , _gtenvIncoming  = Nothing
@@ -473,7 +537,7 @@ initialGTEnv m f maxD limit =
 -- during the traversal independent of recursive depth.
 data GTState l = GTState
   { _gtstateLeaves    :: S.Set G.Node
-  } deriving (Show, Eq, Ord)
+  }
 
 makeLenses ''GTState
 
@@ -581,6 +645,19 @@ isntNegative l = do
   case env ^. gtenvIncoming of
     Just inc -> return $! isntNegativeConn m (inc ^. gconnRight) (l ^. gconnLeft)
     Nothing  -> return $! True
+
+-- | Return true if a connection should be followed based on
+-- the environment's stateful user edge predicate.  Also returns
+-- the new edge predicate set to be locally bound.
+shouldFollow :: GConn -> GT l (Bool, Maybe [EdgeP l])
+shouldFollow conn = do
+  env <- RWS.ask
+  let edgeP = env ^. gtenvEdgeP
+  case edgeP of
+    Just ps -> do
+      let (a, edgeP') = runEdgePs env conn ps
+      return (a, Just edgeP')
+    Nothing -> return (True, edgeP)
  
 -- | Evaluate a connection's predicate against the current
 -- traversal environment, executing the body in a locally
@@ -601,14 +678,21 @@ withConnPred conn z f = do
       -- predicate exists, if it is true, execute body
       -- with locally bound next hop predicate
       if b && notNeg
-        then RWS.local (gtenvNextPred .~ pred4) f
+        then (do (follow, edgeP') <- shouldFollow conn
+                 if follow
+                   then RWS.local ((gtenvNextPred .~ pred4) .
+                                   (gtenvEdgeP    .~ edgeP')) f
+                   else return z)
         else return z
     -- no predicate, execute body in unmodified env
     -- if connection is non-negative
     Nothing -> do
       notNeg <- isntNegative conn
       if notNeg
-        then f
+        then (do (follow, edgeP') <- shouldFollow conn
+                 if follow
+                   then RWS.local (gtenvEdgeP .~ edgeP') f
+                   else return z)
         else return z
 
 -- | Locally bind the environment's incoming connection and
@@ -633,30 +717,20 @@ withQueryLimit z f = do
 
 -- | Return a forest of possible paths through a module's graph given
 -- an edge function.
-getPaths :: Module l -> EdgeF l -> Int -> Graph l -> G.Node -> [Tree PathNode]
-getPaths m f maxD gr node =
-  case fst $ RWS.evalRWS (getPaths1 gr node 0) env st of
-    GTFull ts    -> ts
-    GTPartial ts -> ts
-  where
-    env = initialGTEnv m f maxD Nothing
-    st  = initialGTState
-
--- | Return a forest of possible paths through a module's graph
--- given an edge function and a limit of leaf nodes to return.
-getPathsWithLimit :: Module l
-                  -> EdgeF l
-                  -> Int
-                  -> Int
-                  -> Graph l
-                  -> G.Node
-                  -> ([Tree PathNode], Bool)
-getPathsWithLimit m f maxD lim gr node =
+getPaths :: Module l
+         -> EdgeF l
+         -> Maybe [EdgeP l]
+         -> Int
+         -> Maybe Int
+         -> Graph l
+         -> G.Node
+         -> ([Tree PathNode], Bool)
+getPaths m f ps maxD limit gr node =
   case fst $ RWS.evalRWS (getPaths1 gr node 0) env st of
     GTFull ts    -> (ts, True)
     GTPartial ts -> (ts, False)
   where
-    env = initialGTEnv m f maxD (Just lim)
+    env = initialGTEnv m f ps maxD limit
     st  = initialGTState
 
 getPaths1 :: Graph l -> G.Node -> Int -> GT l GTResult
@@ -716,3 +790,95 @@ makePathSet m t = go M.empty [] t
 -- | Create a path set from a forest of path trees.
 getPathSet :: Module l -> [Tree PathNode] -> PathSet
 getPathSet m ts = M.unionsWith S.union (map (makePathSet m) ts)
+
+----------------------------------------------------------------------
+-- Built-in Predicates
+--
+-- (These arguably belong in lobster-selinux, not here...)
+
+-- | A permission to match against connections.
+data Perm = PermAny !Text
+          | PermClass !Text !Text
+  deriving Show
+
+instance Eq Perm where
+  PermAny      p1 == PermAny      p2 = p1 == p2
+  PermAny      p1 == PermClass _  p2 = p1 == p2
+  PermClass _  p1 == PermAny      p2 = p1 == p2
+  PermClass c1 p1 == PermClass c2 p2 = c1 == c2 && p1 == p2
+
+instance Ord Perm where
+  compare (PermClass c1 p1) (PermClass c2 p2) =
+    compare c1 c2 <> compare p1 p2
+  compare (PermClass _  p1) (PermAny      p2) =
+    compare p1 p2
+  compare (PermAny      p1) (PermClass _  p2) =
+    compare p1 p2
+  compare (PermAny      p1) (PermAny      p2) =
+    compare p1 p2
+
+-- | Parse a permission of the form "class.perm" or "*.perm".
+parsePerm :: Text -> Maybe Perm
+parsePerm t = hush (parse go "" t)
+  where
+    go        = permClass <|> permAny
+    permAny   = PermAny   <$  char '*'
+                          <*  char '.'
+                          <*> fmap T.pack (many1 letter)
+    permClass = PermClass <$> fmap T.pack (many1 letter)
+                          <*  char '.'
+                          <*> fmap T.pack (many1 letter)
+
+-- | Return a set of permissions from a connection.
+gconnPerms :: Module l -> GConn -> S.Set Perm
+gconnPerms m gc = S.fromList (map go (lookupAnnotations "Perm" ann))
+  where
+    ann = m ^. idConnection (gc ^. gconnId) . connectionAnnotation
+    go [ExpString (LitString _ cls), ExpString (LitString _ perm)] =
+      PermClass cls perm
+    go _ = error "malformed permission annotation"
+
+-- | Filter the first connection with a "Perm" annotation on
+-- a list of permissions.
+filterPerm :: S.Set Perm -> EdgeP l
+filterPerm perms = EdgeP False go
+  where
+    go env conn = do
+      seen <- get
+      case seen of
+        True  -> return $! True
+        False -> do
+          let m   = env ^. gtenvModule
+          let ann = gconnAnnotation m conn
+          case lookupAnnotations "Perm" ann of
+            [] -> return $! True
+            _  -> do
+              put True
+              let ps = gconnPerms m conn
+              return $! not (S.null (S.intersection perms ps))
+
+-- | Filter all transitive connections on a list of permissions.
+--
+-- The filter state is the last set of permissions seen on a
+-- connection.
+filterTransPerm :: S.Set Perm -> EdgeP l
+filterTransPerm perms = EdgeP S.empty go
+  where
+    go env conn = do
+      let m = env ^. gtenvModule
+      let ann = gconnAnnotation m conn
+      case lookupAnnotations "Perm" ann of
+        [] -> return ()
+        _  -> put (gconnPerms m conn)
+      case env ^. gtenvIncoming of
+        Nothing  -> return $! True
+        Just inc -> do
+          let portIncR  = m ^. idPort (inc  ^. gconnRight)
+          let portConnL = m ^. idPort (conn ^. gconnLeft)
+          if (portIncR ^. portDomain == portConnL ^. portDomain) &&
+             (portIncR ^. portId     /= portConnL ^. portId) &&
+             (conn     ^. gconnLevel /= ConnLevelInternal)
+            then do ps <- get
+                    trace (show perms ++ " " ++ show ps) $
+                      return $! not (S.null (S.intersection perms ps))
+            else return True
