@@ -128,6 +128,5 @@ handlePaths = method POST $ do
 
   perms  <- paramPerms
   tperms <- paramTransPerms
-  liftIO $ print tperms
   let (ps, full) = getPaths m f perms tperms 10 limit gr n
   respond (pathSetJSON m ps full)

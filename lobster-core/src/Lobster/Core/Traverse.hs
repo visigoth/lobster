@@ -29,8 +29,6 @@ import Data.Text (Text)
 import Text.Parsec hiding (State, label, (<|>))
 import Text.Parsec.Text ()
 
-import Debug.Trace
-
 import Lobster.Core.AST
 import Lobster.Core.Eval
 
