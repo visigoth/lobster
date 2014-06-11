@@ -14,7 +14,6 @@ module V3SPA.Server.Paths
 import Control.Error
 import Control.Lens hiding ((.=))
 import Data.Aeson
-import Data.Monoid (mconcat)
 import Data.Text (Text, pack)
 import Snap
 
@@ -72,51 +71,43 @@ paramPerms = do
   return $ fmap parsePerms r
 
 -- | Get the transitive permission filter set from HTTP parameters.
-paramTransPerms :: V3Snap (Maybe (S.Set Perm))
+paramTransPerms :: V3Snap (S.Set Perm)
 paramTransPerms = do
   r <- fmap TE.decodeUtf8 <$> getQueryParam "trans_perms"
-  return $ fmap parsePerms r
-
--- | Get the edge predicate from filter query parameters.
-paramEdgeP :: V3Snap (Maybe [EdgeP l])
-paramEdgeP = do
-  perms  <- paramPerms
-  tperms <- paramTransPerms
-  return $ mconcat
-    [ return . filterPerm      <$> perms
-    , return . filterTransPerm <$> tperms
-    ]
+  return $! maybe S.empty parsePerms r
 
 -- | Output a path node as JSON.
-pathNodeJSON :: Module l -> PathNode -> Value
+pathNodeJSON :: Module l -> GTNode -> Value
 pathNodeJSON m node =
   object [ "conn"  .= connId
          , "left"  .= leftDomId
          , "right" .= rightDomId
          ]
   where
-    conn       = node ^. pathNodeConn
+    conn       = node ^. gtnodeConn
     connId     = getConnKey (conn ^. gconnId)
     leftDomId  = getDomKey (m ^. idPort (conn ^. gconnLeft)  . portDomain)
     rightDomId = getDomKey (m ^. idPort (conn ^. gconnRight) . portDomain)
 
 -- | Output a single path as JSON.
-pathJSON :: Module l -> [PathNode] -> Value
+pathJSON :: Module l -> [GTNode] -> Value
 pathJSON m xs = toJSON (map (pathNodeJSON m) xs)
 
 -- | Output a path set as JSON.
 pathSetJSON :: Module l -> PathSet -> Bool -> Value
 pathSetJSON m ps full =
   object $ [ (pack $ show domId) .= (map (pathJSON m) (S.toList s))
-           | (DomainId domId, s) <- M.toList ps
+           | (DomainId domId, s) <- M.toList (getPathSet ps)
            ] ++ ["truncated" .= not full]
 
+{-
 -- | Helper to filter non-type domains from a path set.
 isType :: Module l -> DomainId -> a -> Bool
 isType m domId _ = isJust ann
   where
     dom = m ^. idDomain domId
     ann = lookupAnnotation "Type" (dom ^. domainAnnotation)
+-}
 
 -- | "POST /paths?id=N" --- path query
 handlePaths :: V3Snap ()
@@ -129,13 +120,14 @@ handlePaths = method POST $ do
   dom    <- hoistMiscErr (note "domain not found" $ m ^? moduleDomains . ix domId)
   qdir   <- hoistErr =<< paramDirection
   let f   = dirEdgeF qdir
-  ep     <- paramEdgeP
   limit  <- paramLimit
   let mg  = moduleGraph m
   let gr  = mg ^. moduleGraphGraph
   let mdm = mg ^. moduleGraphDomainMap
   n      <- hoistMiscErr (note "domain not eligible" $ mdm ^? ix (dom ^. domainId))
 
-  let (ts, full) = getPaths m f ep 10 limit gr n
-  let ps  = M.filterWithKey (isType m) (getPathSet m ts)
+  perms  <- paramPerms
+  tperms <- paramTransPerms
+  liftIO $ print tperms
+  let (ps, full) = getPaths m f perms tperms 10 limit gr n
   respond (pathSetJSON m ps full)

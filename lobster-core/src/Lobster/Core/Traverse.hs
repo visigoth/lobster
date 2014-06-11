@@ -3,6 +3,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE MultiWayIf #-}
 --
 -- Traverse.hs --- Lobster graph traversal.
 --
@@ -18,14 +19,13 @@ module Lobster.Core.Traverse where
 import Control.Applicative
 import Control.Error (hush)
 import Control.Lens
-import Control.Monad (foldM, forM_, unless, when)
+import Control.Monad (foldM, forM_, unless)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Writer
-import Data.List (find, foldl', foldl1')
+import Data.List (find, foldl1')
 import Data.Maybe (fromJust, isJust, mapMaybe)
 import Data.Monoid
 import Data.Text (Text)
-import Data.Tree
 import Text.Parsec hiding (State, label, (<|>))
 import Text.Parsec.Text ()
 
@@ -459,7 +459,67 @@ runDomainPredBuilder :: DomainPredBuilder l a -> DomainPred l
 runDomainPredBuilder = execWriter
 
 ----------------------------------------------------------------------
--- Graph Traversal Types
+-- Graph Traversal
+
+-- | A permission to match against connections.
+data Perm = PermAny !Text
+          | PermClass !Text !Text
+  deriving Show
+
+instance Eq Perm where
+  PermAny      p1 == PermAny      p2 = p1 == p2
+  PermAny      p1 == PermClass _  p2 = p1 == p2
+  PermClass _  p1 == PermAny      p2 = p1 == p2
+  PermClass c1 p1 == PermClass c2 p2 = c1 == c2 && p1 == p2
+
+instance Ord Perm where
+  compare (PermClass c1 p1) (PermClass c2 p2) =
+    compare c1 c2 <> compare p1 p2
+  compare (PermClass _  p1) (PermAny      p2) =
+    compare p1 p2
+  compare (PermAny      p1) (PermClass _  p2) =
+    compare p1 p2
+  compare (PermAny      p1) (PermAny      p2) =
+    compare p1 p2
+
+-- | Parse a permission of the form "class.perm" or "*.perm".
+parsePerm :: Text -> Maybe Perm
+parsePerm t = hush (parse go "" t)
+  where
+    go        = permClass <|> permAny
+    permAny   = PermAny   <$  char '*'
+                          <*  char '.'
+                          <*> fmap T.pack (many1 letter)
+    permClass = PermClass <$> fmap T.pack (many1 letter)
+                          <*  char '.'
+                          <*> fmap T.pack (many1 letter)
+
+-- | Return a set of permissions from a connection.
+gconnPerms :: Module l -> GConn -> S.Set Perm
+gconnPerms m gc = S.fromList (map go (lookupAnnotations "Perm" ann))
+  where
+    ann = m ^. idConnection (gc ^. gconnId) . connectionAnnotation
+    go [ExpString (LitString _ cls), ExpString (LitString _ perm)] =
+      PermClass cls perm
+    go _ = error "malformed permission annotation"
+
+-- | A path node in the traversal result.
+data GTNode = GTNode
+  { _gtnodeConn   :: GConn
+  , _gtnodeNode   :: GNode
+  } deriving (Show, Eq, Ord)
+
+makeLenses ''GTNode
+
+-- | A map of reachable domains and their paths.
+newtype PathSet = PathSet { getPathSet :: M.Map DomainId (S.Set [GTNode]) }
+  deriving Show
+
+-- | Monoid instance that combines path lists.
+instance Monoid PathSet where
+  mempty = PathSet M.empty
+  mappend (PathSet a) (PathSet b) =
+    PathSet (M.unionWith S.union a b)
 
 -- | Graph traversal edge function.  Given the current graph
 -- context, return the list of outgoing edges that should be
@@ -471,46 +531,28 @@ forwardEdges :: EdgeF l
 forwardEdges = G.lsuc'
 
 -- | Edge function to traverse backward from objects to subjects.
+--
+-- XXX do we need to be reversing this here?
 backwardEdges :: EdgeF l
 backwardEdges ctx = [ (n, revGConn c)
                     | (n, c) <- G.lpre' ctx
                     ]
 
--- | A user-supplied stateful predicate to filter connections
--- that should be followed.
---
--- argh, this is still wrong.  we don't want to globally modify
--- the state of the predicate, only locally rebind it for that
--- subtree.  sigh...
-data EdgeP l = forall st. EdgeP st (GTEnv l -> GConn -> State st Bool)
-
--- | Run an edge predicate, updating its internal state.
-runEdgeP :: GTEnv l -> GConn -> EdgeP l -> (Bool, EdgeP l)
-runEdgeP env conn (EdgeP s f) =
-  let (a, s') = runState (f env conn) s in
-  (a, EdgeP s' f)
-
--- | Run a list of edge predicates, updating each predicates
--- internal state and returning the logical AND of the
--- return values and an updated list of predicates.
-runEdgePs :: GTEnv l -> GConn -> [EdgeP l] -> (Bool, [EdgeP l])
-runEdgePs env conn ps = foldl' go (True, []) ps'
-  where
-    ps' = map (runEdgeP env conn) ps
-    go (b, ys) (a, x) = (a && b, x : ys)
 
 -- | Graph traversal environment.  This contains data that is
 -- either invariant across the entire traversal, or locally
 -- rebound at each level during traversal.
 data GTEnv l = GTEnv
-  { _gtenvModule   :: Module l           -- ^ lobster module
-  , _gtenvEdgeF    :: EdgeF l            -- ^ edge function
-  , _gtenvEdgeP    :: Maybe [EdgeP l]    -- ^ user edge predicate
-  , _gtenvMaxDepth :: Int                -- ^ maximum depth
-  , _gtenvLimit    :: Maybe Int          -- ^ leaf node limit
-  , _gtenvIncoming :: Maybe GConn        -- ^ incoming connection
-  , _gtenvNextPred :: Maybe GConnPred    -- ^ predicate on outgoing conn
-  , _gtenvCond     :: Maybe (Exp l)      -- ^ conditional expr for this path
+  { _gtenvModule      :: Module l             -- ^ lobster module
+  , _gtenvEdgeF       :: EdgeF l              -- ^ edge function
+  , _gtenvMaxDepth    :: Int                  -- ^ maximum depth
+  , _gtenvLimit       :: Maybe Int            -- ^ leaf node limit
+  , _gtenvIncoming    :: Maybe GConn          -- ^ incoming connection
+  , _gtenvNextPred    :: Maybe GConnPred      -- ^ predicate on outgoing conn
+  , _gtenvCond        :: Maybe (Exp l)        -- ^ conditional expr for this path
+  , _gtenvPerms       :: Maybe (S.Set Perm)   -- ^ initial permission set
+  , _gtenvTransPerms  :: S.Set Perm           -- ^ transitive permissions
+  , _gtenvSegPerms    :: S.Set Perm           -- ^ current segment perms
   }
 
 makeLenses ''GTEnv
@@ -518,65 +560,38 @@ makeLenses ''GTEnv
 -- | Create an initial environment given a set of parameters.
 initialGTEnv :: Module l
              -> EdgeF l
-             -> Maybe [EdgeP l]
+             -> Maybe (S.Set Perm)
+             -> S.Set Perm
              -> Int
              -> Maybe Int
              -> GTEnv l
-initialGTEnv m f ps maxD limit =
-  GTEnv { _gtenvModule    = m
-        , _gtenvEdgeF     = f
-        , _gtenvEdgeP     = ps
-        , _gtenvMaxDepth  = maxD
-        , _gtenvLimit     = limit
-        , _gtenvIncoming  = Nothing
-        , _gtenvNextPred  = Nothing
-        , _gtenvCond      = Nothing
+initialGTEnv m f perms tperms maxD limit =
+  GTEnv { _gtenvModule      = m
+        , _gtenvEdgeF       = f
+        , _gtenvMaxDepth    = maxD
+        , _gtenvLimit       = limit
+        , _gtenvIncoming    = Nothing
+        , _gtenvNextPred    = Nothing
+        , _gtenvCond        = Nothing
+        , _gtenvPerms       = perms
+        , _gtenvTransPerms  = tperms
+        , _gtenvSegPerms    = S.empty
         }
 
 -- | Graph traversal state.  This contains data that is modified
 -- during the traversal independent of recursive depth.
-data GTState l = GTState
-  { _gtstateLeaves    :: S.Set G.Node
+data GTState = GTState
+  { _gtstateResult  :: PathSet
   }
 
 makeLenses ''GTState
 
 -- | Initial graph traversal state.
-initialGTState :: GTState l
-initialGTState = GTState S.empty
-
--- | A path node in a traversal result.  Contains the connection
--- that was followed, along with the conditional expression that
--- must be satisfied.
-data PathNode = PathNode
-  { _pathNodeConn   :: !GConn
-  , _pathNodeExp    :: !(Maybe (Exp ()))
-  } deriving (Show, Eq, Ord)
-
-makeLenses ''PathNode
-
--- | A graph traversal result---either a full or partial tree
--- of paths originating from the start node.
-data GTResult = GTFull    [Tree PathNode]
-              | GTPartial [Tree PathNode]
-
--- | Map a function over the forest in a traversal result.
---
--- (this is just monomorphic fmap)
-mapGTResult :: ([Tree PathNode] -> [Tree PathNode]) -> GTResult -> GTResult
-mapGTResult f (GTFull xs) = GTFull (f xs)
-mapGTResult f (GTPartial xs) = GTPartial (f xs)
-
--- | Monoid instance for a traversal result.
-instance Monoid GTResult where
-  mempty = GTFull []
-  mappend (GTFull a)    (GTFull    b) = GTFull    (a ++ b)
-  mappend (GTFull a)    (GTPartial b) = GTPartial (a ++ b)
-  mappend (GTPartial a) (GTFull    b) = GTPartial (a ++ b)
-  mappend (GTPartial a) (GTPartial b) = GTPartial (a ++ b)
+initialGTState :: GTState
+initialGTState = GTState mempty
 
 -- | Combined reader/state monad used during graph traversal.
-type GT l a = RWS.RWS (GTEnv l) () (GTState l) a
+type GT l a = RWS.RWS (GTEnv l) () GTState a
 
 ----------------------------------------------------------------------
 -- Graph Traversal Predicates
@@ -646,19 +661,6 @@ isntNegative l = do
     Just inc -> return $! isntNegativeConn m (inc ^. gconnRight) (l ^. gconnLeft)
     Nothing  -> return $! True
 
--- | Return true if a connection should be followed based on
--- the environment's stateful user edge predicate.  Also returns
--- the new edge predicate set to be locally bound.
-shouldFollow :: GConn -> GT l (Bool, Maybe [EdgeP l])
-shouldFollow conn = do
-  env <- RWS.ask
-  let edgeP = env ^. gtenvEdgeP
-  case edgeP of
-    Just ps -> do
-      let (a, edgeP') = runEdgePs env conn ps
-      return (a, Just edgeP')
-    Nothing -> return (True, edgeP)
- 
 -- | Evaluate a connection's predicate against the current
 -- traversal environment, executing the body in a locally
 -- modified environment if the connection should be followed,
@@ -678,21 +680,14 @@ withConnPred conn z f = do
       -- predicate exists, if it is true, execute body
       -- with locally bound next hop predicate
       if b && notNeg
-        then (do (follow, edgeP') <- shouldFollow conn
-                 if follow
-                   then RWS.local ((gtenvNextPred .~ pred4) .
-                                   (gtenvEdgeP    .~ edgeP')) f
-                   else return z)
+        then RWS.local (gtenvNextPred .~ pred4) f
         else return z
     -- no predicate, execute body in unmodified env
     -- if connection is non-negative
     Nothing -> do
       notNeg <- isntNegative conn
       if notNeg
-        then (do (follow, edgeP') <- shouldFollow conn
-                 if follow
-                   then RWS.local (gtenvEdgeP .~ edgeP') f
-                   else return z)
+        then f
         else return z
 
 -- | Locally bind the environment's incoming connection and
@@ -709,176 +704,125 @@ withConnState l f = RWS.local go f
 withQueryLimit :: a -> GT l a -> GT l a
 withQueryLimit z f = do
   lim  <- RWS.asks (view gtenvLimit)
-  size <- RWS.gets (S.size . view gtstateLeaves)
+  size <- RWS.gets (M.size . getPathSet . view gtstateResult)
   case lim of
     Just n | size < n  -> f
            | otherwise -> return z
     Nothing            -> f
 
--- | Return a forest of possible paths through a module's graph given
+getPaths1 :: Graph l -> G.Node -> [GTNode] -> Int -> Int -> GT l Bool
+getPaths1 gr node path sn d = do
+  env <- RWS.ask
+  let maxD = env ^. gtenvMaxDepth
+  if d > maxD
+    then return True
+    else getPaths2 gr node path sn d
+
+getPaths2 :: Graph l -> G.Node -> [GTNode] -> Int -> Int -> GT l Bool
+getPaths2 gr node path sn d =
+  case G.match node gr of
+    (Nothing, _)    -> return True
+    (Just ctx, gr') -> do
+      b <- processNode sn ctx path
+      if b
+        then getPaths3 gr' ctx path sn d
+        else return True
+
+isType :: GContext l -> GT l Bool
+isType ctx = do
+  m <- RWS.asks (view gtenvModule)
+  case G.lab' ctx of
+    GNodeDomain domId -> do
+      let dom = m ^. idDomain domId
+      let ann = dom ^. domainAnnotation
+      return $ isJust $ lookupAnnotation "Type" ann
+    GNodePort _ -> return False
+
+subjectPort :: GConn -> GT l (Maybe (Port l))
+subjectPort gc = do
+  m <- RWS.asks (view gtenvModule)
+  let portL = m ^. idPort (gc ^. gconnLeft)
+  let portR = m ^. idPort (gc ^. gconnRight)
+  if | portL ^. portPosition == PosSubject -> return $ Just portL
+     | portR ^. portPosition == PosSubject -> return $ Just portR
+     | otherwise                           -> return Nothing
+
+isNewSegment :: GConn -> GT l Bool
+isNewSegment gc = do
+  m <- RWS.asks (view gtenvModule)
+  let conn = m ^. idConnection (gc ^. gconnId)
+  let ann  = conn ^. connectionAnnotation
+  return $ isJust $ lookupAnnotation "Perm" ann
+
+addResult :: GContext l -> [GTNode] -> GT l Bool
+addResult ctx path = do
+  let GNodeDomain domId = G.lab' ctx
+  let ps = PathSet (M.singleton domId (S.singleton (reverse path)))
+  gtstateResult <>= ps
+  return True
+
+filterPath :: Int -> GT l Bool
+filterPath sn = do
+  perms <- RWS.asks (view gtenvSegPerms)
+  if sn == 1
+    then do
+      eperms <- RWS.asks (view gtenvPerms)
+      case eperms of
+        Just ps -> return $! not (S.null (S.intersection perms ps))
+        Nothing -> return $! True
+    else do
+      etperms <- RWS.asks (view gtenvTransPerms)
+      return $! not (S.null (S.intersection perms etperms))
+
+processNode :: Int -> GContext l -> [GTNode] -> GT l Bool
+processNode _  _   []   = return True
+processNode sn ctx path = do
+  b    <- filterPath sn
+  isTy <- isType ctx
+  if isTy
+    then (do
+      if b
+        then addResult ctx path
+        else return $! False)
+    else return b
+
+getPaths3 :: Graph l -> GContext l -> [GTNode] -> Int -> Int -> GT l Bool
+getPaths3 gr ctx path sn d = do
+  edgeF <- RWS.asks (view gtenvEdgeF)
+  let edges = edgeF ctx
+  foldM go True edges
+  where
+    go False _ = return False
+    go True (n, l) =
+      withConnPred l True $
+        withConnState l $ do
+          let path' = GTNode l (G.lab' ctx) : path
+          withQueryLimit False $ do
+            newSeg <- isNewSegment l
+            if newSeg
+              then do
+                m        <- RWS.asks (view gtenvModule)
+                let perms = gconnPerms m l
+                RWS.local (gtenvSegPerms .~ perms) $
+                  getPaths1 gr n path' (sn + 1) (d + 1)
+              else do
+                getPaths1 gr n path' sn (d + 1)
+
+-- | Return the set of possible paths through a module's graph given
 -- an edge function.
 getPaths :: Module l
          -> EdgeF l
-         -> Maybe [EdgeP l]
+         -> Maybe (S.Set Perm)
+         -> S.Set Perm
          -> Int
          -> Maybe Int
          -> Graph l
          -> G.Node
-         -> ([Tree PathNode], Bool)
-getPaths m f ps maxD limit gr node =
-  case fst $ RWS.evalRWS (getPaths1 gr node 0) env st of
-    GTFull ts    -> (ts, True)
-    GTPartial ts -> (ts, False)
+         -> (PathSet, Bool)
+getPaths m f perms tperms maxD limit gr node = (r, a)
   where
-    env = initialGTEnv m f ps maxD limit
-    st  = initialGTState
+    env       = initialGTEnv m f perms tperms maxD limit
+    st        = initialGTState
+    (a, s, _) = RWS.runRWS (getPaths1 gr node [] 0 0) env st
+    r         = s ^. gtstateResult
 
-getPaths1 :: Graph l -> G.Node -> Int -> GT l GTResult
-getPaths1 gr node d = do
-  env <- RWS.ask
-  let maxD = env ^. gtenvMaxDepth
-  if d > maxD
-    then return mempty
-    else getPaths2 gr node d
-
-getPaths2 :: Graph l -> G.Node -> Int -> GT l GTResult
-getPaths2 gr node d =
-  case G.match node gr of
-    (Nothing, _)    -> return mempty
-    (Just ctx, gr') -> do
-      edgeF     <- RWS.asks (view gtenvEdgeF)
-      let edges  = edgeF ctx
-      when (null edges) $ do
-        let n = G.node' ctx
-        gtstateLeaves . contains n .= True
-      getPaths3 gr' edges d
-
-getPaths3 :: Graph l -> [(G.Node, GConn)] -> Int -> GT l GTResult
-getPaths3 gr edges d = do
-  env    <- RWS.ask
-  let inc = env ^. gtenvIncoming
-  forest <- foldM (go gr) mempty edges
-  case inc of
-    Just gc ->
-      let cond = unlabelCond $ env ^. gtenvCond in
-        return $ mapGTResult (return . Node (PathNode gc cond)) forest
-    Nothing -> return forest
-  where
-    go g ts1 (n, l) =
-      withConnPred l ts1 $
-        withConnState l $ do
-          ts2 <- withQueryLimit (GTPartial []) (getPaths1 g n (d + 1))
-          return (ts1 <> ts2)
-
-----------------------------------------------------------------------
--- Path Sets
-
--- | Result of a path query---a mapping of leaf domains to the paths
--- from the initial node.
-type PathSet = M.Map DomainId (S.Set [PathNode])
-
--- | Create a path set from a single path tree.
-makePathSet :: forall l. Module l -> Tree PathNode -> PathSet
-makePathSet m t = go M.empty [] t
-  where
-    go :: PathSet -> [PathNode] -> Tree PathNode -> PathSet
-    go ps path (Node x []) =
-      ps & at (rightDomain m (x ^. pathNodeConn)) . non S.empty %~ S.insert (reverse (x : path))
-    go ps path (Node x xs) =
-      M.unionsWith S.union (map (go ps (x : path)) xs)
-
--- | Create a path set from a forest of path trees.
-getPathSet :: Module l -> [Tree PathNode] -> PathSet
-getPathSet m ts = M.unionsWith S.union (map (makePathSet m) ts)
-
-----------------------------------------------------------------------
--- Built-in Predicates
---
--- (These arguably belong in lobster-selinux, not here...)
-
--- | A permission to match against connections.
-data Perm = PermAny !Text
-          | PermClass !Text !Text
-  deriving Show
-
-instance Eq Perm where
-  PermAny      p1 == PermAny      p2 = p1 == p2
-  PermAny      p1 == PermClass _  p2 = p1 == p2
-  PermClass _  p1 == PermAny      p2 = p1 == p2
-  PermClass c1 p1 == PermClass c2 p2 = c1 == c2 && p1 == p2
-
-instance Ord Perm where
-  compare (PermClass c1 p1) (PermClass c2 p2) =
-    compare c1 c2 <> compare p1 p2
-  compare (PermClass _  p1) (PermAny      p2) =
-    compare p1 p2
-  compare (PermAny      p1) (PermClass _  p2) =
-    compare p1 p2
-  compare (PermAny      p1) (PermAny      p2) =
-    compare p1 p2
-
--- | Parse a permission of the form "class.perm" or "*.perm".
-parsePerm :: Text -> Maybe Perm
-parsePerm t = hush (parse go "" t)
-  where
-    go        = permClass <|> permAny
-    permAny   = PermAny   <$  char '*'
-                          <*  char '.'
-                          <*> fmap T.pack (many1 letter)
-    permClass = PermClass <$> fmap T.pack (many1 letter)
-                          <*  char '.'
-                          <*> fmap T.pack (many1 letter)
-
--- | Return a set of permissions from a connection.
-gconnPerms :: Module l -> GConn -> S.Set Perm
-gconnPerms m gc = S.fromList (map go (lookupAnnotations "Perm" ann))
-  where
-    ann = m ^. idConnection (gc ^. gconnId) . connectionAnnotation
-    go [ExpString (LitString _ cls), ExpString (LitString _ perm)] =
-      PermClass cls perm
-    go _ = error "malformed permission annotation"
-
--- | Filter the first connection with a "Perm" annotation on
--- a list of permissions.
-filterPerm :: S.Set Perm -> EdgeP l
-filterPerm perms = EdgeP False go
-  where
-    go env conn = do
-      seen <- get
-      case seen of
-        True  -> return $! True
-        False -> do
-          let m   = env ^. gtenvModule
-          let ann = gconnAnnotation m conn
-          case lookupAnnotations "Perm" ann of
-            [] -> return $! True
-            _  -> do
-              put True
-              let ps = gconnPerms m conn
-              return $! not (S.null (S.intersection perms ps))
-
--- | Filter all transitive connections on a list of permissions.
---
--- The filter state is the last set of permissions seen on a
--- connection.
-filterTransPerm :: S.Set Perm -> EdgeP l
-filterTransPerm perms = EdgeP S.empty go
-  where
-    go env conn = do
-      let m = env ^. gtenvModule
-      let ann = gconnAnnotation m conn
-      case lookupAnnotations "Perm" ann of
-        [] -> return ()
-        _  -> put (gconnPerms m conn)
-      case env ^. gtenvIncoming of
-        Nothing  -> return $! True
-        Just inc -> do
-          let portIncR  = m ^. idPort (inc  ^. gconnRight)
-          let portConnL = m ^. idPort (conn ^. gconnLeft)
-          if (portIncR ^. portDomain == portConnL ^. portDomain) &&
-             (portIncR ^. portId     /= portConnL ^. portId) &&
-             (conn     ^. gconnLevel /= ConnLevelInternal)
-            then do ps <- get
-                    trace (show perms ++ " " ++ show ps) $
-                      return $! not (S.null (S.intersection perms ps))
-            else return True

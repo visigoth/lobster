@@ -36,7 +36,7 @@ data Options = Options
   { optionLimit       :: Maybe Int
   , optionDirection   :: GTDirection
   , optionPerms       :: Maybe (S.Set Perm)
-  , optionTransPerms  :: Maybe (S.Set Perm)
+  , optionTransPerms  :: S.Set Perm
   } deriving (Eq, Ord, Show)
 
 defaultOptions :: Options
@@ -44,7 +44,7 @@ defaultOptions = Options
   { optionLimit       = Nothing
   , optionDirection   = GTForward
   , optionPerms       = Nothing
-  , optionTransPerms  = Nothing
+  , optionTransPerms  = S.empty
   }
 
 parsePerms :: Text -> S.Set Perm
@@ -73,7 +73,7 @@ options =
       opt_perms x opts =
         opts { optionPerms = Just $ parsePerms (T.pack x) }
       opt_trans_perms x opts =
-        opts { optionTransPerms = Just $ parsePerms (T.pack x) }
+        opts { optionTransPerms = parsePerms (T.pack x) }
 
 usageHeader :: String
 usageHeader =
@@ -135,12 +135,6 @@ dirEdgeF :: GTDirection -> EdgeF l
 dirEdgeF GTForward  = forwardEdges
 dirEdgeF GTBackward = backwardEdges
 
-optEdgeP :: Options -> Maybe [EdgeP l]
-optEdgeP opts = mconcat [a, b]
-  where
-    a = (return . filterPerm) <$> optionPerms opts
-    b = (return . filterTransPerm) <$> optionTransPerms opts
-
 pathQuery :: Eq l => Module l -> Domain l -> Options -> IO ()
 pathQuery m dom opts = do
   case lookupAnnotation "Type" (dom ^. domainAnnotation) of
@@ -152,29 +146,30 @@ pathQuery m dom opts = do
   let n  = mg ^?! moduleGraphDomainMap . ix (dom ^. domainId)
   let limit = optionLimit opts
   let edgeF = dirEdgeF (optionDirection opts)
-  let edgeP = optEdgeP opts
-  let (ts, full) = getPaths m edgeF edgeP 10 limit gr n
+  let perms = optionPerms opts
+  let tperms = optionTransPerms opts
+  -- let edgeP = optEdgeP opts
+  let (PathSet ps, full) = getPaths m edgeF perms tperms 10 limit gr n
   unless full (T.putStrLn "partial results:\n")
-  iforMOf_ ifolded (getPathSet m ts) $ \domId paths -> do
+  iforMOf_ ifolded ps $ \domId paths -> do
     let d = m ^. idDomain domId
-    case lookupAnnotation "Type" (d ^. domainAnnotation) of
-      Just _  -> do
-        T.putStrLn $ d ^. domainPath <> ":"
-        F.forM_ paths $ \path -> do
-          T.putStrLn "  via path:"
-          F.forM_ path $ \node -> do
-            let conn = node ^. pathNodeConn
-            T.putStrLn ("    " <> ppConn m conn <> " ")
-            let perms = ppPerms m conn
-            unless (T.null perms) $
-              T.putStrLn ("     {" <> perms <> "}")
-          case path of
-            [] -> return ()
-            _  -> do
-              let lastNode = last path
-              case lastNode ^. pathNodeExp of
-                Just e  -> putStrLn $ "  condition: " <> (pretty 1000 (ppr e))
-                Nothing -> return ()
-          T.putStrLn ""
-      Nothing -> return ()
+    T.putStrLn $ d ^. domainPath <> ":"
+    F.forM_ paths $ \path -> do
+      T.putStrLn "  via path:"
+      F.forM_ path $ \node -> do
+        let conn = node ^. gtnodeConn
+        T.putStrLn ("    " <> ppConn m conn <> " ")
+        let perms = ppPerms m conn
+        unless (T.null perms) $
+          T.putStrLn ("     {" <> perms <> "}")
+      {-
+      case path of
+        [] -> return ()
+        _  -> do
+          let lastNode = last path
+          case lastNode ^. pathNodeExp of
+            Just e  -> putStrLn $ "  condition: " <> (pretty 1000 (ppr e))
+            Nothing -> return ()
+      -}
+      T.putStrLn ""
 
