@@ -505,6 +505,7 @@ gconnPerms m gc = S.fromList (map go (lookupAnnotations "Perm" ann))
 data GTNode = GTNode
   { _gtnodeConn   :: GConn
   , _gtnodeNode   :: GNode
+  , _gtnodeCond   :: Maybe (Exp ())
   } deriving (Show, Eq, Ord)
 
 makeLenses ''GTNode
@@ -794,7 +795,8 @@ getPaths3 gr ctx path sn d = do
     go True (n, l) =
       withConnPred l True $
         withConnState l $ do
-          let path' = GTNode l (G.lab' ctx) : path
+          cond <- unlabelCond <$> RWS.asks (view gtenvCond)
+          let path' = GTNode l (G.lab' ctx) cond : path
           withQueryLimit False $ do
             newSeg <- isNewSegment l
             if newSeg
@@ -823,4 +825,56 @@ getPaths m f perms tperms maxD limit gr node = (r, a)
     st        = initialGTState
     (a, s, _) = RWS.runRWS (getPaths1 gr node [] 0 0) env st
     r         = s ^. gtstateResult
+
+----------------------------------------------------------------------
+-- Simple SMT Generation
+
+-- | A variable type for SMT generation.
+data SMTType = SMTBool
+  deriving (Eq, Ord, Show)
+
+smtType :: SMTType -> Text
+smtType SMTBool = "Bool"
+
+-- | A variable name and its type.
+data SMTVar = SMTVar Text SMTType
+  deriving (Eq, Ord, Show)
+
+-- | Return the free variables in an expression.
+smtVars :: Exp l -> S.Set SMTVar
+smtVars (ExpVar (VarName _ s))  = S.singleton $ SMTVar s SMTBool
+smtVars (ExpBinaryOp _ e1 _ e2) = S.union (smtVars e1) (smtVars e2)
+smtVars (ExpUnaryOp _ _ e)      = smtVars e
+smtVars (ExpParen _ e)          = smtVars e
+smtVars _                       = S.empty
+
+smtBinOp :: Text -> Exp l -> Exp l -> Text
+smtBinOp t e1 e2 = "(" <> t <> " " <> smtExp e1 <> " " <> smtExp e2 <> ")"
+
+-- | Return a declaration for an SMT variable.
+smtVarDecl :: SMTVar -> Text
+smtVarDecl (SMTVar s ty) =
+  "(declare-fun " <> s <> " () " <> smtType ty <> ")"
+
+-- | Return an SMT expression for a Lobster expression.
+smtExp :: Exp l -> Text
+smtExp (ExpVar (VarName _ s)) = s
+smtExp (ExpBinaryOp _ e1 BinaryOpAnd e2) = smtBinOp "and" e1 e2
+smtExp (ExpBinaryOp _ e1 BinaryOpOr  e2) = smtBinOp "or"  e1 e2
+smtExp (ExpBinaryOp _ e1 BinaryOpEqual e2) = smtBinOp "=" e1 e2
+smtExp (ExpBinaryOp l e1 BinaryOpNotEqual e2) =
+  smtExp (ExpUnaryOp l UnaryOpNot (ExpBinaryOp l e1 BinaryOpEqual e2))
+smtExp (ExpParen _ e) = smtExp e
+smtExp _ = error "invalid expression for SMT"
+
+-- | Return an SMT assertion for a Lobster condition.
+smtAssert :: Exp l -> Text
+smtAssert e = "(assert " <> smtExp e <> ")"
+
+smt :: Exp l -> Text
+smt e = T.intercalate "\n" decls
+  where
+    vars    = map smtVarDecl (S.toList (smtVars e))
+    asserts = [smtAssert e]
+    decls   = vars ++ asserts
 

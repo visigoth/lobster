@@ -162,14 +162,14 @@ pathQuery m dom opts = do
         let perms = ppPerms m conn
         unless (T.null perms) $
           T.putStrLn ("     {" <> perms <> "}")
-      {-
       case path of
         [] -> return ()
         _  -> do
           let lastNode = last path
-          case lastNode ^. pathNodeExp of
-            Just e  -> putStrLn $ "  condition: " <> (pretty 1000 (ppr e))
+          case lastNode ^. gtnodeCond of
+            Just e  -> do
+              putStrLn $ "  condition: " <> (pretty 1000 (ppr e))
+              T.putStrLn (smt e)
             Nothing -> return ()
-      -}
       T.putStrLn ""
 
