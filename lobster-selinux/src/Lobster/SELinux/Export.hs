@@ -97,7 +97,7 @@ instance Pretty SEBoolExp where
   ppr (SEBoolLit True)   = text "true"
   ppr (SEBoolLit False)  = text "false"
   ppr (SENot e)          = parens (text "!" <> parens (ppr e))
-  ppr (SEAnd e1 e2)      = parens (ppr e1 <+> text "&&" <+> ppr e1)
+  ppr (SEAnd e1 e2)      = parens (ppr e1 <+> text "&&" <+> ppr e2)
   ppr (SEOr e1 e2)       = parens (ppr e1 <+> text "||" <+> ppr e2)
   ppr (SEEqual e1 e2)    = parens (ppr e1 <+> text "==" <+> ppr e2)
   ppr (SENotEqual e1 e2) = parens (ppr e1 <+> text "!=" <+> ppr e2)
