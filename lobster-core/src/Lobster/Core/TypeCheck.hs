@@ -71,6 +71,34 @@ ppPos PosUnknown = "unknown"
 ppPos PosSubject = "subject"
 ppPos PosObject  = "object"
 
+-- | Return the position of the left port of a connection.
+leftPos :: Connection l -> TC l Position
+leftPos conn = do
+  m <- use tcModule
+  let level = conn ^. connectionLevel
+  let port  = m ^. idPort (conn ^. connectionLeft)
+  let pos   = port ^. portPosition
+
+  case level of
+    ConnLevelParent   -> return $! revPosition pos
+    ConnLevelChild    -> return $! pos
+    ConnLevelInternal -> return $! revPosition pos
+    ConnLevelPeer     -> return $! pos
+
+-- | Return the position of the right port of a connection.
+rightPos :: Connection l -> TC l Position
+rightPos conn = do
+  m <- use tcModule
+  let level = conn ^. connectionLevel
+  let port  = m ^. idPort (conn ^. connectionRight)
+  let pos   = port ^. portPosition
+
+  case level of
+    ConnLevelParent   -> return $! pos
+    ConnLevelChild    -> return $! revPosition pos
+    ConnLevelInternal -> return $! revPosition pos
+    ConnLevelPeer     -> return $! pos
+
 -- | Set the position of a port and mark all connections that
 -- reference that port as needing to be rechecked.
 tcInferPos :: PortId -> Position -> TC l ()
@@ -87,8 +115,7 @@ tcInferPos pid pos = do
 tcConn :: ConnectionId -> TC l ()
 tcConn connId = do
   m <- use tcModule
-  -- TODO: Add an 'idConnection' lens to module.
-  let conn = m ^?! moduleConnections . ix connId
+  let conn = m ^. idConnection connId
   let level = conn ^. connectionLevel
 
   -- get the left and right ports
@@ -157,9 +184,31 @@ tcConns = do
       tcConns
     Nothing -> return ()
 
+-- | Normalize a connection so the subject port (if any) is
+-- on the left hand side.
+tcNormalize1 :: ConnectionId -> TC l ()
+tcNormalize1 connId = do
+  m        <- use tcModule
+  let conn  = m ^. idConnection connId
+  lPos     <- leftPos  conn
+  rPos     <- rightPos conn
+
+  case (lPos, rPos) of
+    (PosObject, PosSubject) -> do
+      tcModule . moduleConnections . ix connId %= revConn
+    _ -> return ()
+
+-- | Normalize all connections to put the subject port on the
+-- left hand side.
+tcNormalize :: TC l ()
+tcNormalize = do
+  m <- use tcModule
+  mapM_ tcNormalize1 (m ^. moduleConnections . to M.keys)
+
 -- | Type check a Lobster module.
 tc :: Module l -> Either (Error l) (Module l)
-tc m = view tcModule <$> execStateT tcConns (addPortConns st)
+tc m = view tcModule <$> execStateT go (addPortConns st)
   where
+    go = tcConns >> tcNormalize
     st = TCState m M.empty (M.keysSet $ m ^. moduleConnections)
 
