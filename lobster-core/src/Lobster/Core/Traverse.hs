@@ -204,33 +204,6 @@ addImplicitDomain d = do
   gstateGraph %= G.insNode (nid, GNodeDomain domId)
   gstateDomainMap . at domId ?= nid
 
--- | Reverse a connection level if a parent/child type.
-revLevel :: ConnLevel -> ConnLevel
-revLevel ConnLevelParent   = ConnLevelChild
-revLevel ConnLevelChild    = ConnLevelParent
-revLevel ConnLevelPeer     = ConnLevelPeer
-revLevel ConnLevelInternal = ConnLevelInternal
-
--- | Reverse annotations for a connection.  This switches "Lhs"
--- to "Rhs" and vice versa.
-revAnnotation :: Annotation l -> Annotation l
-revAnnotation (Annotation xs) = Annotation (map go xs)
-  where
-    go (ty@(TypeName l name), args)
-      | name == "Lhs" = (TypeName l "Rhs", args)
-      | name == "Rhs" = (TypeName l "Lhs", args)
-      | otherwise     = (ty,                 args)
-
-revConn :: Connection l -> Connection l
-revConn conn = (`execState` conn) $ do
-  portL                <- use connectionLeft
-  portR                <- use connectionRight
-  connectionLevel      %= revLevel
-  connectionType       %= revConnType
-  connectionAnnotation %= revAnnotation
-  connectionLeft       .= portR
-  connectionRight      .= portL
-
 -- | Reverse the direction of a connection.
 revGConn :: GConn -> GConn
 revGConn gc =

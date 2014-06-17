@@ -67,6 +67,8 @@ module Lobster.Core.Eval
   , connectionType
   , connectionLabel
   , connectionAnnotation
+  , revConn
+  , revLevel
   ) where
 
 import Control.Applicative ((<$>))
@@ -295,6 +297,34 @@ makeLenses ''Port
 makeLenses ''Domain
 makeLenses ''Module
 makeLenses ''Connection
+
+-- | Reverse a connection level if a parent/child type.
+revLevel :: ConnLevel -> ConnLevel
+revLevel ConnLevelParent   = ConnLevelChild
+revLevel ConnLevelChild    = ConnLevelParent
+revLevel ConnLevelPeer     = ConnLevelPeer
+revLevel ConnLevelInternal = ConnLevelInternal
+
+-- | Reverse annotations for a connection.  This switches "Lhs"
+-- to "Rhs" and vice versa.
+revAnnotation :: A.Annotation l -> A.Annotation l
+revAnnotation (A.Annotation xs) = A.Annotation (map go xs)
+  where
+    go (ty@(A.TypeName l name), args)
+      | name == "Lhs" = (A.TypeName l "Rhs", args)
+      | name == "Rhs" = (A.TypeName l "Lhs", args)
+      | otherwise     = (ty,                 args)
+
+-- | Reverse a connection.
+revConn :: Connection l -> Connection l
+revConn conn = (`execState` conn) $ do
+  portL                <- use connectionLeft
+  portR                <- use connectionRight
+  connectionLevel      %= revLevel
+  connectionType       %= A.revConnType
+  connectionAnnotation %= revAnnotation
+  connectionLeft       .= portR
+  connectionRight      .= portL
 
 -- | A partial lens for a domain by ID in a module.
 idDomain :: DomainId -> Lens' (Module l) (Domain l)
