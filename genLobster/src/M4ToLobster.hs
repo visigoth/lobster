@@ -6,7 +6,7 @@ import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Char
 import Data.Foldable (toList)
-import Data.List (isSuffixOf)
+import Data.List (isSuffixOf, nub)
 import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Map as Map
@@ -632,7 +632,7 @@ outputLobster _ (st, subattrs) =
     domainDecls = map domainDecl (Map.assocs (object_classes st))
 
     connectionDecls :: [(Maybe M4.ModuleId, L.Decl)]
-    connectionDecls = concatMap (outputAllowRule st) (Map.assocs (allow_rules st))
+    connectionDecls = nub $ concatMap (outputAllowRule st) (Map.assocs (allow_rules st))
 
     subjAttrDecls attr ty =
       if Set.member attr (subj_attribs st)
@@ -664,7 +664,7 @@ outputLobster _ (st, subattrs) =
     domtransDecls = concatMap (outputDomtransMacro st) (Set.toList (domtrans_macros st))
 
     taggedDecls :: [(Maybe M4.ModuleId, L.Decl)]
-    taggedDecls =
+    taggedDecls = nub $
       domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
         ++ transitionDecls ++ domtransDecls
 
