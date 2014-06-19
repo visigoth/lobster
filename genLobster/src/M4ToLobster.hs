@@ -632,7 +632,7 @@ outputLobster _ (st, subattrs) =
     domainDecls = map domainDecl (Map.assocs (object_classes st))
 
     connectionDecls :: [(Maybe M4.ModuleId, L.Decl)]
-    connectionDecls = nub $ concatMap (outputAllowRule st) (Map.assocs (allow_rules st))
+    connectionDecls = concatMap (outputAllowRule st) (Map.assocs (allow_rules st))
 
     subjAttrDecls attr ty =
       if Set.member attr (subj_attribs st)
