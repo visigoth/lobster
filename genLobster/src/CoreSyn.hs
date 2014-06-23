@@ -20,6 +20,7 @@ module CoreSyn
   , newDomain'
   , anonDomain
   , anonExplicitDomain
+  , anonExplicitDomain'
   , anonDomain'
   , newPort
   , newPortPos
@@ -77,6 +78,11 @@ anonDomain' binder decls xs =
 anonExplicitDomain :: Name -> [Decl] -> Decl
 anonExplicitDomain binder decls =
   L.StmtAnonDomainDecl L.emptySpan True binder decls
+
+anonExplicitDomain' :: Name -> [Decl] -> [ConnectAnnotation] -> Decl
+anonExplicitDomain' binder decls xs =
+  annotateDecl xs (anonExplicitDomain binder decls)
+
 
 newPort :: Name -> Decl
 newPort nm = L.StmtPortDecl L.emptySpan nm []

@@ -608,25 +608,48 @@ outputLobster _ (st, subattrs) =
     moduleSubjPort = L.newPortPos (L.mkName "module_subj") C.PosSubject
     moduleObjPort  = L.newPortPos (L.mkName "module_obj")  C.PosObject
 
-    domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> (Maybe M4.ModuleId, L.Decl)
-    domainDecl (ty, classes) =
-      (Map.lookup (S.toId ty) (type_modules st),
-       L.anonDomain' (toDom ty) (header ++ negatives ++ stmts) [ann])
+    isAttr ty =
+      Map.member (S.fromId (S.toId ty)) (attrib_members st)
+
+    typeDecl (ty, classes) = (modId, decl)
       where
+        modId  = Map.lookup (S.toId ty) (type_modules st)
+        decl   = L.anonDomain' (toDom ty) (header ++ stmts) [ann]
         header = [ L.newPortPos activePort     C.PosSubject
                  , L.newPortPos subjMemberPort C.PosSubject
-                 , L.newPortPos subjAttrPort   C.PosObject
                  , L.newPortPos objMemberPort  C.PosObject
+                 ]
+        stmts  = [ L.newPortPos (toPort c) C.PosObject
+                 | c <- Set.toList classes
+                 ]
+        ann    = L.mkAnnotation (L.mkName "Type") []
+
+    attrDecl (ty, classes) = (modId, decl)
+      where
+        modId  = Map.lookup (S.toId ty) (type_modules st)
+        decl   = L.anonExplicitDomain' (toDom ty) (header ++ stmts) [ann]
+        header = [ L.newPortPos activePort     C.PosSubject
+                 , L.newPortPos subjMemberPort C.PosSubject
+                 , L.newPortPos objMemberPort  C.PosObject
+                 , L.newPortPos subjAttrPort   C.PosObject
                  , L.newPortPos objAttrPort    C.PosSubject
                  ]
-        negatives = [ L.negative (L.extPort subjMemberPort) (L.extPort objMemberPort)
-                    , L.negative (L.extPort subjAttrPort)   (L.extPort objAttrPort)
-                    ]
-        stmts = [ L.newPortPos (toPort c) C.PosObject | c <- Set.toList classes ]
-        ann =
-          if Map.member (S.fromId (S.toId ty)) (attrib_members st)
-            then L.mkAnnotation (L.mkName "Attribute") []
-            else L.mkAnnotation (L.mkName "Type") []
+        stmts  = [ L.newPortPos (toPort c) C.PosObject
+                 | c <- Set.toList classes ] ++
+                 [ L.neutral (L.extPort subjAttrPort) (L.extPort activePort)
+                 , L.neutral (L.extPort subjAttrPort) (L.extPort subjMemberPort)
+                 , L.neutral (L.extPort objAttrPort)  (L.extPort objMemberPort)
+                 ] ++
+                 [ L.neutral (L.extPort objAttrPort)  (L.extPort (toPort c))
+                 | c <- Set.toList classes
+                 ]
+        ann    = L.mkAnnotation (L.mkName "Attribute") []
+
+    domainDecl :: (S.TypeOrAttributeId, Set S.ClassId) -> (Maybe M4.ModuleId, L.Decl)
+    domainDecl (ty, classes) =
+      if isAttr ty
+        then attrDecl (ty, classes)
+        else typeDecl (ty, classes)
 
     domainDecls :: [(Maybe M4.ModuleId, L.Decl)]
     domainDecls = map domainDecl (Map.assocs (object_classes st))
