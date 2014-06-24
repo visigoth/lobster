@@ -26,15 +26,6 @@ import qualified Data.Set              as S
 import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as TE
 
--- | Path query direction.
-data GTDirection = GTForward | GTBackward
-  deriving (Eq, Ord, Show)
-
--- | Return the edge function given a direction.
-dirEdgeF :: GTDirection -> EdgeF l
-dirEdgeF GTForward  = forwardEdges
-dirEdgeF GTBackward = backwardEdges
-
 -- | Get the domain ID from query parameters.
 paramDomainId :: V3Snap (Maybe DomainId)
 paramDomainId = do
@@ -119,7 +110,6 @@ handlePaths = method POST $ do
   domId  <- hoistMiscErr =<< (note "parameter 'id' not supplied" <$> paramDomainId)
   dom    <- hoistMiscErr (note "domain not found" $ m ^? moduleDomains . ix domId)
   qdir   <- hoistErr =<< paramDirection
-  let f   = dirEdgeF qdir
   limit  <- paramLimit
   let mg  = moduleGraph m
   let gr  = mg ^. moduleGraphGraph
@@ -128,5 +118,5 @@ handlePaths = method POST $ do
 
   perms  <- paramPerms
   tperms <- paramTransPerms
-  let (ps, full) = getPaths m f perms tperms 10 limit gr n
+  let (ps, full) = getPaths m qdir perms tperms 10 limit gr n
   respond (pathSetJSON m ps full)
