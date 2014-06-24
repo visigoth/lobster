@@ -770,12 +770,6 @@ addResult ctx path = do
   let ps = PathSet (M.singleton domId (S.singleton (reverse path)))
   gtstateResult <>= ps
 
-traceM :: Monad m => String -> m ()
-traceM s = trace s $ return ()
-
-treturn :: (Monad m, Show a) => a -> m a
-treturn x = trace ("return: " ++ show x) (return x)
-
 -- | Filter a forward path traversal based on the permissions
 -- of the current segment and those set in the environment.
 -- The first returned boolean is whether to record the path

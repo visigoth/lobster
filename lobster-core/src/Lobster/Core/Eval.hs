@@ -30,7 +30,6 @@ module Lobster.Core.Eval
     -- * Domains
   , Domain()
   , DomainId(..)
-  , nodeId
   , domainId
   , domainName
   , domainClassName
@@ -137,7 +136,7 @@ instance A.Labeled Value where
   label (ValueDirection l _) = l
   label (ValuePosition l _)  = l
 
-newtype PortId = PortId Int
+newtype PortId = PortId { getPortId :: Int }
   deriving (Eq, Ord, Show)
 
 -- | A port definition.
@@ -155,11 +154,8 @@ data Port l = Port
 instance A.Labeled Port where
   label = _portLabel
 
-newtype DomainId = DomainId Int
+newtype DomainId = DomainId { getDomainId :: Int }
   deriving (Eq, Ord, Show)
-
-nodeId :: DomainId -> Int
-nodeId (DomainId x) = x
 
 -- | A 'negative connection' within a domain.  For implicit
 -- domains, this prohibits an internal connection between

@@ -114,7 +114,9 @@ ppConn :: Module l -> GConn -> Text
 ppConn m gc =
   let lPort = m ^. idPort (gc ^. gconnLeft) in
   let rPort = m ^. idPort (gc ^. gconnRight) in
+  let connId = T.pack $ show $ getConnectionId $ gc ^. gconnId in
   view portPath lPort <> " -- " <> view portPath rPort
+                      <> " (" <> connId <> ")"
 
 ppPermAnn :: [Exp l] -> Text
 ppPermAnn [ExpString (LitString _ c), ExpString (LitString _ p)] = c <> "." <> p
@@ -146,7 +148,8 @@ pathQuery m dom opts = do
   unless full (T.putStrLn "partial results:\n")
   iforMOf_ ifolded ps $ \domId paths -> do
     let d = m ^. idDomain domId
-    T.putStrLn $ d ^. domainPath <> ":"
+    let domIdT = T.pack $ show $ getDomainId $ d ^. domainId
+    T.putStrLn $ d ^. domainPath <> " (" <> domIdT <> "):"
     F.forM_ paths $ \path -> do
       T.putStrLn "  via path:"
       F.forM_ path $ \node -> do
