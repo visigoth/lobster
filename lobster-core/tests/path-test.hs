@@ -29,9 +29,6 @@ import qualified Data.Text.IO  as T
 ----------------------------------------------------------------------
 -- Option Processing
 
-data GTDirection = GTForward | GTBackward
-  deriving (Eq, Ord, Show)
-
 data Options = Options
   { optionLimit       :: Maybe Int
   , optionDirection   :: GTDirection
@@ -131,10 +128,6 @@ ppPerms m gc =
     [] -> ""
     _  -> T.intercalate " " (anns ^.. folded . to ppPermAnn)
 
-dirEdgeF :: GTDirection -> EdgeF l
-dirEdgeF GTForward  = forwardEdges
-dirEdgeF GTBackward = backwardEdges
-
 pathQuery :: Eq l => Module l -> Domain l -> Options -> IO ()
 pathQuery m dom opts = do
   case lookupAnnotation "Type" (dom ^. domainAnnotation) of
@@ -145,11 +138,11 @@ pathQuery m dom opts = do
   let gr = mg ^. moduleGraphGraph
   let n  = mg ^?! moduleGraphDomainMap . ix (dom ^. domainId)
   let limit = optionLimit opts
-  let edgeF = dirEdgeF (optionDirection opts)
+  let dir   = optionDirection opts
   let perms = optionPerms opts
   let tperms = optionTransPerms opts
   -- let edgeP = optEdgeP opts
-  let (PathSet ps, full) = getPaths m edgeF perms tperms 10 limit gr n
+  let (PathSet ps, full) = getPaths m dir perms tperms 10 limit gr n
   unless full (T.putStrLn "partial results:\n")
   iforMOf_ ifolded ps $ \domId paths -> do
     let d = m ^. idDomain domId
@@ -158,7 +151,8 @@ pathQuery m dom opts = do
       T.putStrLn "  via path:"
       F.forM_ path $ \node -> do
         let conn = node ^. gtnodeConn
-        T.putStrLn ("    " <> ppConn m conn <> " ")
+        let seg  = node ^. gtnodeSeg
+        T.putStrLn ("    " <> (T.pack $ show seg) <> " " <> ppConn m conn <> " ")
         let perms = ppPerms m conn
         unless (T.null perms) $
           T.putStrLn ("     {" <> perms <> "}")

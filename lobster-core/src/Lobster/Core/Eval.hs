@@ -74,7 +74,7 @@ module Lobster.Core.Eval
 import Control.Applicative ((<$>))
 import Control.Error
 import Control.Lens hiding (op)
-import Control.Monad (unless, when)
+import Control.Monad (unless)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 import Data.Monoid ((<>), mempty)

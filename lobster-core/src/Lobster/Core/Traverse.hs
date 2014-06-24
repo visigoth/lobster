@@ -19,7 +19,7 @@ module Lobster.Core.Traverse where
 import Control.Applicative
 import Control.Error (hush)
 import Control.Lens
-import Control.Monad (foldM, forM_, unless)
+import Control.Monad (foldM, forM_, unless, when)
 import Control.Monad.Trans.State.Strict
 import Control.Monad.Trans.Writer
 import Data.List (find, foldl1')
@@ -479,6 +479,7 @@ data GTNode = GTNode
   { _gtnodeConn   :: GConn
   , _gtnodeNode   :: GNode
   , _gtnodeCond   :: Maybe (Exp ())
+  , _gtnodeSeg    :: Int
   } deriving (Show, Eq, Ord)
 
 makeLenses ''GTNode
@@ -506,17 +507,21 @@ forwardEdges = G.lsuc'
 --
 -- XXX do we need to be reversing this here?
 backwardEdges :: EdgeF l
+-- backwardEdges = G.lpre'
 backwardEdges ctx = [ (n, revGConn c)
                     | (n, c) <- G.lpre' ctx
                     ]
 
+-- | Direction of graph traversal.
+data GTDirection = GTForward | GTBackward
+  deriving (Eq, Ord, Show)
 
 -- | Graph traversal environment.  This contains data that is
 -- either invariant across the entire traversal, or locally
 -- rebound at each level during traversal.
 data GTEnv l = GTEnv
   { _gtenvModule      :: Module l             -- ^ lobster module
-  , _gtenvEdgeF       :: EdgeF l              -- ^ edge function
+  , _gtenvDirection   :: GTDirection          -- ^ traversal direction
   , _gtenvMaxDepth    :: Int                  -- ^ maximum depth
   , _gtenvLimit       :: Maybe Int            -- ^ leaf node limit
   , _gtenvIncoming    :: Maybe GConn          -- ^ incoming connection
@@ -531,15 +536,15 @@ makeLenses ''GTEnv
 
 -- | Create an initial environment given a set of parameters.
 initialGTEnv :: Module l
-             -> EdgeF l
+             -> GTDirection
              -> Maybe (S.Set Perm)
              -> S.Set Perm
              -> Int
              -> Maybe Int
              -> GTEnv l
-initialGTEnv m f perms tperms maxD limit =
+initialGTEnv m dir perms tperms maxD limit =
   GTEnv { _gtenvModule      = m
-        , _gtenvEdgeF       = f
+        , _gtenvDirection   = dir
         , _gtenvMaxDepth    = maxD
         , _gtenvLimit       = limit
         , _gtenvIncoming    = Nothing
@@ -695,10 +700,43 @@ getPaths2 gr node path sn d =
   case G.match node gr of
     (Nothing, _)    -> return True
     (Just ctx, gr') -> do
-      b <- processNode sn ctx path
-      if b
-        then getPaths3 gr' ctx path sn d
-        else return True
+      isTy <- isType ctx
+      if isTy
+        then do
+          (isResult, keepGoing) <- filterPath sn
+          when isResult $ do
+            addResult ctx path
+          if keepGoing
+            then RWS.local (gtenvSegPerms .~ S.empty) $!
+                   getPaths3 gr' ctx path (sn + 1) d
+            else return True
+        else
+          getPaths3 gr' ctx path sn d
+
+getEdgeF :: GT l (EdgeF l)
+getEdgeF = do
+  dir <- RWS.asks (view gtenvDirection)
+  case dir of
+    GTForward  -> return $! forwardEdges
+    GTBackward -> return $! backwardEdges
+
+getPaths3 :: Graph l -> GContext l -> [GTNode] -> Int -> Int -> GT l Bool
+getPaths3 gr ctx path sn d = do
+  edgeF <- getEdgeF
+  let edges = edgeF ctx
+  foldM go True edges
+  where
+    go False _ = return False
+    go True (n, l) =
+      withConnPred l True $
+        withConnState l $ do
+          cond <- unlabelCond <$> RWS.asks (view gtenvCond)
+          let path' = GTNode l (G.lab' ctx) cond sn : path
+          withQueryLimit False $ do
+            m <- RWS.asks (view gtenvModule)
+            let perms = gconnPerms m l
+            RWS.local (gtenvSegPerms %~ S.union perms) $!
+              getPaths1 gr n path' sn (d + 1)
 
 isType :: GContext l -> GT l Bool
 isType ctx = do
@@ -726,65 +764,84 @@ isNewSegment gc = do
   let ann  = conn ^. connectionAnnotation
   return $ isJust $ lookupAnnotation "Perm" ann
 
-addResult :: GContext l -> [GTNode] -> GT l Bool
+addResult :: GContext l -> [GTNode] -> GT l ()
 addResult ctx path = do
   let GNodeDomain domId = G.lab' ctx
   let ps = PathSet (M.singleton domId (S.singleton (reverse path)))
   gtstateResult <>= ps
-  return True
 
-filterPath :: Int -> GT l Bool
-filterPath sn = do
+traceM :: Monad m => String -> m ()
+traceM s = trace s $ return ()
+
+treturn :: (Monad m, Show a) => a -> m a
+treturn x = trace ("return: " ++ show x) (return x)
+
+-- | Filter a forward path traversal based on the permissions
+-- of the current segment and those set in the environment.
+-- The first returned boolean is whether to record the path
+-- as a result, and the second is whether to continue the
+-- traversal.
+filterForward :: Int -> GT l (Bool, Bool)
+filterForward _ = do
   perms <- RWS.asks (view gtenvSegPerms)
-  if sn == 1
-    then do
-      eperms <- RWS.asks (view gtenvPerms)
-      case eperms of
-        Just ps -> return $! not (S.null (S.intersection perms ps))
-        Nothing -> return $! True
-    else do
-      etperms <- RWS.asks (view gtenvTransPerms)
-      return $! not (S.null (S.intersection perms etperms))
-
-processNode :: Int -> GContext l -> [GTNode] -> GT l Bool
-processNode _  _   []   = return True
-processNode sn ctx path = do
-  b    <- filterPath sn
-  isTy <- isType ctx
-  if isTy
-    then (do
-      if b
-        then addResult ctx path
-        else return $! False)
-    else return b
-
-getPaths3 :: Graph l -> GContext l -> [GTNode] -> Int -> Int -> GT l Bool
-getPaths3 gr ctx path sn d = do
-  edgeF <- RWS.asks (view gtenvEdgeF)
-  let edges = edgeF ctx
-  foldM go True edges
+  if S.null perms
+    then return (False, True)
+    else (,) <$> fPerms perms <*> fTransPerms perms
   where
-    go False _ = return False
-    go True (n, l) =
-      withConnPred l True $
-        withConnState l $ do
-          cond <- unlabelCond <$> RWS.asks (view gtenvCond)
-          let path' = GTNode l (G.lab' ctx) cond : path
-          withQueryLimit False $ do
-            newSeg <- isNewSegment l
-            if newSeg
-              then do
-                m        <- RWS.asks (view gtenvModule)
-                let perms = gconnPerms m l
-                RWS.local (gtenvSegPerms .~ perms) $
-                  getPaths1 gr n path' (sn + 1) (d + 1)
-              else do
-                getPaths1 gr n path' sn (d + 1)
+    fPerms segPerms = do
+      envPerms <- RWS.asks (view gtenvPerms)
+      case envPerms of
+        Just ps -> return $! not (S.null (S.intersection segPerms ps))
+        Nothing -> return $! True
+    fTransPerms segPerms = do
+      envPerms <- RWS.asks (view gtenvTransPerms)
+      return $! not (S.null (S.intersection segPerms envPerms))
+
+filterBackward :: Int -> GT l (Bool, Bool)
+filterBackward sn = do
+  perms <- RWS.asks (view gtenvSegPerms)
+  if | S.null perms -> return (False, True)
+     | sn == 1 -> do
+       envPerms <- RWS.asks (view gtenvPerms)
+       case envPerms of
+        Just ps -> do
+          let b = not (S.null (S.intersection perms ps))
+          return $! (b, b)
+        Nothing -> return $! (False, False)
+     | otherwise -> do
+       envPerms <- RWS.asks (view gtenvTransPerms)
+       let b = not (S.null (S.intersection perms envPerms))
+       return $! (b, b)
+
+filterPerms :: GT l Bool
+filterPerms = do
+  segPerms <- RWS.asks (view gtenvSegPerms)
+  envPerms <- RWS.asks (view gtenvPerms)
+  case envPerms of
+    Just ps -> return $! not (S.null (S.intersection segPerms ps))
+    Nothing -> return $! True
+
+filterTransPerms :: GT l Bool
+filterTransPerms = do
+  segPerms <- RWS.asks (view gtenvSegPerms)
+  envPerms <- RWS.asks (view gtenvTransPerms)
+  return $! not (S.null (S.intersection segPerms envPerms))
+
+-- | Filter the path traversal based on the permission set of
+-- the current segment.  The first boolean is whether to record
+-- the path as a result, and the second is whether to continue
+-- the traversal.
+filterPath :: Int -> GT l (Bool, Bool)
+filterPath sn = do
+  dir <- RWS.asks (view gtenvDirection)
+  case dir of
+    GTForward  -> filterForward  sn
+    GTBackward -> filterBackward sn
 
 -- | Return the set of possible paths through a module's graph given
 -- an edge function.
 getPaths :: Module l
-         -> EdgeF l
+         -> GTDirection
          -> Maybe (S.Set Perm)
          -> S.Set Perm
          -> Int
@@ -792,9 +849,9 @@ getPaths :: Module l
          -> Graph l
          -> G.Node
          -> (PathSet, Bool)
-getPaths m f perms tperms maxD limit gr node = (r, a)
+getPaths m dir perms tperms maxD limit gr node = (r, a)
   where
-    env       = initialGTEnv m f perms tperms maxD limit
+    env       = initialGTEnv m dir perms tperms maxD limit
     st        = initialGTState
     (a, s, _) = RWS.runRWS (getPaths1 gr node [] 0 0) env st
     r         = s ^. gtstateResult
