@@ -80,20 +80,13 @@ import Control.Monad.Trans.State
 import Data.Monoid ((<>), mempty)
 import Data.Text (Text)
 
+import Lobster.Core.Util
 import Lobster.Core.Error
 
 import qualified Data.Map             as M
 import qualified Data.Set             as S
 import qualified Data.Text            as T
 import qualified Lobster.Core.AST     as A
-
--- | "when" with a monadic boolean condition.
-whenM :: Monad m => m Bool -> m () -> m ()
-whenM b f = b >>= (\x -> when x f)
-
--- | "unless" with a monadic boolean condition.
-unlessM :: Monad m => m Bool -> m () -> m ()
-unlessM b f = b >>= (\x -> unless x f)
 
 ----------------------------------------------------------------------
 -- Environments

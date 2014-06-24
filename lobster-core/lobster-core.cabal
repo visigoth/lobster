@@ -17,7 +17,8 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     Lobster.Core
-  other-modules:       Lobster.Core.AST,
+  other-modules:       Lobster.Core.Util,
+                       Lobster.Core.AST,
                        Lobster.Core.Error,
                        Lobster.Core.Lexer,
                        Lobster.Core.Parser,
