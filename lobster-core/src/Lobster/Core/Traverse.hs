@@ -824,6 +824,9 @@ smtVars _                       = S.empty
 smtBinOp :: Text -> Exp l -> Exp l -> Text
 smtBinOp t e1 e2 = "(" <> t <> " " <> smtExp e1 <> " " <> smtExp e2 <> ")"
 
+smtUnaryOp :: Text -> Exp l -> Text
+smtUnaryOp t e1 = "(" <> t <> " " <> smtExp e1 <> ")"
+
 -- | Return a declaration for an SMT variable.
 smtVarDecl :: SMTVar -> Text
 smtVarDecl (SMTVar s ty) =
@@ -838,6 +841,7 @@ smtExp (ExpBinaryOp _ e1 BinaryOpEqual e2) = smtBinOp "=" e1 e2
 smtExp (ExpBinaryOp l e1 BinaryOpNotEqual e2) =
   smtExp (ExpUnaryOp l UnaryOpNot (ExpBinaryOp l e1 BinaryOpEqual e2))
 smtExp (ExpParen _ e) = smtExp e
+smtExp (ExpUnaryOp _ UnaryOpNot e) = smtUnaryOp "not" e
 smtExp _ = error "invalid expression for SMT"
 
 -- | Return an SMT assertion for a Lobster condition.
