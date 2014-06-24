@@ -472,8 +472,8 @@ isPeerDomain domId1 domId2 = do
 -- | Get the connection level between two ports.  This raises
 -- an error if the ports cannot be connected because they are
 -- not peers or from a domain to a port in a subdomain.
-connLevel :: PortId -> PortId -> Eval l ConnLevel
-connLevel pidL pidR = do
+connLevel :: A.PortName l -> PortId -> A.PortName l -> PortId -> Eval l ConnLevel
+connLevel pnameL pidL pnameR pidR = do
   portL <- getPort pidL
   portR <- getPort pidR
   let domL = portL ^. portDomain
@@ -482,9 +482,17 @@ connLevel pidL pidR = do
   isParent <- isSubdomain domL domR
   isChild  <- isSubdomain domR domL
 
-  -- Note: Internal connections used to be an error, but we
-  -- are simply dropping them for now.
-  if | domL == domR -> return ConnLevelInternal
+  if | domL == domR ->
+       -- Internal connections are a bit complex.  We different between
+       -- inside and outside self-connection syntatically.  If the
+       -- connection is defined inside the domain, it's internal.
+       -- Otherwise, treat it like any other domain-to-domain connection.
+       case (pnameL, pnameR) of
+         (A.UPortName _, A.UPortName _) ->
+           return ConnLevelInternal
+         (A.QPortName _ _ _, A.QPortName _ _ _) ->
+           return ConnLevelPeer
+         _ -> lose $ MiscError "internal error: weird self connection"
      | isPeer       -> return ConnLevelPeer
      | isParent     -> return ConnLevelParent
      | isChild      -> return ConnLevelChild
@@ -521,14 +529,16 @@ addConnection l portL portR cty ann = do
 -}
 
 -- | Add a connection to the current module.
-addConnection :: l -> PortId -> PortId -> A.ConnType -> A.Annotation l -> Eval l ()
-addConnection l portL portR cty ann = do
-  level  <- connLevel portL portR
+addConnection :: l -> A.PortName l -> A.PortName l -> A.ConnType -> A.Annotation l -> Eval l ()
+addConnection l pnameL pnameR cty ann = do
+  pidL   <- lookupPort pnameL
+  pidR   <- lookupPort pnameR
+  level  <- connLevel pnameL pidL pnameR pidR
   connId <- ConnectionId <$> (moduleNextConnectionId <<+= 1)
   let conn = Connection
                { _connectionId         = connId
-               , _connectionLeft       = portL
-               , _connectionRight      = portR
+               , _connectionLeft       = pidL
+               , _connectionRight      = pidR
                , _connectionLevel      = level
                , _connectionType       = cty
                , _connectionLabel      = l
@@ -773,9 +783,7 @@ evalStmt _ (A.StmtConnection l
   lose $ BadNegativeConn l (fullPortName pidL) (fullPortName pidR)
 
 evalStmt ann (A.StmtConnection l pidL (A.ConnOp _ cty) pidR) = do
-  portL <- lookupPort pidL
-  portR <- lookupPort pidR
-  addConnection l portL portR cty ann
+  addConnection l pidL pidR cty ann
 
 evalStmt ann1 (A.StmtAnnotation _ ann2 stmt) = evalStmt (ann1 <> ann2) stmt
 
