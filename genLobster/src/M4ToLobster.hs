@@ -322,7 +322,9 @@ processStmt stmt =
         True -> case ps of
           S.Permissions dl ->
             sequence_ $
-              [ addAllow subject object classId perms
+              [ case object' of
+                  S.Self      -> return ()
+                  S.NotSelf _ -> addAllow subject object classId perms
               | subject <- filterSignedId $ toList al
               , object' <- filterSignedId $ toList bl
               , let object = fromSelf subject object'
