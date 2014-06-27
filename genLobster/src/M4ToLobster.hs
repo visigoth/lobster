@@ -6,7 +6,6 @@ import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Char
 import Data.Foldable (toList)
-import Data.List (isSuffixOf, nub)
 import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Map as Map
@@ -26,6 +25,9 @@ import qualified Lobster.Core as C
 import SCD.M4.Subst (Macros(..), expandPolicyModule)
 
 import M4ToLobster.Error
+
+ordNub :: Ord a => [a] -> [a]
+ordNub = Set.toList . Set.fromList
 
 ----------------------------------------------------------------------
 -- State monad
@@ -687,8 +689,8 @@ outputLobster _ (st, subattrs) =
     domtransDecls = concatMap (outputDomtransMacro st) (Set.toList (domtrans_macros st))
 
     taggedDecls :: [(Maybe M4.ModuleId, L.Decl)]
-    taggedDecls = nub $
-      domainDecls ++ connectionDecls ++ attributeDecls ++ subAttributeDecls
+    taggedDecls =
+      domainDecls ++ ordNub connectionDecls ++ attributeDecls ++ subAttributeDecls
         ++ transitionDecls ++ domtransDecls
 
     groupedDecls :: Map (Maybe M4.ModuleId) [L.Decl] -- in reverse order
