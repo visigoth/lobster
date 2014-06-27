@@ -51,6 +51,7 @@ data St = St
   , type_transitions :: !(Set (S.TypeId, S.TypeId, S.ClassId, S.TypeId))
   , domtrans_macros  :: !(Set (S.Identifier, [S.TypeOrAttributeId]))
   , type_modules     :: !(Map S.Identifier M4.ModuleId)
+  , type_aliases     :: !(Map S.Identifier S.Identifier)
   , unique_supply    :: Int
   }
 
@@ -71,6 +72,7 @@ initSt = St
   , type_transitions = Set.empty
   , domtrans_macros  = Set.empty
   , type_modules     = Map.empty
+  , type_aliases     = Map.empty
   , unique_supply    = 0
   }
 
@@ -137,9 +139,16 @@ activeClass c p
   | c == S.mkId "filesystem" && p == S.mkId "associate" = S.mkId "file"
   | otherwise = processClassId
 
+evalType :: S.IsIdentifier a => a -> M a
+evalType t = do
+  tas <- gets type_aliases
+  return $! maybe t S.fromId (Map.lookup (S.toId t) tas)
+
 addAllow :: S.TypeOrAttributeId -> S.TypeOrAttributeId
          -> S.ClassId -> Set S.PermissionId -> M ()
-addAllow subject object cls perms = do
+addAllow s o cls perms = do
+  subject <- evalType s
+  object  <- evalType o
   -- discard all but the outermost enclosing source position
   -- so that we only get the position of the top-level macro
   ps <- asks (Set.fromList . take 1 . reverse . envPositions)
@@ -174,7 +183,7 @@ addAllow subject object cls perms = do
 
 addDeclaration :: S.IsIdentifier i => i -> M ()
 addDeclaration i = do
-  m <- asks envModuleId
+  m  <- asks envModuleId
   modify $ \st ->
     st { type_modules = Map.insert (S.toId i) m (type_modules st) }
 
@@ -185,40 +194,47 @@ addAttrib attr =
     }
 
 addTypeAttrib :: S.TypeId -> S.AttributeId -> M ()
-addTypeAttrib ty attr = modify f
+addTypeAttrib ty attr = do
+  ty' <- evalType ty
+  modify (f ty')
   where
-    f st = st
+    f ty' st = st
       { object_classes = addkeyMapSet (S.fromId (S.toId attr)) (object_classes st)
-      , attrib_members = insertMapSet attr ty (attrib_members st)
+      , attrib_members = insertMapSet attr ty' (attrib_members st)
       }
 
 addTypeAttribs :: S.TypeId -> [S.AttributeId] -> M ()
 addTypeAttribs ty attrs = mapM_ (addTypeAttrib ty) attrs
 
 addTypeTransition :: S.TypeId -> S.TypeId -> S.ClassId -> S.TypeId -> M ()
-addTypeTransition subj rel cls new = modify f
+addTypeTransition subj rel cls new = do
+  subj' <- evalType subj
+  rel'  <- evalType rel
+  new'  <- evalType new
+  modify (f subj' rel' new')
   where
-    f st = st
+    f subj' rel' new' st = st
       { object_classes =
-          insertMapSet (S.fromId (S.toId subj)) processClassId $
-          insertMapSet (S.fromId (S.toId new)) cls $
+          insertMapSet (S.fromId (S.toId subj')) processClassId $
+          insertMapSet (S.fromId (S.toId new')) cls $
           object_classes st
-      , type_transitions = Set.insert (subj, rel, cls, new) (type_transitions st)
+      , type_transitions = Set.insert (subj', rel', cls, new') (type_transitions st)
       }
 
 addDomtransMacro :: [S.TypeOrAttributeId] -> M ()
 addDomtransMacro args = do
+  args' <- mapM evalType args
   n <- getUnique
   let i = S.mkId ("domtrans" ++ show n)
   addDeclaration i
   modify $ \ st -> st
       { object_classes =
           foldr ($) (object_classes st)
-            [ Map.insertWith Set.union d cs | (d, cs) <- zip args argClasses ]
+            [ Map.insertWith Set.union d cs | (d, cs) <- zip args' argClasses ]
       , class_perms =
           insertMapSet (S.mkId "file") (S.mkId "x_file_perms") $
           class_perms st
-      , domtrans_macros = Set.insert (i, args) (domtrans_macros st)
+      , domtrans_macros = Set.insert (i, args') (domtrans_macros st)
       }
   where
     argClasses :: [Set S.ClassId]
@@ -228,8 +244,31 @@ addDomtransMacro args = do
       , Set.fromList [processClassId]
       ]
 
+addTypeAlias :: S.TypeId -> [S.TypeId] -> M ()
+addTypeAlias t xs = do
+  forM_ xs $ \alias -> do
+    modify $ \st -> st
+      { type_aliases = Map.insert (S.toId alias) (S.toId t) (type_aliases st) }
+
 processStmts :: M4.Stmts -> M ()
 processStmts = mapM_ processStmt
+
+processAlias :: M4.Stmt -> M ()
+processAlias stmt =
+  case stmt of
+    Type t aliases _    -> addTypeAlias t (toList aliases)
+    TypeAlias t aliases -> addTypeAlias t (toList aliases)
+    Tunable _ s1 s2     -> processAliases s1 >> processAliases s2
+    Optional s1 s2      -> processAliases s1 >> processAliases s2
+    Ifdef _ s1 s2       -> processAliases s1 >> processAliases s2
+    Ifndef _ s          -> processAliases s
+    CondStmt _ s1 s2    -> processAliases s1 >> processAliases s2
+    StmtPosition s1 _   -> processAlias s1
+    Require _           -> return ()
+    _                   -> return ()
+
+processAliases :: M4.Stmts -> M ()
+processAliases = mapM_ processAlias
 
 processStmt :: M4.Stmt -> M ()
 processStmt stmt =
@@ -259,8 +298,10 @@ processStmt stmt =
     RoleTransition {} -> return ()
     RoleAllow {}      -> return ()
     Attribute attr -> addDeclaration attr >> addAttrib attr
-    Type t _aliases attrs -> addDeclaration t >> addTypeAttribs t attrs -- TODO: track aliases
-    TypeAlias _t _aliases -> return () -- TODO: track aliases
+    Type t aliases attrs  -> do
+      addDeclaration t
+      addTypeAttribs t attrs
+    TypeAlias t aliases   -> return ()
     TypeAttribute t attrs -> addTypeAttribs t (toList attrs)
     RangeTransition {} -> return ()
     TeNeverAllow {}    -> return () -- neverallow
@@ -314,15 +355,25 @@ isAllow ad = case ad of
   S.AuditDeny  -> False
   S.DontAudit  -> False
 
+processAliasesImplementation :: M4.Implementation -> M ()
+processAliasesImplementation (M4.Implementation modId _ stmts) =
+  local (setModuleId modId) $ processAliases stmts
+
 processImplementation :: M4.Implementation -> M ()
 processImplementation (M4.Implementation modId _ stmts) =
   local (setModuleId modId) $ mapM_ processStmt stmts
+
+processAliasesModule :: M4.PolicyModule -> M ()
+processAliasesModule m = processAliasesImplementation (M4.implementation m)
 
 processPolicyModule :: M4.PolicyModule -> M ()
 processPolicyModule m = processImplementation (M4.implementation m)
 
 processPolicy :: M4.Policy -> M ()
-processPolicy policy = mapM_ processPolicyModule (M4.policyModules policy)
+processPolicy policy = do
+  let modules = M4.policyModules policy
+  mapM_ processAliasesModule modules
+  mapM_ processPolicyModule  modules
 
 ----------------------------------------------------------------------
 -- Sub-attributes
