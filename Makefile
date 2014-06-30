@@ -12,7 +12,7 @@ SUBPROJECTS :=                 \
 
 .PHONY: all
 all: .cabal-sandbox
-	@cabal install $(SUBPROJECTS)
+	@cabal install v3spa-server
 
 .PHONY: clean
 clean:
