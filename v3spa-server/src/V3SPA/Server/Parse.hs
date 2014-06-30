@@ -104,7 +104,7 @@ queryPredFromOpts m opts =
 handleParse :: V3Snap ()
 handleParse = method POST $ do
   modifyResponse $ setContentType "application/json"
-  body   <- readRequestBody 10000000
+  body   <- readBody
   lsrmod <- hoistErr $ readPolicyBS body
   p      <- queryPred lsrmod
   respond (moduleJSON lsrmod p)

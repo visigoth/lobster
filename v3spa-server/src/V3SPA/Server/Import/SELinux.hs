@@ -55,7 +55,7 @@ importModule p modSrc = do
 handleImportSELinux :: V3Snap ()
 handleImportSELinux = method POST $ do
   modifyResponse $ setContentType "application/json"
-  body    <- readRequestBody 10000000
+  body    <- readBody
   req     <- hoistMiscErr $ note "malformed JSON request" $ decode body
   refPath <- refPolicyDir (seReqRefpolicy req)
   policy0 <- liftIO $ readPolicy Nothing refPath

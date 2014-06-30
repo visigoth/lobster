@@ -104,7 +104,7 @@ isType m domId _ = isJust ann
 handlePaths :: V3Snap ()
 handlePaths = method POST $ do
   modifyResponse $ setContentType "application/json"
-  body   <- readRequestBody 10000000
+  body   <- readBody
   m      <- hoistErr $ readPolicyBS body
 
   domId  <- hoistMiscErr =<< (note "parameter 'id' not supplied" <$> paramDomainId)

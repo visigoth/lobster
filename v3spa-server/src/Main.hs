@@ -39,7 +39,11 @@ site = route
   , ("/export/selinux",  handleExportSELinux)
   ]
 
+handler opts = do
+  extendTimeout 120
+  runReaderT (runV3Snap site) opts
+
 main :: IO ()
 main = do
   let options = defaultOptions
-  quickHttpServe (runReaderT (runV3Snap site) options)
+  quickHttpServe (handler options)

@@ -21,7 +21,7 @@ import V3SPA.Server.Snap
 handleExportSELinux :: V3Snap ()
 handleExportSELinux = method POST $ do
   modifyResponse $ setContentType "application/json"
-  body   <- readRequestBody 10000000
+  body   <- readBody
   liftIO $ print body
   m      <- hoistErr $ readPolicyBS body
   let pol = exportSELinux m

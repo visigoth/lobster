@@ -29,9 +29,12 @@ newtype V3Snap a = V3Snap { runV3Snap :: ReaderT Options Snap a }
   deriving ( Functor, Applicative, Alternative, Monad, MonadPlus
            , MonadIO, MonadCatchIO, MonadSnap, MonadReader Options)
 
+-- | Read the request body with a 100MiB limit.
+readBody = readRequestBody (100 * 1024 * 1024)
+
 -- | Read the request body as a string.
 readBodyString :: V3Snap String
-readBodyString = T.unpack . E.decodeUtf8 <$> readRequestBody 10000000
+readBodyString = T.unpack . E.decodeUtf8 <$> readBody
 
 -- | Encode a result as JSON and write it to the response.
 writeJSON :: ToJSON a => a -> V3Snap ()
