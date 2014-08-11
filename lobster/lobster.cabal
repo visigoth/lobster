@@ -1,7 +1,7 @@
 Name: lobster
 Version: 0.1
 Description: The Lobster DSL for information flow policies
-License: AllRightsReserved
+License: BSD3
 License-file: LICENSE
 Cabal-version: >= 1.8.0.6
 Build-type: Custom

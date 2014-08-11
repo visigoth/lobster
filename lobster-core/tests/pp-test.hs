@@ -4,6 +4,9 @@
 -- Copyright (C) 2014, Galois, Inc.
 -- All Rights Reserved.
 --
+-- Released under the "BSD3" license.  See the file "LICENSE"
+-- for details.
+--
 
 import System.Environment
 import System.Exit

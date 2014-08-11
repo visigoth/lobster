@@ -10,6 +10,9 @@
 -- Copyright (C) 2014, Galois, Inc.
 -- All Rights Reserved.
 --
+-- Released under the "BSD3" license.  See the file "LICENSE"
+-- for details.
+--
 
 -- TODO: Consider renaming this module to "Analysis"?
 

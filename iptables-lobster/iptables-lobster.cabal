@@ -1,7 +1,8 @@
 name:                iptables-lobster
 version:             0.0.0.1
 synopsis:            IPTables to Lobster translation
-license:             AllRightsReserved
+license:             BSD3
+license-file:        LICENSE
 author:              Adam C. Foltzer
 maintainer:          acfoltzer@galois.com
 build-type:          Simple

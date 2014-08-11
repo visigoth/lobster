@@ -6,6 +6,9 @@
 -- Copyright (C) 2013, Galois, Inc.
 -- All Rights Reserved.
 --
+-- Released under the "BSD3" license.  See the file "LICENSE"
+-- for details.
+--
 
 module V3SPA.Server.Paths
   ( handlePaths
