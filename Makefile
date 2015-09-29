@@ -1,3 +1,7 @@
+GHC?=ghc-7.6.3
+# snap doesn't build properly with profiling
+CABAL_OPTS?=--disable-executable-profiling --disable-library-profiling
+
 
 # Libraries to add with "cabal sandbox add-source".
 SUBPROJECTS :=                 \
@@ -12,7 +16,7 @@ SUBPROJECTS :=                 \
 
 .PHONY: all
 all: .cabal-sandbox
-	@cabal install v3spa-server
+	@cabal install v3spa-server -w ${GHC} ${CABAL_OPTS}
 
 .PHONY: clean
 clean:

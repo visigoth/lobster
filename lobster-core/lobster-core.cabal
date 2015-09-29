@@ -34,7 +34,7 @@ library
                        text >= 0.11,
                        bytestring >= 0.10,
                        array >= 0.4,
-                       mainland-pretty >= 0.2.7,
+                       mainland-pretty >= 0.2.7 && < 0.3,
                        pretty-show >= 1.6,
                        fgl >= 5.4,
                        aeson >= 0.6.2,
