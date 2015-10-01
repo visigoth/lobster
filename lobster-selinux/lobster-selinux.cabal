@@ -19,14 +19,14 @@ library
   exposed-modules:     Lobster.SELinux
   other-modules:       Lobster.SELinux.Export
   -- other-extensions:    
-  build-depends:       base >= 4.6,
-                       containers >= 0.5,
-                       text >= 1.1,
-                       fgl >= 5.4,
-                       lens >= 4.1,
-                       errors >= 1.4,
-                       mainland-pretty >= 0.2,
-                       lobster-core >= 0.1
+  build-depends:       base ==4.6.*,
+                       containers ==0.5.*,
+                       text >=1.1 && <1.3,
+                       fgl >=5.4 && <5.6,
+                       lens >=4.1 && <4.8,
+                       errors ==1.4.*,
+                       mainland-pretty ==0.2.*,
+                       lobster-core >=0.1 && <0.3
   hs-source-dirs:      src
   default-language:    Haskell2010
 
@@ -35,9 +35,8 @@ executable lobster-selinux
   main-is:              lobster-selinux.hs
   default-language:     Haskell2010
   ghc-options:          -Wall
-  build-depends:        base >= 4.6,
-                        errors >= 1.4,
-                        text >= 1.1,
-                        lobster-core >= 0.2,
-                        lobster-selinux >= 0.2
-
+  build-depends:        base ==4.6.*,
+                        errors ==1.4.*,
+                        text >=1.1 && <1.3,
+                        lobster-core ==0.2.*,
+                        lobster-selinux ==0.2.*

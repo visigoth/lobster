@@ -14,46 +14,46 @@ Library
                      M4ToLobster.Error
                      CoreSyn
   ghc-options:       -Wall
-  Build-Depends:     base >= 4,
-                     pretty >= 1,
-                     directory >= 1,
-                     mtl >= 1,
-                     containers >= 0.1.0.0,
-                     scd >= 0.1,
-                     text >= 0.11,
-                     mainland-pretty >= 0.2.7 && < 0.3,
-                     lobster-core,
-                     errors >= 1.4.5
+  Build-Depends:     base >=4 && <4.7,
+                     pretty >=1 && <1.2,
+                     directory >=1 && <1.3,
+                     mtl >=1 && <2.2,
+                     containers >=0.1.0.0 && <0.6,
+                     scd ==0.1.*,
+                     text >=0.11 && <1.3,
+                     mainland-pretty >=0.2.7 && <0.3,
+                     lobster-core ==0.2.*,
+                     errors >=1.4.5 && <1.5
 
 Executable genLobster
   Main-is:           Main.hs
   ghc-options:       -fprof-auto
   Build-Depends:
-                     base >= 4,
-                     pretty >= 1,
-                     directory >= 1,
-                     mtl >= 1,
-                     containers >= 0.1.0.0,
-                     scd >= 0.1
+                     base >=4 && <4.7,
+                     pretty >=1 && <1.2,
+                     directory >=1 && <1.3,
+                     mtl >=1 && <2.2,
+                     containers >=0.1.0.0 && <0.6,
+                     scd ==0.1.*,
 
 Executable selinux-lobster
   Main-is:           selinux-lobster.hs
   Build-Depends:
-                     base >= 4,
-                     pretty >= 1,
-                     directory >= 1,
-                     mtl >= 1,
-                     containers >= 0.1.0.0,
-                     scd >= 0.1,
-                     genLobster
+                     base >=4 && <4.7,
+                     pretty >=1 && <1.2,
+                     directory >=1 && <1.3,
+                     mtl >=1 && <2.2,
+                     containers >=0.1.0.0 && <0.6,
+                     scd ==0.1.*
+                     genLobster ==0.2.*
 
 Executable m4-lobster
   Main-is:           m4-lobster.hs
   ghc-options:       -rtsopts
-  Build-Depends:     base >= 4,
-                     scd >= 0.1,
-                     containers >= 0.1.0.0,
-                     directory >= 1,
-                     mtl >= 1,
-                     errors >= 1.4.5,
-                     genLobster
+  Build-Depends:     base >=4 && <4.7,
+                     scd ==0.1.*,
+                     containers >=0.1.0.0 && <0.6,
+                     directory >=1 && <1.3,
+                     mtl >=1 && <2.2,
+                     errors >=1.4.5 && <1.5,
+                     genLobster ==0.2.*

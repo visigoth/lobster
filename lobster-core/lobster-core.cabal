@@ -27,20 +27,20 @@ library
                        Lobster.Core.TypeCheck,
                        Lobster.Core.Traverse,
                        Lobster.Core.JSON
-  build-depends:       base >= 4.6,
-                       containers >= 0.5,
-                       transformers >= 0.3,
-                       errors >= 1.4,
-                       text >= 0.11,
-                       bytestring >= 0.10,
-                       array >= 0.4,
-                       mainland-pretty >= 0.2.7 && < 0.3,
-                       pretty-show >= 1.6,
-                       fgl >= 5.4,
-                       aeson >= 0.6.2,
-                       aeson-pretty,
-                       parsec >= 3.1,
-                       lens
+  build-depends:       base ==4.6.*,
+                       containers ==0.5.*,
+                       transformers ==0.3.*,
+                       errors ==1.4.*,
+                       text >=0.11 && <1.3,
+                       bytestring ==0.10.*,
+                       array ==0.4.*,
+                       mainland-pretty >=0.2.7 && <0.3,
+                       pretty-show ==1.6.*,
+                       fgl >=5.4 && <5.6,
+                       aeson >=0.6.2 && <0.8,
+                       aeson-pretty ==0.7.*,
+                       parsec ==3.1.*,
+                       lens ==4.7.*
   hs-source-dirs:      src
   build-tools:         alex, happy
   ghc-options:         -Wall
@@ -51,29 +51,29 @@ executable lex-test
   main-is:              lex-test.hs
   default-language:     Haskell2010
   ghc-options:          -Wall
-  build-depends:        base >= 4.6,
-                        bytestring >= 0.10,
-                        lobster-core
+  build-depends:        base ==4.6.*,
+                        bytestring ==0.10.*,
+                        lobster-core ==0.2.*
 
 executable parse-test
   hs-source-dirs:       tests
   main-is:              parse-test.hs
   default-language:     Haskell2010
   ghc-options:          -Wall
-  build-depends:        base >= 4.6,
-                        bytestring >= 0.10,
-                        lobster-core,
-                        pretty-show
+  build-depends:        base ==4.6.*,
+                        bytestring ==0.10.*,
+                        lobster-core ==0.2.*,
+                        pretty-show ==1.6.*
 
 executable pp-test
   hs-source-dirs:       tests
   main-is:              pp-test.hs
   default-language:     Haskell2010
   ghc-options:          -Wall
-  build-depends:        base >= 4.6,
-                        bytestring >= 0.10,
-                        mainland-pretty >= 0.2.7,
-                        lobster-core
+  build-depends:        base ==4.6.*,
+                        bytestring ==0.10.*,
+                        mainland-pretty >=0.2.7 && <0.3,
+                        lobster-core ==0.2.*
 
 -- executable eval-test
 --   hs-source-dirs:       tests
@@ -93,29 +93,28 @@ executable lobster-json
   main-is:              lobster-json.hs
   default-language:     Haskell2010
   ghc-options:          -Wall
-  build-depends:        base >= 4.6,
-                        errors >= 1.4,
-                        text >= 0.11,
-                        containers >= 0.5,
-                        bytestring >= 0.10,
-                        fgl >= 5.4,
-                        lens >= 4.1,
-                        aeson >= 0.6.2,
-                        aeson-pretty,
-                        lobster-core
+  build-depends:        base ==4.6.*,
+                        errors ==1.4.*,
+                        text >=0.11 && <1.3,
+                        containers ==0.5.*,
+                        bytestring ==0.10.*,
+                        fgl >=5.4 && <5.6,
+                        lens >=4.1 && <4.8,
+                        aeson >=0.6.2 && <0.8,
+                        aeson-pretty ==0.7.*,
+                        lobster-core ==0.2.*
 
 executable path-test
   hs-source-dirs:       tests
   main-is:              path-test.hs
   default-language:     Haskell2010
   ghc-options:          -Wall
-  build-depends:        base >= 4.6,
-                        text >= 0.11,
-                        containers >= 0.5,
-                        errors >= 1.4,
-                        bytestring >= 0.10,
-                        mainland-pretty >= 0.2.7,
-                        fgl >= 5.4,
-                        lens,
-                        lobster-core
-
+  build-depends:        base ==4.6.*,
+                        text >=0.11 && <1.3,
+                        containers ==0.5.*,
+                        errors ==1.4.*,
+                        bytestring ==0.10.*,
+                        mainland-pretty >=0.2.7 && <0.3,
+                        fgl >=5.4 && <5.6,
+                        lens ==4.7.*,
+                        lobster-core ==0.2.*

@@ -12,6 +12,9 @@ Executable   scd-xml {
 extensions: CPP
 Main-is:             XML.hs
 ghc-options:         -idist/build
-Build-Depends:       scd,base >= 2.1.1,pretty >= 1.0.1.0,regex-posix >= 0.72.0.3
-                     ,xml >= 1.3.4
+Build-Depends:       scd ==0.1.*,
+                     base >=2.1.1 && <4.7,
+                     pretty >=1.0.1.0 && <1.2,
+                     regex-posix >=0.72.0.3 && <0.96,
+                     xml >=1.3.4 && <1.4
 }

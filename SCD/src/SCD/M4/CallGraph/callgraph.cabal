@@ -12,5 +12,7 @@ Executable   scd-m4-callgraph {
 extensions: CPP
 Main-is:             CallGraph.hs
 ghc-options:         -idist/build
-Build-Depends:       scd,base >= 2.1.1, containers >= 0.2.0.1
+Build-Depends:       scd ==0.1.*,
+                     base >=2.1.1 && <4.7,
+                     containers >=0.2.0.1 && <0.6
 }
