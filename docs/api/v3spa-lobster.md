@@ -15,16 +15,16 @@ a web service that provides a JSON-based API to import, export,
 and analyze Lobster policies. This document describes the data
 types and request URLs that make up this Lobster API.
 
-# API Endpoints
+# V3SPA 1.0 API Endpoints
 
-Path               Method    Request Format  HTTP Status  Result Type
-----               ------    --------------  -----------  ---------------
-`/version`         `GET`     -               200          `null`
-`/parse`           `POST`    `raw`           200          `Module`
-`/paths`           `POST`    `raw`           200          `Paths`
-`/import/iptables` `POST`    `raw`           200          `string`
-`/import/selinux`  `POST`    `SEPolicy`      200          `string`
-`/export/selinux`  `POST`    `raw`           200          `string`
+Path                          Method    Request Format  Result Type
+----                          ------    --------------  ---------------
+`/version`                    `GET`     -               `null`
+`/parse`                      `POST`    `raw`           `Module`
+`/paths`                      `POST`    `raw`           `Paths`
+`/import/iptables`            `POST`    `raw`           `string`
+`/import/selinux`             `POST`    `SEPolicy`      `string`
+`/export/selinux`             `POST`    `raw`           `string`
 
 Endpoints with a 'Request Format' of `raw` receive their input
 by `POST`ing policy source directly. All other formats are JSON
@@ -32,6 +32,27 @@ requests defined in this document.
 
 All endpoints return a `Result` JSON response, with the `result`
 field containing an object of the type described in 'Result Type'.
+
+# V3SPA 2.0 Proposed API Endpoints
+
+Path                          Method    Request Format  Result Type
+----                          ------    --------------  ---------------
+`/project/new`                `POST`    TBD             TBD
+`/project/import/selinux`     `POST`    TBD             TBD
+`/project/import/iptables`    `POST`    TBD             TBD
+`/project/export/selinux/:id` `POST`    TBD             TBD
+`/project/source/:id`         `GET`     TBD             TBD
+`/project/json/:id`           `GET`     TBD             TBD
+`/project/paths`              `POST`    TBD             TBD
+
+In V3SPA 2.0, we propose a REST-based interface that stores Lobster
+module state on the server to avoid repeatedly sending the source
+to the server on each query.
+
+A project is either created with an existing Lobster policy or imported
+from SELinux or IPTables, returning a project identifier. This identifier
+can then be passed back to perform queries such as returning JSON for
+visualization.
 
 ## `GET /version`
 
