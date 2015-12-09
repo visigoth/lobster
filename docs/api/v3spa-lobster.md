@@ -39,16 +39,22 @@ field containing an object of the type described in 'Result Type'.
 
 # V3SPA 2.0 Proposed API Endpoints
 
-Path                          Method    Request Format  Result Type
-----                          ------    --------------  ---------------
-`/project/new`                `POST`    TBD             TBD
-`/project/import/selinux`     `POST`    TBD             TBD
-`/project/import/iptables`    `POST`    TBD             TBD
-`/project/export/selinux/:id` `POST`    TBD             TBD
-`/project/source/:id`         `GET`     TBD             TBD
-`/project/source/:id`         `PUT`     TBD             TBD
-`/project/json/:id`           `GET`     TBD             TBD
-`/project/paths`              `POST`    TBD             TBD
+Path                                  Method    Description
+----                                  ------    -----------
+`/projects`                           `GET`     List projects
+`/projects`                           `POST`    Create project
+`/projects/import/selinux`            `POST`    Import SELinux project
+`/projects/import/iptables`           `POST`    Import IPTables project
+`/projects/:name`                     `GET`     Get project settings
+`/projects/:name`                     `PUT`     Update project settings
+`/projects/:name`                     `DELETE`  Delete project
+`/projects/:name/export/selinux`      `GET`     Export project as SELinux
+`/projects/:name/modules`             `POST`    Add module to project
+`/projects/:name/modules/:name`       `PUT`     Add or update module
+`/projects/:name/modules/:name`       `GET`     Get module Lobster source
+`/projects/:name/modules/:name`       `DELETE`  Delete module from project
+`/projects/:name/json`                `GET`     Get project graph as JSON
+`/projects/:name/paths`               `GET`     Path query on project graph
 
 In V3SPA 2.0, we propose a REST interface that stores Lobster
 module state on the server to avoid repeatedly sending the source
