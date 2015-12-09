@@ -8,6 +8,10 @@ James Bielman `<jamesjb@galois.com>`
 
 - Document v3spa-lobster 1.0 interface.
 
+## Revision 2 (9 December 2015):
+
+- Fix bugs, document data structures in TypeScript.
+
 # Introduction
 
 The V3SPA IDE and the Lobster DSL communicate via
@@ -42,10 +46,11 @@ Path                          Method    Request Format  Result Type
 `/project/import/iptables`    `POST`    TBD             TBD
 `/project/export/selinux/:id` `POST`    TBD             TBD
 `/project/source/:id`         `GET`     TBD             TBD
+`/project/source/:id`         `PUT`     TBD             TBD
 `/project/json/:id`           `GET`     TBD             TBD
 `/project/paths`              `POST`    TBD             TBD
 
-In V3SPA 2.0, we propose a REST-based interface that stores Lobster
+In V3SPA 2.0, we propose a REST interface that stores Lobster
 module state on the server to avoid repeatedly sending the source
 to the server on each query.
 
@@ -164,10 +169,20 @@ success is a raw SELinux `.te` file.
 
 # API Types
 
+Definitions of JSON types are shown in TypeScript syntax for reference.
+
 ## `Result`
 
 All responses from the server are returned as a JSON object containing
 the server's version, a list of errors, and a result.
+
+~~~~javascript
+interface Result<T> {
+  version: number;
+  errors: Error[];
+  result: T;
+}
+~~~~
 
 ### Fields
 
@@ -205,6 +220,14 @@ A response with no errors and an integer result:
 ## `Error`
 
 An error returned from the V3SPA Lobster source.
+
+~~~~javascript
+interface Error {
+  filename: string;
+  message: string;
+  srcloc: SourceSpan;
+}
+~~~~
 
 ### Fields
 
@@ -248,6 +271,13 @@ A syntax error on the first line of `test.lsr`:
 
 A source span within a file.
 
+~~~~javascript
+interface SourceSpan {
+  start: SourcePos;
+  end: SourcePos;
+}
+~~~~
+
 ### Fields
 
 `start`
@@ -277,9 +307,16 @@ The first line of a file:
 }
 ~~~~
 
-## `SourceLoc`
+## `SourcePos`
 
 A position within a source file.
+
+~~~~javascript
+interface SourcePos {
+  line: number;
+  col: number;
+}
+~~~~
 
 ### Fields
 
@@ -309,20 +346,29 @@ The first character of the second line in a source file:
 List of all objects in a Lobster module. Each domain, port, and
 connection has a unique identifier.
 
+~~~~javascript
+interface Module {
+  domains: Map<string, Domain>;
+  ports: Map<string, Port>;
+  connections: Map<string, Connection>;
+  root: string;
+}
+~~~~
+
 ### Fields
 
-`domain`
-  ~ : `{string : Domain}`
+`domains`
+  ~ : `Map<string, Domain>`
 
     Map of domain IDs to `Domain` objects.
 
 `ports`
-  ~ : `{string : Port}`
+  ~ : `Map<string, Port>`
 
     Map of port IDs to `Port` objects.
 
 `connections`
-  ~ : `{string : Connection}`
+  ~ : `Map<string, Connection>`
 
     Map of connection IDs to `Connection` objects.
 
@@ -338,6 +384,20 @@ JSON representation of a Lobster domain.
 In Lobster modules generated from SELinux policy, a domain represents
 an SELinux `type`, `attribute`, or `type_transition`. Annotations on
 the domain can be used to distinguish between these when necessary.
+
+~~~~javascript
+interface Domain {
+  name: string;
+  path: string;
+  class: string;
+  subdomains: Map<string, Subdomain>;
+  parent: string;
+  ports: string[];
+  classAnnotations: Annotation[];
+  domainAnnotations: Annotation[];
+  srcloc: SourceSpan;
+}
+~~~~
 
 ### Fields
 
@@ -358,7 +418,7 @@ the domain can be used to distinguish between these when necessary.
     Name of the class this domain was instantiated from.
 
 `subdomains`
-  ~ : `{string : Subdomain}`
+  ~ : `Map<string, Subdomain>`
 
     Map containing the domain IDs and names of this domain's children.
     The `Subdomain` values contain the name and are useful for showing
@@ -372,23 +432,23 @@ the domain can be used to distinguish between these when necessary.
     root domain in the module.
 
 `ports`
-  ~ : `[string]`
+  ~ : `string[]`
 
     List of port IDs contained in this domain. These IDs can be
     referenced in the `ports` map inside the containing `Module`.
 
 `classAnnotations`
-  ~ : `[Annotation]`
+  ~ : `Annotation[]`
 
     List of annotations on the domain's class definition.
 
 `domainAnnotations`
-  ~ : `[Annotation]`
+  ~ : `Annotation[]`
 
     List of annotations on the domain's definition.
 
 `srcloc`
-  ~ : `[SourceLoc]`
+  ~ : `SourceSpan`
 
     Source location of the definition of this domain, if known.
 
@@ -396,6 +456,12 @@ the domain can be used to distinguish between these when necessary.
 
 Summary information about a subdomain. This is used to have
 access to the names of subdomains that may be filtered out.
+
+~~~~javascript
+interface Subdomain {
+  name: string;
+}
+~~~~
 
 ### Fields
 
@@ -416,6 +482,17 @@ used when a domain is the `subject` in an allow rule---in other
 words, when the domain is an entity capable of performing actions
 on objects, such as a process.
 
+~~~~javascript
+interface Port {
+  name: string;
+  path: string;
+  annotations: Annotation[];
+  position: string;
+  srcloc: SourceSpan;
+  domain: string;
+}
+~~~~
+
 ### Fields
 
 `name`
@@ -429,7 +506,7 @@ on objects, such as a process.
     Fully-qualified name of the port including containing domains.
 
 `annotations`
-  ~ : `[Annotation]`
+  ~ : `Annotation[]`
 
     List of annotations on the port definition.
 
@@ -439,7 +516,7 @@ on objects, such as a process.
     Position of this port, either `'subject'`, `'object'`, or `null`.
 
 `srcloc`
-  ~ : `SourceLoc`
+  ~ : `SourceSpan`
 
     Source location of the port's definition.
 
@@ -488,6 +565,19 @@ Connections are links between two ports.
 
 In policies generated from SELinux, a connection often represents
 an `allow` rule between a `subject` and an `object` type.
+
+~~~~javascript
+interface Connection {
+  left: string;
+  left_dom: string;
+  right: string;
+  right_dom: string;
+  level: string;
+  connection: string;
+  annotations: Annotation[];
+  srcloc: SourceSpan;
+}
+~~~~
 
 ### Fields
 
@@ -539,12 +629,12 @@ an `allow` rule between a `subject` and an `object` type.
     - `negative` for connections defined with `-/-`
 
 `annotations`
-  ~ : `[Annotation]`
+  ~ : `Annotation[]`
 
     List of annotations on the connection statement.
 
 `srcloc`
-  ~ : `SourceLoc`
+  ~ : `SourceSpan`
 
     Source location of the connection statement.
 
@@ -587,6 +677,13 @@ are created for both `type` and `attribute` statements. An annotation
 is attached to the domain to track which statement was used in the
 original policy so that it can be exported back to SELinux syntax.
 
+~~~~javascript
+interface Annotation {
+  name: string;
+  args: any[];
+}
+~~~~
+
 ### Fields
 
 `name`
@@ -595,7 +692,7 @@ original policy so that it can be exported back to SELinux syntax.
     Name of the annotation.
 
 `args`
-  ~ : `[any]`
+  ~ : `any[]`
 
     List of argument literals to the annotation declaration.
 
@@ -621,6 +718,13 @@ is represented in JSON as follows:
 A request to import one or more SELinux policy modules against
 a reference policy.
 
+~~~~javascript
+interface SEPolicy {
+  refpolicy: string;
+  modules: ModuleSource[];
+}
+~~~~
+
 ### Fields
 
 `refpolicy`
@@ -631,7 +735,7 @@ a reference policy.
     to locate the base policy.
 
 `modules`
-  ~ : `[ModuleSource]`
+  ~ : `ModuleSource[]`
 
     List of modules to import, replacing any modules with the
     same name in the base reference policy.
@@ -639,6 +743,15 @@ a reference policy.
 ## `ModuleSource`
 
 A single SELinux module to import.
+
+~~~~javascript
+interface ModuleSource {
+  name: string;
+  if: string;
+  te: string;
+  fc: string;
+}
+~~~~
 
 ### Fields
 
@@ -667,6 +780,13 @@ A single SELinux module to import.
 A set of domains reachable from an initial domain, as returned by
 a path query.
 
+~~~~javascript
+interface PathSet {
+  truncated: boolean;
+  [index: string]: PathNode[];
+}
+~~~~
+
 ### Fields
 
 `truncated`
@@ -676,7 +796,7 @@ a path query.
     not included in the results.
 
 *DOMAIN_ID*
-  ~ : `[PathNode]`
+  ~ : `PathNode[]`
 
       A domain ID reachable from the initial domain along with the
       path to it.
@@ -684,6 +804,14 @@ a path query.
 ## `PathNode`
 
 A path node from one domain to another via a connection.
+
+~~~~javascript
+interface PathNode {
+  conn: string;
+  left: string;
+  right: string;
+}
+~~~~
 
 ### Fields
 
