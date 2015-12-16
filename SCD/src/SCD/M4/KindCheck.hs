@@ -89,6 +89,7 @@ import Data.Foldable(Foldable, mapM_, toList, foldlM)
 import Data.List   ( genericLength, partition )
 import Data.Monoid(Monoid)
 
+import Control.Applicative(Applicative)
 import Control.Arrow(first)
 import Control.Monad(when, zipWithM_)
 import Control.Monad.Identity(Identity, runIdentity)
@@ -113,7 +114,7 @@ ignoreErrorsKindCheckOptions
  = defaultKindCheckOptions{emitErrors=False}
 
 newtype P r w s a = P (ReaderT r (StateT s (WriterT w Identity)) a)
-    deriving (Monad,
+    deriving (Applicative, Monad,
 #ifndef __HADDOCK__
               MonadState s, MonadWriter w, MonadReader r,
 #endif

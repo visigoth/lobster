@@ -1,3 +1,5 @@
+{-# OPTIONS_GHC -fno-warn-orphans #-}
+
 module Iptables.Types.Arbitrary where
 
 import Control.Applicative

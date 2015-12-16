@@ -7,7 +7,7 @@ CABAL_OPTS?=--disable-executable-profiling --disable-library-profiling
 SUBPROJECTS :=                 \
   lobster                      \
   lobster-core                 \
-	lobster-selinux              \
+  lobster-selinux              \
   SCD                          \
   genLobster                   \
   v3spa-server                 \

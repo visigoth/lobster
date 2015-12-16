@@ -1,6 +1,6 @@
 module Iptables where
 
-import Data.List hiding (insert)
+import Data.List hiding (filter, insert)
 import Data.Maybe
 import Data.Set hiding (map, filter, null)
 import Iptables.Types

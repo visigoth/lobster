@@ -53,7 +53,7 @@ import qualified Data.MapSet as MapSet
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Data.Set(Set)
-import Data.Foldable(Foldable, toList, foldr)
+import Data.Foldable(toList, foldr)
 
 -----------
 

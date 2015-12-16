@@ -14,6 +14,7 @@ module V3SPA.Server.Import.SELinux
   ( handleImportSELinux
   ) where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Error
 import Control.Monad.Reader
 import Data.Aeson

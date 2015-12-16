@@ -79,17 +79,17 @@ tryToParsePrint :: Iptables -> Result
 tryToParsePrint a = case parseIptables $ printIptables $ sortIptables a of
     Left err -> MkResult (Just False) True
                                       (show err ++ "\n" ++ printIptables (sortIptables a))
-                                      False False [] []
+                                      Nothing False [] []
     Right res ->
         let a' = sortIptables a
             res' = sortIptables res
         in
-        if a' == res' then MkResult (Just True) True "" False False [] []
+        if a' == res' then MkResult (Just True) True "" Nothing False [] []
                       else MkResult (Just False) True
                                     ( printIptables a' ++ "\n" ++ printIptables res'
                                     ++ iptablesDiff a' res'
                                     )
-                                    False False [] []
+                                    Nothing False [] []
 
 iptablesDiff :: Iptables -> Iptables -> String
 iptablesDiff ip1 ip2 =

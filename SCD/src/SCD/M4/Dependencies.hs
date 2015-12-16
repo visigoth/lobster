@@ -30,6 +30,7 @@ import SCD.M4.Syntax(Policy(..), SupportDefs, SupportDef(..),
   InterfaceType(..), M4Id, LayerModule, Stmt(..), Implementation(..))
 
 import Data.Foldable(Foldable, mapM_)
+import Control.Applicative (Applicative)
 import Control.Monad.Error(ErrorT, runErrorT, MonadError, throwError)
 import Control.Monad.Identity(Identity, runIdentity)
 import Control.Monad.State(StateT, runStateT, MonadState, get, put)
@@ -51,7 +52,7 @@ data Origin =
 type M4IdMap = Map M4Id Origin
 
 newtype P r s a = P (ReaderT r (StateT s (ErrorT String Identity)) a)
-    deriving (Monad,
+    deriving (Applicative, Monad,
 #ifndef __HADDOCK__
               MonadError String, MonadState s, MonadReader r,
 #endif
@@ -63,7 +64,7 @@ runP (P p) r s = (runIdentity . runErrorT . flip runStateT s . flip runReaderT r
 
 buildM4IdMap :: [PolicyModule] -> Either String M4IdMap
 buildM4IdMap ms = right snd $
-                  runP (mapM_ (\m -> local (const (layerModule m)) (build m)) 
+                  runP (mapM_ (\m -> local (const (layerModule m)) (build m))
                        ms) undefined empty
 
 add :: M4Id -> Origin -> P r M4IdMap ()
@@ -96,7 +97,7 @@ type Caller = Either M4Id LayerModule
 type M4CallGraph = Map Caller (Set M4Id)
 
 originCallGraph :: M4IdMap -> M4CallGraph -> Map Origin (Set Origin)
-originCallGraph m c = fromList [ (callerModule k, Set.map callerId v) 
+originCallGraph m c = fromList [ (callerModule k, Set.map callerId v)
                                | (k,v) <- toList c ]
   where callerModule (Left i) = callerId i
         callerModule (Right lm) = InDefinition Nothing lm
@@ -125,7 +126,7 @@ sortCalls = stronglyConnComp . prep
          prep m = [(i,i,Set.elems s) | (Left i,s) <- toList m]
 
 callGraphPolicyModule :: PolicyModule -> M4CallGraph
-callGraphPolicyModule p = 
+callGraphPolicyModule p =
   callGraphInterface (interface p) `MapSet.union`
   callGraphImplementation (layerModule p) (implementation p)
 
@@ -181,17 +182,17 @@ callGraph2Dot m = render $ text "digraph" <+> pbraces (fmap ppNode nodes ++
                 keysSet m `Set.union` foldr Set.union Set.empty (elems m)
         edges = concat [[(k,v) | v <- Set.elems s] | (k,s) <- toList m]
         ppNode n = quoteNode n <> semi
-        ppEdge (k,v) = quoteNode k <+> text "->" <+> 
+        ppEdge (k,v) = quoteNode k <+> text "->" <+>
                        quoteNode v <> semi
         quoteNode n = dquote <> ppOriginLayerModule n <> dquote
-    
+
 callGraph2Ncol :: Map Origin (Set Origin) -> String
-callGraph2Ncol m = render $ above [ppOriginLayerModule a <+> 
+callGraph2Ncol m = render $ above [ppOriginLayerModule a <+>
                                    ppOriginLayerModule b | (a,b) <- nodups]
   where edges = concat [[ (k,v) | v <- Set.elems s] | (k,s) <- toList m]
         nodups = ins Set.empty edges
         ins _ [] = []
-        ins u ((x,y):l) | x' == y' || Set.member (x',y') u 
+        ins u ((x,y):l) | x' == y' || Set.member (x',y') u
                                    || Set.member (y',x') u = ins u l
                         | otherwise                        = (x,y):ins u' l
               where x' = originLayerModule x

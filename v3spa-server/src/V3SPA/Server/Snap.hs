@@ -12,6 +12,7 @@
 
 module V3SPA.Server.Snap where
 
+import Control.Applicative (Applicative, Alternative, (<$>))
 import Control.Error
 import Control.Monad.CatchIO (MonadCatchIO)
 import Control.Monad.Reader

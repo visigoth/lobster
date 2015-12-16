@@ -13,7 +13,7 @@ library
   exposed-modules:     IptablesToLobster
   default-language:    Haskell2010
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*,
+  build-depends:       base >=4.6 && <5,
                        containers ==0.5.*,
                        deepseq ==1.3.*,
                        errors ==1.4.*,
@@ -28,7 +28,7 @@ executable iptables-lobster
   hs-source-dirs:      main
   default-language:    Haskell2010
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*,
+  build-depends:       base >=4.6 && <5,
                        containers ==0.5.*,
                        iptables-helpers ==0.6.*,
                        iptables-lobster ==0.0.*,
@@ -43,7 +43,7 @@ test-suite iptables-lobster-test
   hs-source-dirs:      test
   default-language:    Haskell2010
   ghc-options:         -Wall
-  build-depends:       base ==4.6.*,
+  build-depends:       base >=4.6 && <5,
                        filepath ==1.3.*,
                        HUnit ==1.2.*,
                        iptables-helpers ==0.6.*,

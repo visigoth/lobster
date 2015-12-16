@@ -13,6 +13,7 @@ module V3SPA.Server.Export.SELinux
   ( handleExportSELinux
   ) where
 
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Data.Aeson (toJSON)
 import Snap
 

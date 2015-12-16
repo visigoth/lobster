@@ -14,6 +14,7 @@ module V3SPA.Server.Parse
   ( handleParse
   ) where
 
+import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (catMaybes)
 import Data.Text (Text)
 import Data.Text.Read (decimal)

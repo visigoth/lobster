@@ -29,6 +29,7 @@ module SCD.Shrimp.Shrimp
 
 import SCD.SELinux.Syntax(Stmt,IsIdentifier, TypeId, RoleId, mkId)
 
+import Control.Applicative (Applicative)
 import Control.Monad.State.Class(MonadState, get, put)
 import Control.Monad.Writer.Class(MonadWriter, tell)
 import Control.Monad.Identity(Identity, runIdentity)
@@ -77,7 +78,7 @@ newtype Role = Role RoleId
 -- the action itself, of course.
 newtype Template a = Template (StateT State (WriterT Output Identity) a)
 #ifndef __HADDOCK__
-  deriving (Monad, Functor, MonadState State, MonadWriter Output)
+  deriving (Applicative, Monad, Functor, MonadState State, MonadWriter Output)
 #endif
 
 -- | To add a new type to a 'Template' definition, @newType comps@ is

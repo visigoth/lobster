@@ -5,6 +5,7 @@ module Text.Happy.ParserMonad
   (P, parseError, mkParser, Pos(..), noPos, HasPos(..), AddPos(..), at)
   where
 
+import Control.Applicative (Applicative)
 import Control.Monad.Error(ErrorT, runErrorT, MonadError(..))
 import Control.Monad.Identity(Identity, runIdentity)
 --import System.FilePath(FilePath)
@@ -15,7 +16,7 @@ import Text.PrettyPrint.Pp(Pp(..))
 
 newtype P a = P{ unP :: ErrorT String Identity a }
 #ifndef __HADDOCK__
-  deriving (Monad, MonadError String, Functor)
+  deriving (Applicative, Monad, MonadError String, Functor)
 #endif
 
 _P_not_used :: a

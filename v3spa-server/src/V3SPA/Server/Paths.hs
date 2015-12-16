@@ -14,6 +14,7 @@ module V3SPA.Server.Paths
   ( handlePaths
   ) where
 
+import Control.Applicative ((<$>))
 import Control.Error
 import Control.Lens hiding ((.=))
 import Data.Aeson
