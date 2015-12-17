@@ -25,7 +25,7 @@ echo "Preparing release in $dir ..."
 mkdir "$dir"
 
 for f in $PROGS; do
-  cp ".cabal-sandbox/bin/$f" "$dir"
+  cp "v3spa-server/dist/bin/$f" "$dir"
 done
 
 mkdir "$dir/examples"
