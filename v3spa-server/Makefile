@@ -3,7 +3,7 @@
 all: ghc dist/bin
 	stack install --local-bin-path dist/bin
 
-clean:
+clean: ghc
 	stack clean
 	rm -rf dist/
 
