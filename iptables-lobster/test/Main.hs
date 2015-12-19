@@ -1,8 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
 import System.FilePath
 
+import CoreSyn (showLobster)
 import IptablesToLobster
-import SCD.Lobster.Gen.CoreSyn.Output (showLobster)
 
 import Test.Framework
 import Test.Framework.Providers.HUnit
@@ -24,7 +24,7 @@ testGold file = testCase file $ do
       -- command-line tool adds a trailing newline
       let actual = (showLobster lsr) ++ "\n"
       expected <- readFile (file <.> "lsr")
-      assertEqual "" actual expected
+      assertEqual "" (ignoreWhitespaceDiff actual) (ignoreWhitespaceDiff expected)
 
 expectFail :: (Error -> Bool) -> FilePath -> Test
 expectFail errPred file = testCase file $ do
@@ -33,3 +33,6 @@ expectFail errPred file = testCase file $ do
     Left e | errPred e -> return ()
            | otherwise -> assertFailure ("wrong kind of error: " ++ show e)
     Right _ -> assertFailure "expected an error, but translation succeeded"
+
+ignoreWhitespaceDiff :: String -> String
+ignoreWhitespaceDiff = unlines . map (reverse . dropWhile (== ' ') . reverse) . lines
