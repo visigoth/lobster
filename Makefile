@@ -1,4 +1,4 @@
-.PHONY: all clean release
+.PHONY: all clean release test
 
 all:
 	$(MAKE) -C v3spa-server all
@@ -8,5 +8,8 @@ clean:
 
 release: all
 	@sh release.sh
+
+test:
+	cd iptables-lobster; stack clean && stack test
 
 # vim: set noet:
