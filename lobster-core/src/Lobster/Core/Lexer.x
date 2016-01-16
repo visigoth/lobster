@@ -87,6 +87,7 @@ $digit+             { tok tokInt }
 "exists"            { kw KwExists }
 "explicit"          { kw KwExplicit }
 "input"             { kw KwInput }
+"mod"               { kw KwModule }
 "never"             { kw KwNever }
 "object"            { kw KwObject }
 "output"            { kw KwOutput }

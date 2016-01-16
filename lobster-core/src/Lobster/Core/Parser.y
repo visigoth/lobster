@@ -27,6 +27,7 @@ import qualified Data.Text as T
   'domain'          { Token _ _ (TokKeyword KwDomain) }
   'explicit'        { Token _ _ (TokKeyword KwExplicit) }
   'input'           { Token _ _ (TokKeyword KwInput) }
+  'mod'             { Token _ _ (TokKeyword KwModule) }
   'object'          { Token _ _ (TokKeyword KwObject) }
   'output'          { Token _ _ (TokKeyword KwOutput) }
   'port'            { Token _ _ (TokKeyword KwPort) }
@@ -52,7 +53,7 @@ import qualified Data.Text as T
   '.'               { Token _ _ (TokOperator OpPeriod) }
   '*'               { Token _ _ (TokOperator OpStar) }
 --  '->'              { Token _ _ (TokOperator OpRArrow) }
---  '::'              { Token _ _ (TokOperator OpDoubleColon) }
+  '::'              { Token _ _ (TokOperator OpDoubleColon) }
 --  '.*'              { Token _ _ (TokOperator OpDotStar) }
 
   '-->'             { Token _ _ (TokConnOperator OpConnLeftToRight) }
@@ -134,6 +135,23 @@ TypeName :: { TypeName Span }
 TypeName
   : UIdent { TypeName (tokSpan $1) (tokText $1) }
 
+ModulePath :: { [VarName Span] }
+ModulePath
+  : {- empty -} { [] }
+  | VarName '::' ModulePath { (:) $1 $3 }
+
+-- A qualified name: a variable name optionally prefixed with a module path
+QualVarName :: { Qualified VarName Span }
+QualVarName
+  : ModulePath VarName
+    { Qualified (spanToks $1 $2) $1 $2 }
+
+-- A qualified name: a type name optionally prefixed with a module path
+QualTypeName :: { Qualified TypeName Span }
+QualTypeName
+  : ModulePath TypeName
+    { Qualified (spanToks $1 $2) $1 $2 }
+
 -- A connection operator.
 ConnOp :: { ConnOp Span }
 ConnOp
@@ -191,6 +209,10 @@ PortName
   : VarName { UPortName $1 }
   | VarName '.' VarName { QPortName (unionSpan (label $1) (label $3)) $1 $3 }
 
+QualPortName :: { Qualified PortName Span }
+QualPortName
+  : ModulePath PortName { Qualified (spanToks $1 $2) $1 2 }
+
 ExplicitDecl :: { Bool }
 ExplicitDecl
   : 'explicit'  { True }
@@ -199,7 +221,9 @@ ExplicitDecl
 -- A statement at top level or within a class.
 Stmt :: { Stmt Span }
 Stmt
-  : 'class' TypeName '(' VarNameList ')' '{' StmtList '}'
+  : 'mod' VarName '{' StmtList '}'
+    { StmtModuleDecl (spanToks $1 $5) $2 }
+  | 'class' TypeName '(' VarNameList ')' '{' StmtList '}'
     { StmtClassDecl (spanToks $1 $8) False $2 $4 $7 }
   | 'explicit' 'class' TypeName '(' VarNameList ')' '{' StmtList '}'
     { StmtClassDecl (spanToks $1 $9) True $3 $5 $8 }
@@ -214,7 +238,7 @@ Stmt
     { StmtAnonDomainDecl (spanToks $1 $8) True $3 $6 }
   | VarName '=' Exp ';'
     { StmtAssign (unionSpan (label $1) (tokSpan $4)) $1 $3 }
-  | PortName ConnOp PortName ';'
+  | QualPortName ConnOp QualPortName ';'
     { StmtConnection (unionSpan (label $1) (tokSpan $4)) $1 $2 $3 }
   | '[' Annotation ']' Stmt
     { StmtAnnotation (unionSpan (tokSpan $1) (label $4)) $2 $4 }
@@ -243,7 +267,7 @@ Exp
   | LitBool       { ExpBool $1 }
   | LitDirection  { ExpDirection $1 }
   | LitPosition   { ExpPosition $1 }
-  | VarName       { ExpVar $1 }
+  | QualVarName   { ExpVar $1 }
   | '!' Exp       { mkUnaryOp $2 UnaryOpNot }
   | Exp '&&' Exp  { mkBinaryOp $1 $3 BinaryOpAnd }
   | Exp '||' Exp  { mkBinaryOp $1 $3 BinaryOpOr }

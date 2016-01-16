@@ -767,9 +767,9 @@ evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
 -- for the current domain.  They must also be internal connections
 -- (between two ports in the same domain).
 evalStmt _ (A.StmtConnection _
-              pidL@(A.UPortName _)
+              pidL@(A.Qualified _ modsL (A.UPortName _))
               (A.ConnOp _ A.ConnNegative)
-              pidR@(A.UPortName _)) = do
+              pidR@(A.Qualified _ modsR (A.UPortName _)) = do
   portL <- lookupPort pidL
   portR <- lookupPort pidR
   addNegativeConn portL portR
