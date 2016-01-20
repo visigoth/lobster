@@ -13,6 +13,7 @@
 -- AST types.
 module Lobster.Core.Pretty () where
 
+import qualified Data.Text as T
 import Text.PrettyPrint.Mainland
 
 import Lobster.Core.AST
@@ -77,6 +78,11 @@ instance Pretty (VarName a) where
 
 instance Pretty (TypeName a) where
   ppr (TypeName _ x) = fromText x
+
+instance Pretty (b a) => Pretty (Qualified b a) where
+  ppr (Qualified _ mods ident) =
+    let path = T.intercalate "::" (getVarName `fmap` mods) <> "::"
+    in fromText path <> ppr ident
 
 instance Pretty (ConnOp a) where
   ppr (ConnOp _ x) = ppr x

@@ -399,7 +399,7 @@ lookupVar (A.VarName l name) = do
   maybeLose (UndefinedVar l name) x
 
 -- | Convert a port name to a string for error messages.
-fullPortName :: A.PortName l -> Text
+fullPortName :: A.Qualified l PortName -> Text
 fullPortName (A.UPortName (A.VarName _ name)) = name
 fullPortName (A.QPortName _ (A.VarName _ n1) (A.VarName _ n2)) = n1 <> "." <> n2
 
@@ -766,10 +766,12 @@ evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
 -- adding a connection, add to the set of 'negative connections'
 -- for the current domain.  They must also be internal connections
 -- (between two ports in the same domain).
+--
+-- TODO: throw error if mod list is not empty
 evalStmt _ (A.StmtConnection _
-              pidL@(A.Qualified _ modsL (A.UPortName _))
+              (A.Qualified _ _ pidL@(A.UPortName _))
               (A.ConnOp _ A.ConnNegative)
-              pidR@(A.Qualified _ modsR (A.UPortName _)) = do
+              (A.Qualified _ modsR pidR@(A.UPortName _))) = do
   portL <- lookupPort pidL
   portR <- lookupPort pidR
   addNegativeConn portL portR
