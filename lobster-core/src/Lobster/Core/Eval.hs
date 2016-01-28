@@ -57,7 +57,7 @@ module Lobster.Core.Eval
   , portLabel
   , portAnnotation
   , portDomain
- 
+
     -- * Connections
   , ConnLevel(..)
   , ConnectionId(..)
@@ -79,11 +79,15 @@ import Control.Lens hiding (op)
 import Control.Monad (unless)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
+import Data.List (foldl')
 import Data.Monoid ((<>), mempty)
 import Data.Text (Text)
+import Data.Text.Lazy.Encoding (encodeUtf8)
 
 import Lobster.Core.Util
 import Lobster.Core.Error
+import Lobster.Core.Lexer (runAlex)
+import Lobster.Core.Parser (parseExpression)
 
 import qualified Data.Map             as M
 import qualified Data.Set             as S
@@ -107,7 +111,8 @@ data Class l = Class
 data Env l = Env
   { _envClasses      :: M.Map Text (Class l)
   , _envPorts        :: M.Map Text PortId
-  , _envSubdomains   :: M.Map Text (DomainId, Env l)
+  , _envSubdomains   :: M.Map Text (DomainId, ModuleId)
+  , _envSubmodules   :: M.Map Text ModuleId
   , _envVars         :: M.Map Text (Value l)
   } deriving (Show, Functor)
 
@@ -117,6 +122,7 @@ initialEnv = Env
   { _envClasses    = M.empty
   , _envPorts      = M.empty
   , _envSubdomains = M.empty
+  , _envSubmodules = M.empty
   , _envVars       = M.empty
   }
 
@@ -156,6 +162,9 @@ data Port l = Port
 
 instance A.Labeled Port where
   label = _portLabel
+
+newtype ModuleId = ModuleId { getModuleId :: Int }
+  deriving (Eq, Ord, Show)
 
 newtype DomainId = DomainId { getDomainId :: Int }
   deriving (Eq, Ord, Show)
@@ -259,11 +268,13 @@ instance A.Labeled Connection where
 -- type Graph l = G.Gr () (Connection l)
 
 data Module l = Module
-  { _moduleDomains          :: M.Map DomainId (Domain l)
+  { _moduleModules          :: M.Map ModuleId (Env l)
+  , _moduleDomains          :: M.Map DomainId (Domain l)
   , _modulePorts            :: M.Map PortId (Port l)
   , _moduleConnections      :: M.Map ConnectionId (Connection l)
   , _moduleRootDomain       :: DomainId
-  , _moduleEnv              :: Env l
+  , _moduleFocusedModule    :: ModuleId
+  , _moduleNextModuleId     :: Int
   , _moduleNextDomainId     :: Int
   , _moduleNextPortId       :: Int
   , _moduleNextConnectionId :: Int
@@ -271,11 +282,13 @@ data Module l = Module
 
 emptyModule :: l -> Module l
 emptyModule l = Module
-  { _moduleDomains          = M.singleton (DomainId 0) (topDomain l (DomainId 0))
+  { _moduleModules          = M.singleton (ModuleId 0) initialEnv
+  , _moduleDomains          = M.singleton (DomainId 0) (topDomain l (DomainId 0))
   , _modulePorts            = M.empty
   , _moduleConnections      = M.empty
   , _moduleRootDomain       = (DomainId 0)
-  , _moduleEnv              = initialEnv
+  , _moduleFocusedModule    = (ModuleId 0)
+  , _moduleNextModuleId     = 1
   , _moduleNextDomainId     = 1
   , _moduleNextPortId       = 0
   , _moduleNextConnectionId = 0
@@ -317,6 +330,11 @@ revConn conn = (`execState` conn) $ do
   connectionAnnotation %= revAnnotation
   connectionLeft       .= portR
   connectionRight      .= portL
+
+-- | Access environment associated with the focused module.
+moduleEnv :: Traversal' (Module l) (Env l)
+moduleEnv f mod = let modId = mod ^. moduleFocusedModule
+                  in (moduleModules . ix modId) f mod
 
 -- | A partial lens for a domain by ID in a module.
 idDomain :: DomainId -> Lens' (Module l) (Domain l)
@@ -380,6 +398,24 @@ maybeLose e x = lift $ note e x
 ----------------------------------------------------------------------
 -- Evaluation
 
+lookupModule :: A.Qualified a l -> Eval l (Env l)
+lookupModule (A.Qualified _ Nothing _) = use moduleEnv
+lookupModule ident@(A.Qualified l (Just mods) _) = do
+  rootEnv <- use moduleEnv
+  let env = foldl' (\e mod -> e >>= lookupModule' mod) (Just rootEnv) mods
+  maybeLose (UndefinedModule l (A.getModulePrefix ident)) env
+
+lookupModule' :: Text -> Env l -> Maybe (Env l)
+lookupModule' name env = env ^? envSubmodules . at name . _2
+
+-- | Add a named module to the current environment.
+addModule :: Text -> Eval l ModuleId
+addModule name = do
+  modId  <- ModuleId <$> (moduleNextModuleId <<+= 1)
+  moduleModules . at modId ?= initialEnv
+  moduleEnv . envSubmodules . at name ?= modId
+  return modId
+
 -- | Add a class definition to the current environment.
 addClass :: A.TypeName l -> Class l -> Eval l ()
 addClass (A.TypeName _ name) cl = do
@@ -399,9 +435,10 @@ lookupVar (A.VarName l name) = do
   maybeLose (UndefinedVar l name) x
 
 -- | Convert a port name to a string for error messages.
-fullPortName :: A.Qualified l PortName -> Text
-fullPortName (A.UPortName (A.VarName _ name)) = name
-fullPortName (A.QPortName _ (A.VarName _ n1) (A.VarName _ n2)) = n1 <> "." <> n2
+fullPortName :: A.PortName l -> Text
+fullPortName (A.UPortName (A.VarName _ name)) = A.getModulePrefix <> name
+fullPortName (A.QPortName _ m@(A.Qualified _ (A.VarName _ n1)) (A.VarName _ n2)) =
+  A.getModulePrefix m <> n1 <> "." <> n2
 
 -- | Resolve a port in the current domain, returning its port
 -- id if it is valid.
@@ -410,7 +447,7 @@ lookupPort (A.UPortName (A.VarName l name)) = do
   port  <- use (moduleEnv . envPorts . at name)
   port' <- maybeLose (UndefinedPort l name) port
   return port'
-lookupPort pid@(A.QPortName _ (A.VarName l1 domN) (A.VarName l2 portN)) = do
+lookupPort pid@(A.QPortName _ (A.Qualified lm (A.VarName l1 domN)) (A.VarName l2 portN)) = do
   -- look up subdomain, get domain id and subdomain environment
   x <- use (moduleEnv . envSubdomains . at domN)
   (_, subEnv) <- maybeLose (UndefinedDomain l1 domN) x
@@ -437,15 +474,11 @@ getPort pid = do
     Just port -> return port
     Nothing   -> lose $ MiscError "internal error: undefined port"
 
--- | Add a subdomain definition to the current graph.
-addDomain :: Domain l -> Eval l DomainId
-addDomain dom = do
-  domId <- DomainId <$> (moduleNextDomainId <<+= 1)
-  moduleDomains . at domId ?= dom
-  -- add domain as subdomain of current root
-  rootId <- use moduleRootDomain
-  moduleDomains . ix rootId . domainSubdomains . contains domId .= True
-  return domId
+-- | Get a module by ID.
+getModule :: ModuleId -> Eval l (Module l)
+getModule modId = do
+  modules <- use moduleModules
+  moduleDomains . ix modId
 
 -- | Get a domain by ID.
 getDomain :: DomainId -> Eval l (Domain l)
@@ -528,7 +561,9 @@ addConnection l portL portR cty ann = do
 -}
 
 -- | Add a connection to the current module.
-addConnection :: l -> A.PortName l -> A.PortName l -> A.ConnType -> A.Annotation l -> Eval l ()
+addConnection :: l
+              -> A.Qualified A.PortName l -> A.Qualified A.PortName l
+              -> A.ConnType -> A.Annotation l -> Eval l ()
 addConnection l pnameL pnameR cty ann = do
   pidL   <- lookupPort pnameL
   pidR   <- lookupPort pnameR
@@ -571,35 +606,50 @@ newEnv classes locals = Env
   , _envVars       = locals
   }
 
--- | Create a new, empty domain given its name, path, and
--- class.
-newDomain :: l -> Text -> Text -> Class l -> DomainId
-          -> DomainId -> A.Annotation l -> Domain l
-newDomain l name path cls domId parent ann = Domain
-  { _domainId              = domId
-  , _domainName            = name
-  , _domainPath            = path
-  , _domainClassName       = cls ^. className . to A.getTypeName
-  , _domainSubdomains      = S.empty
-  , _domainParent          = Just parent
-  , _domainPorts           = S.empty
-  , _domainLabel           = l
-  , _domainAnnotation      = ann
-  , _domainClassAnnotation = cls ^. classAnnotation
-  , _domainIsExplicit      = cls ^. classIsExplicit
-  , _domainNegativeConns   = S.empty
-  }
+-- | Create a new, empty domain given its name, class, and environment; and add
+-- it to the current graph.
+newDomain :: l -> Text -> Class l -> A.Annotation l -> Eval l (Domain l)
+newDomain l name cls ann = do
+  domId  <- DomainId <$> (moduleNextDomainId <<+= 1)
+  path   <- getMemberPath name
+  parent <- use moduleRootDomain
+  let dom = Domain { _domainId              = domId
+                   , _domainName            = name
+                   , _domainPath            = path
+                   , _domainClassName       = cls ^. className . to A.getTypeName
+                   , _domainSubdomains      = S.empty
+                   , _domainParent          = Just parent
+                   , _domainPorts           = S.empty
+                   , _domainLabel           = l
+                   , _domainAnnotation      = ann
+                   , _domainClassAnnotation = cls ^. classAnnotation
+                   , _domainIsExplicit      = cls ^. classIsExplicit
+                   , _domainNegativeConns   = S.empty
+                   }
+  -- Add subdomain to current graph
+  moduleDomains . at domId ?= dom
+  moduleDomains . ix parent . domainSubdomains . contains domId .= True
+  return dom
+
+-- | Execute an action in a new environment for a module.
+inModEnv :: ModuleId -> Eval l a -> Eval l a
+inModEnv modId f = do
+  oldMod <- use moduleFocusedModule
+  moduleFocusedModule .= modId
+  result <- f
+  moduleFocusedModule .= oldMod
+  return result
 
 -- | Execute an action in a new environment for a domain.
-inEnv :: DomainId -> Env l -> Eval l a -> Eval l a
-inEnv domId env f = do
+inDomEnv :: Domain l -> ModuleId -> Eval l a -> Eval l a
+inDomEnv dom modId f = do
   oldDomId <- use moduleRootDomain
-  oldEnv   <- use moduleEnv
-  moduleRootDomain .= domId
-  moduleEnv        .= env
+  oldModId <- use moduleFocusedModule
+  moduleRootDomain    .= (dom ^. domainId)
+  moduleFocusedModule .= modId
   result <- f
-  moduleRootDomain .= oldDomId
-  moduleEnv        .= oldEnv
+  moduleRootDomain     .= oldDomId
+  moduleFocusedModule .= oldModId
   return result
 
 -- | Return true if a name is bound in the current environment
@@ -688,12 +738,16 @@ buildLocals l vars exps = do
 
 -- | Build a new environment for a subdomain given a class and its
 -- arguments.
-subdomainEnv :: l -> Class l -> [A.Exp l] -> Eval l (Env l)
+subdomainEnv :: l -> Class l -> [A.Exp l] -> Eval l (ModuleId, Env l)
 subdomainEnv l cl args = do
   let clArgs = cl ^. classArgs
   locals <- buildLocals l clArgs args
   classes <- use (moduleEnv . envClasses)
-  return (newEnv classes locals)
+  modId  <- ModuleId <$> (moduleNextModuleId <<+= 1)
+  let env = newEnv classes locals
+  -- Add subdomain env to the current graph
+  moduleModules . at modId ?= env
+  return (modId, env)
 
 -- | Return a unique anonymous class name for a domain.
 getAnonClassName :: l -> Text -> Eval l (A.TypeName l)
@@ -727,6 +781,15 @@ evalStmt ann (A.StmtPortDecl l (A.VarName _ name) attrs) = do
   _ <- addPort port
   moduleEnv . envPorts . at name ?= pid
 
+evalStmt ann (A.StmtModuleDecl _ (A.VarName _ name) body) = do
+  env   <- use moduleEnv
+  modId <- case env ^? envSubmodules . ix name of
+    Just subEnvId -> subEnvId
+    Nothing       -> addModule name
+  subEnv <- inModEnv modId $ do
+    evalStmts body
+  moduleModules . at modId ?= subEnv
+
 evalStmt ann (A.StmtClassDecl l isExp ty@(A.TypeName _ name) args body) = do
   whenM (isBound envClasses name) (lose $ DuplicateClass l name)
   path <- getClassPath name
@@ -736,21 +799,17 @@ evalStmt ann (A.StmtClassDecl l isExp ty@(A.TypeName _ name) args body) = do
 evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   whenM (isBound envSubdomains name) (lose $ DuplicateDomain l name)
   -- look up class and evaluate arguments
-  cls    <- lookupClass ty
-  env    <- subdomainEnv l cls args
+  cls <- lookupClass ty
+  (modId, env) <- subdomainEnv l cls args
   -- create new domain and add it to the graph
-  domPath <- getMemberPath name
-  rootId  <- use moduleRootDomain
-  -- XXX kind of a hack, get the domain id first before adding it
-  domId <- DomainId <$> use moduleNextDomainId
-  let dom = newDomain l name domPath cls domId rootId ann
-  _ <- addDomain dom
+  dom <- newDomain l name cls ann
+  let domId = dom ^. domainId
   -- evaluate domain body in new environment
-  subEnv <- inEnv domId env $ do
+  subEnv <- inDomEnv dom modId $ do
     evalStmts (cls ^. classBody)
-    use moduleEnv
   -- add subdomain's environment to our environment
-  moduleEnv . envSubdomains . at name ?= (domId, subEnv)
+  moduleEnv . envSubdomains . at name ?= (domId, modId)
+  -- TODO: update env in moduleModule map
 
 evalStmt ann (A.StmtAnonDomainDecl l isExp var@(A.VarName l2 name) body) = do
   cls <- getAnonClassName l2 name

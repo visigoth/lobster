@@ -19,6 +19,7 @@ import qualified Data.Text as T
 }
 
 %name parsePolicy Policy
+%name parseExpression Exp
 %tokentype { Token }
 
 %token
@@ -207,11 +208,7 @@ Policy : StmtList { Policy (foldr unionSpan emptySpan (map label $1)) $1 }
 PortName :: { PortName Span }
 PortName
   : VarName { UPortName $1 }
-  | VarName '.' VarName { QPortName (unionSpan (label $1) (label $3)) $1 $3 }
-
-QualPortName :: { Qualified PortName Span }
-QualPortName
-  : ModulePath PortName { Qualified (spanToks $1 $2) $1 2 }
+  | QualVarName '.' VarName { QPortName (unionSpan (label $1) (label $3)) $1 $3 }
 
 ExplicitDecl :: { Bool }
 ExplicitDecl
@@ -221,7 +218,7 @@ ExplicitDecl
 -- A statement at top level or within a class.
 Stmt :: { Stmt Span }
 Stmt
-  : 'mod' VarName '{' StmtList '}'
+  : 'mod' QualVarName '{' StmtList '}'
     { StmtModuleDecl (spanToks $1 $5) $2 }
   | 'class' TypeName '(' VarNameList ')' '{' StmtList '}'
     { StmtClassDecl (spanToks $1 $8) False $2 $4 $7 }
@@ -238,7 +235,7 @@ Stmt
     { StmtAnonDomainDecl (spanToks $1 $8) True $3 $6 }
   | VarName '=' Exp ';'
     { StmtAssign (unionSpan (label $1) (tokSpan $4)) $1 $3 }
-  | QualPortName ConnOp QualPortName ';'
+  | PortName ConnOp PortName ';'
     { StmtConnection (unionSpan (label $1) (tokSpan $4)) $1 $2 $3 }
   | '[' Annotation ']' Stmt
     { StmtAnnotation (unionSpan (tokSpan $1) (label $4)) $2 $4 }

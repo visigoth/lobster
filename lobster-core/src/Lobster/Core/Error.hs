@@ -35,6 +35,7 @@ data Error l
   | UndefinedClass l Text
   | UndefinedVar l Text
   | UndefinedDomain l Text
+  | UndefinedModule l Text
   | UndefinedPort l Text
   | InternalConnection l Text Text
   | BadArguments l Int
@@ -70,6 +71,8 @@ errorMessage err =
       "undefined variable: '" <> t <> "'"
     UndefinedDomain _ t ->
       "undefined domain: '" <> t <> "'"
+    UndefinedModule _ t ->
+      "undefined module: '" <> t <> "'"
     UndefinedPort _ t ->
       "undefined port: '" <> t <> "'"
     BadPosition _ p1 p2 t ->

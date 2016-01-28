@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 --
 -- Pretty.hs --- Pretty-printer for the Lobster AST.
@@ -80,7 +82,8 @@ instance Pretty (TypeName a) where
   ppr (TypeName _ x) = fromText x
 
 instance Pretty (b a) => Pretty (Qualified b a) where
-  ppr (Qualified _ mods ident) =
+  ppr (Qualified _ Nothing ident) = ppr ident
+  ppr (Qualified _ (Just mods) ident) =
     let path = T.intercalate "::" (getVarName `fmap` mods) <> "::"
     in fromText path <> ppr ident
 
@@ -128,6 +131,8 @@ instance Pretty (Stmt a) where
                      </> lbrace
                      </> indent 2 (pprStmts body)
                      </> rbrace
+  ppr (StmtModuleDecl _ varName body) =
+    text "mod" <> ppr varName <> parens (pprCommaSep body)
   ppr (StmtPortDecl _ name []) =
     text "port" <+> ppr name <> semi
   ppr (StmtPortDecl _ name attrs) =
