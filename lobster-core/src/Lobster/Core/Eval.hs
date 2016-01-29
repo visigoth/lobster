@@ -350,17 +350,21 @@ idConnection connId = singular (moduleConnections . ix connId)
 
 -- | Look up a domain by path name.
 pathDomain :: Module l -> Text -> Maybe (Domain l)
-pathDomain m t =
-  case go (m ^. moduleRootDomain) (m ^. moduleEnv) (T.split (== '.') t) of
-    Just domId -> Just $ m ^. idDomain domId
-    Nothing    -> Nothing
-  where
-    go domId _    [] = Just domId
-    go _     env (x:xs) =
-      case M.lookup x (env ^. envSubdomains) of
-        Just (subDomId, subEnv) ->
-          go subDomId subEnv xs
-        Nothing -> Nothing
+pathDomain m t = case runAlex (encodeUtf8 t) parseExpression of
+  Right (A.ExpVar (A.Qualified _ mods (A.VarName _ name))) ->
+    let env      = maybe initialEnv id (m ^? moduleEnv)
+        modNames = maybe [] (fmap A.getVarName) mods
+    in pathDomain' m env modNames name
+  Right _ -> Nothing
+  Left  _ -> Nothing
+
+pathDomain' :: Module l -> Env l -> [Text] -> Text -> Maybe (Domain l)
+pathDomain' m env [] name = let domId = env ^? envSubdomains . ix name
+                            in domId >>= m ^? moduleDomains . ix domId
+pathDomain' m env (mod:mods) name = do
+  modId  <- env ^? envSubmodules . ix mod
+  subEnv <- m ^? moduleModules . ix modId
+  pathDomain' m subEnv mods name
 
 {-
 -- test function to relabel the graph for use with graphviz
