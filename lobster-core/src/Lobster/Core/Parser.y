@@ -8,12 +8,14 @@
 {
 module Lobster.Core.Parser
   ( parsePolicy
+  , parseExpression
   ) where
 
 import Lobster.Core.AST
 import Lobster.Core.Lexer
 import Lobster.Core.Error
 
+import Data.Monoid ((<>), mconcat)
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as T
 }
@@ -121,7 +123,7 @@ LitPosition
 
 -- A variable name (starts with a lower case letter).
 VarName :: { VarName Span }
-VarName 
+VarName
   : LIdent { VarName (tokSpan $1) (tokText $1) }
 
 -- A comma separated list of zero or more variable names.
@@ -136,22 +138,22 @@ TypeName :: { TypeName Span }
 TypeName
   : UIdent { TypeName (tokSpan $1) (tokText $1) }
 
-ModulePath :: { [VarName Span] }
+ModulePath :: { Maybe [VarName Span] }
 ModulePath
-  : {- empty -} { [] }
-  | VarName '::' ModulePath { (:) $1 $3 }
+  : {- empty -} { Nothing }
+  | ModulePath '::' VarName { Just (maybe [] id $1 <> [$3])  }
 
 -- A qualified name: a variable name optionally prefixed with a module path
 QualVarName :: { Qualified VarName Span }
 QualVarName
   : ModulePath VarName
-    { Qualified (spanToks $1 $2) $1 $2 }
+    { Qualified (mconcat (maybe [] (fmap label) $1) <> label $2) $1 $2 }
 
 -- A qualified name: a type name optionally prefixed with a module path
 QualTypeName :: { Qualified TypeName Span }
 QualTypeName
   : ModulePath TypeName
-    { Qualified (spanToks $1 $2) $1 $2 }
+    { Qualified (mconcat (maybe [] (fmap label) $1) <> label $2) $1 $2 }
 
 -- A connection operator.
 ConnOp :: { ConnOp Span }
@@ -218,8 +220,8 @@ ExplicitDecl
 -- A statement at top level or within a class.
 Stmt :: { Stmt Span }
 Stmt
-  : 'mod' QualVarName '{' StmtList '}'
-    { StmtModuleDecl (spanToks $1 $5) $2 }
+  : 'mod' VarName '{' StmtList '}'
+    { StmtModuleDecl (spanToks $1 $5) $2 $4 }
   | 'class' TypeName '(' VarNameList ')' '{' StmtList '}'
     { StmtClassDecl (spanToks $1 $8) False $2 $4 $7 }
   | 'explicit' 'class' TypeName '(' VarNameList ')' '{' StmtList '}'

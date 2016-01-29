@@ -142,6 +142,7 @@ data Keyword
   | KwExists
   | KwExplicit
   | KwInput
+  | KwModule
   | KwNever
   | KwObject
   | KwOutput

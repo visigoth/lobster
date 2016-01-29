@@ -315,7 +315,7 @@ data Exp a
   | ExpBool       (LitBool a)
   | ExpDirection  (LitDirection a)
   | ExpPosition   (LitPosition a)
-  | ExpVar        (VarName a)
+  | ExpVar        (Qualified VarName a)
   | ExpBinaryOp   a (Exp a) BinaryOp (Exp a)
   | ExpUnaryOp    a UnaryOp (Exp a)
   | ExpParen      a (Exp a)
