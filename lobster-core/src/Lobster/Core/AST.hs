@@ -179,7 +179,7 @@ instance Labeled TypeName where
   label (TypeName l _) = l
 
 -- | Qualified name: a variable or type optionally prefixed by a module path
-data Qualified b a = Qualified a (Maybe [VarName a]) (b a)
+data Qualified a l = Qualified l (Maybe [VarName l]) (a l)
   deriving (Show, Functor, Foldable, Traversable)
 
 getModulePrefix :: Qualified b a -> Text

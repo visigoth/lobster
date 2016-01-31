@@ -73,7 +73,7 @@ module Lobster.Core.Eval
   , revLevel
   ) where
 
-import Control.Applicative ((<$>))
+import Control.Applicative ((<$>), pure)
 import Control.Error
 import Control.Lens hiding (op)
 import Control.Monad (unless)
@@ -82,6 +82,7 @@ import Control.Monad.Trans.State
 import Data.List (foldl')
 import Data.Monoid ((<>), mempty)
 import Data.Text (Text)
+import Data.Text.Lazy (fromChunks)
 import Data.Text.Lazy.Encoding (encodeUtf8)
 
 import Lobster.Core.Util
@@ -350,21 +351,17 @@ idConnection connId = singular (moduleConnections . ix connId)
 
 -- | Look up a domain by path name.
 pathDomain :: Module l -> Text -> Maybe (Domain l)
-pathDomain m t = case runAlex (encodeUtf8 t) parseExpression of
-  Right (A.ExpVar (A.Qualified _ mods (A.VarName _ name))) ->
-    let env      = maybe initialEnv id (m ^? moduleEnv)
-        modNames = maybe [] (fmap A.getVarName) mods
-    in pathDomain' m env modNames name
+pathDomain m t = case runAlex (toLBS t) parseExpression of
+  Right (A.ExpVar (A.Qualified _ mods (A.VarName _ name))) -> do
+    rootEnv <- m ^? moduleEnv
+    let modNames = maybe [] (fmap A.getVarName) mods
+    env <- lookup' m modNames rootEnv
+    (domId, _) <- env ^? envSubdomains . ix name
+    m ^? moduleDomains . ix domId
   Right _ -> Nothing
   Left  _ -> Nothing
-
-pathDomain' :: Module l -> Env l -> [Text] -> Text -> Maybe (Domain l)
-pathDomain' m env [] name = let domId = env ^? envSubdomains . ix name
-                            in domId >>= m ^? moduleDomains . ix domId
-pathDomain' m env (mod:mods) name = do
-  modId  <- env ^? envSubmodules . ix mod
-  subEnv <- m ^? moduleModules . ix modId
-  pathDomain' m subEnv mods name
+  where
+    toLBS = encodeUtf8 . fromChunks . pure
 
 {-
 -- test function to relabel the graph for use with graphviz
@@ -402,15 +399,23 @@ maybeLose e x = lift $ note e x
 ----------------------------------------------------------------------
 -- Evaluation
 
-lookupModule :: A.Qualified a l -> Eval l (Env l)
-lookupModule (A.Qualified _ Nothing _) = use moduleEnv
-lookupModule ident@(A.Qualified l (Just mods) _) = do
-  rootEnv <- use moduleEnv
-  let env = foldl' (\e mod -> e >>= lookupModule' mod) (Just rootEnv) mods
-  maybeLose (UndefinedModule l (A.getModulePrefix ident)) env
+-- | Given a qualified reference, returns the appropriate environment for
+-- looking up the reference, paired with an unqualified version of the
+-- reference.
+lookup :: A.Qualified a l -> Eval l (Maybe (a l, Env l))
+lookup (A.Qualified _ mods ref) = do
+  mod     <- get
+  rootEnv <- preuse moduleEnv
+  let modNames = maybe [] (fmap A.getVarName) mods
+  let env      = lookup' mod modNames =<< rootEnv
+  return $ ((,) ref) <$> env
 
-lookupModule' :: Text -> Env l -> Maybe (Env l)
-lookupModule' name env = env ^? envSubmodules . at name . _2
+lookup' :: Module l -> [Text] -> Env l -> Maybe (Env l)
+lookup' m [] env = Just env
+lookup' m (mod:mods) env = do
+  modId  <- env ^? envSubmodules . ix mod
+  subEnv <- m ^? moduleModules . ix modId
+  lookup' m mods subEnv
 
 -- | Add a named module to the current environment.
 addModule :: Text -> Eval l ModuleId
@@ -428,20 +433,21 @@ addClass (A.TypeName _ name) cl = do
 -- | Look up a class definition.
 lookupClass :: A.TypeName l -> Eval l (Class l)
 lookupClass (A.TypeName l name) = do
-  x <- use (moduleEnv . envClasses . at name)
+  x <- preuse (moduleEnv . envClasses . ix name)
   maybeLose (UndefinedClass l name) x
+  -- TODO: qualified class references
 
 -- | Look up a variable name in the current domain.  Raises an
 -- 'UndefinedVar' error if it is not found.
 lookupVar :: A.VarName l -> Eval l (Value l)
 lookupVar (A.VarName l name) = do
-  x <- use (moduleEnv . envVars . at name)
+  x <- preuse (moduleEnv . envVars . ix name)
   maybeLose (UndefinedVar l name) x
 
 -- | Convert a port name to a string for error messages.
 fullPortName :: A.PortName l -> Text
-fullPortName (A.UPortName (A.VarName _ name)) = A.getModulePrefix <> name
-fullPortName (A.QPortName _ m@(A.Qualified _ (A.VarName _ n1)) (A.VarName _ n2)) =
+fullPortName (A.UPortName (A.VarName _ name)) = name
+fullPortName (A.QPortName _ m@(A.Qualified _ _ (A.VarName _ n1)) (A.VarName _ n2)) =
   A.getModulePrefix m <> n1 <> "." <> n2
 
 -- | Resolve a port in the current domain, returning its port
@@ -652,7 +658,7 @@ inDomEnv dom modId f = do
   moduleRootDomain    .= (dom ^. domainId)
   moduleFocusedModule .= modId
   result <- f
-  moduleRootDomain     .= oldDomId
+  moduleRootDomain    .= oldDomId
   moduleFocusedModule .= oldModId
   return result
 
@@ -805,6 +811,7 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   -- look up class and evaluate arguments
   cls <- lookupClass ty
   (modId, env) <- subdomainEnv l cls args
+  moduleModules . at modId ?= env
   -- create new domain and add it to the graph
   dom <- newDomain l name cls ann
   let domId = dom ^. domainId
@@ -813,7 +820,7 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
     evalStmts (cls ^. classBody)
   -- add subdomain's environment to our environment
   moduleEnv . envSubdomains . at name ?= (domId, modId)
-  -- TODO: update env in moduleModule map
+  moduleModules . at modId ?= subEnv
 
 evalStmt ann (A.StmtAnonDomainDecl l isExp var@(A.VarName l2 name) body) = do
   cls <- getAnonClassName l2 name
