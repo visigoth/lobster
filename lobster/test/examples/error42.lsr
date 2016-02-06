@@ -1,14 +1,1 @@
-// input connected (as though it were an output) to erroniously defined output.
-
-class A() {
-  port in;
-}
-
-class B() {
-  port in : { direction = input };
-}
-
-domain a = A();
-domain b = B();
-
-b.in --> a.in;
+../../../lobster-core/tests/examples/error42.lsr

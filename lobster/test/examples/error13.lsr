@@ -1,1 +1,1 @@
-assert [foo.bar] -> [foo.bar] :: never;
+../../../lobster-core/tests/examples/error13.lsr

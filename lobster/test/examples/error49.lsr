@@ -1,7 +1,1 @@
-// genLobster bug: was generating "Class" keywords
-
-Class App() {
-  port active;
-}
-
-domain app = App();
+../../../lobster-core/tests/examples/error49.lsr
