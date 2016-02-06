@@ -158,13 +158,16 @@ makeLenses ''ModuleGraph
 -- | State monad used internally during graph building.
 type G l a = State (GState l) a
 
+varName :: Qualified VarName l -> Text
+varName = getVarName . getUnqualified
+
 -- | Create a predicate for a single annotation element.
 annEltPred :: AnnotationElement l -> Maybe GConnPred
 annEltPred ae =
   case ae of
-    (TypeName _ ty, ExpVar (VarName _ v1):ExpVar (VarName _ v2):[])
-      | ty == "Lhs" -> Just $ PredPort v1 v2
-      | ty == "Rhs" -> Just $ SuccPort v1 v2
+    (TypeName _ ty, ExpVar v1:ExpVar v2:[])
+      | ty == "Lhs" -> Just $ PredPort (varName v1) (varName v2)
+      | ty == "Rhs" -> Just $ SuccPort (varName v1) (varName v2)
     _ -> Nothing
 
 -- | Create a predicate for a connection annotation.
@@ -869,7 +872,7 @@ data SMTVar = SMTVar Text SMTType
 
 -- | Return the free variables in an expression.
 smtVars :: Exp l -> S.Set SMTVar
-smtVars (ExpVar (VarName _ s))  = S.singleton $ SMTVar s SMTBool
+smtVars (ExpVar s)  = S.singleton $ SMTVar (varName s) SMTBool
 smtVars (ExpBinaryOp _ e1 _ e2) = S.union (smtVars e1) (smtVars e2)
 smtVars (ExpUnaryOp _ _ e)      = smtVars e
 smtVars (ExpParen _ e)          = smtVars e
@@ -888,7 +891,7 @@ smtVarDecl (SMTVar s ty) =
 
 -- | Return an SMT expression for a Lobster expression.
 smtExp :: Exp l -> Text
-smtExp (ExpVar (VarName _ s)) = s
+smtExp (ExpVar s) = varName s
 smtExp (ExpBinaryOp _ e1 BinaryOpAnd e2) = smtBinOp "and" e1 e2
 smtExp (ExpBinaryOp _ e1 BinaryOpOr  e2) = smtBinOp "or"  e1 e2
 smtExp (ExpBinaryOp _ e1 BinaryOpEqual e2) = smtBinOp "=" e1 e2
@@ -908,4 +911,3 @@ smt e = T.intercalate "\n" decls
     vars    = map smtVarDecl (S.toList (smtVars e))
     asserts = [smtAssert e]
     decls   = vars ++ asserts
-
