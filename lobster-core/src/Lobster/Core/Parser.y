@@ -126,6 +126,14 @@ VarName :: { VarName Span }
 VarName
   : LIdent { VarName (tokSpan $1) (tokText $1) }
 
+-- A module name (starts with a lower case letter).
+ModuleName :: { Qualifier Span }
+ModuleName : VarName { ModuleName $1 }
+
+-- A domain name (starts with a lower case letter).
+DomainName :: { Qualifier Span }
+DomainName : VarName { DomainName $1 }
+
 -- A comma separated list of zero or more variable names.
 VarNameList :: { [VarName Span] }
 VarNameList
@@ -138,22 +146,19 @@ TypeName :: { TypeName Span }
 TypeName
   : UIdent { TypeName (tokSpan $1) (tokText $1) }
 
-ModulePath :: { Maybe [VarName Span] }
-ModulePath
-  : {- empty -} { Nothing }
-  | ModulePath '::' VarName { Just (maybe [] id $1 <> [$3])  }
-
--- A qualified name: a variable name optionally prefixed with a module path
+-- A qualified name: a variable name optionally prefixed with a module or domain path.
 QualVarName :: { Qualified VarName Span }
 QualVarName
-  : ModulePath VarName
-    { Qualified (mconcat (maybe [] (fmap label) $1) <> label $2) $1 $2 }
+  : '::' QualVarName { Qualified (tokSpan $1 <> label $2) (RootModule (tokSpan $1)) $2 }
+  | VarName '::' QualVarName { Qualified (label $1 <> label $3) (ModuleName $1) $3 }
+  | VarName '.'  VarName     { Qualified (label $1 <> label $3) (DomainName $1) (Unqualified $3) }
+  | VarName { Unqualified $1 }
 
--- A qualified name: a type name optionally prefixed with a module path
 QualTypeName :: { Qualified TypeName Span }
 QualTypeName
-  : ModulePath TypeName
-    { Qualified (mconcat (maybe [] (fmap label) $1) <> label $2) $1 $2 }
+  : '::' QualTypeName { Qualified (tokSpan $1 <> label $2) (RootModule (tokSpan $1)) $2 }
+  | VarName '::' QualTypeName { Qualified (label $1 <> label $3) (ModuleName $1) $3 }
+  | TypeName { Unqualified $1 }
 
 -- A connection operator.
 ConnOp :: { ConnOp Span }
@@ -206,12 +211,6 @@ Annotation
 Policy :: { Policy Span }
 Policy : StmtList { Policy (foldr unionSpan emptySpan (map label $1)) $1 }
 
--- Parse a port identifier.
-PortName :: { PortName Span }
-PortName
-  : VarName { UPortName $1 }
-  | QualVarName '.' VarName { QPortName (unionSpan (label $1) (label $3)) $1 $3 }
-
 ExplicitDecl :: { Bool }
 ExplicitDecl
   : 'explicit'  { True }
@@ -228,7 +227,7 @@ Stmt
     { StmtClassDecl (spanToks $1 $9) True $3 $5 $8 }
   | 'port' VarName PortType ';'
     { StmtPortDecl (spanToks $1 $4) $2 $3 }
-  | 'domain' VarName '=' TypeName '(' ExpList ')' ';'
+  | 'domain' VarName '=' QualTypeName '(' ExpList ')' ';'
     { StmtDomainDecl (spanToks $1 $8) $2 $4 $6 }
   -- anonymous domains without a class definition
   | 'domain' VarName '=' '{' StmtList '}' ';'
@@ -237,7 +236,7 @@ Stmt
     { StmtAnonDomainDecl (spanToks $1 $8) True $3 $6 }
   | VarName '=' Exp ';'
     { StmtAssign (unionSpan (label $1) (tokSpan $4)) $1 $3 }
-  | PortName ConnOp PortName ';'
+  | QualVarName ConnOp QualVarName ';'
     { StmtConnection (unionSpan (label $1) (tokSpan $4)) $1 $2 $3 }
   | '[' Annotation ']' Stmt
     { StmtAnnotation (unionSpan (tokSpan $1) (label $4)) $2 $4 }

@@ -31,14 +31,19 @@ module Lobster.Core.AST
   , TypeName(..)
   , getTypeName
   , Qualified(..)
-  , getModulePrefix
+  , Qualifier(..)
+  , foldrQualifiers
+  , getQualifiedName
+  , getQualifiers
+  , getUnqualified
+  , getQualifierPrefix
   , ConnOp(..)
   , PortAttr(..)
   , AnnotationElement
   , Annotation(..)
   , lookupAnnotation
   , lookupAnnotations
-  , PortName(..)
+  , PortName
   , Stmt(..)
   , UnaryOp(..)
   , BinaryOp(..)
@@ -61,7 +66,6 @@ import Control.Lens
 import Data.Foldable (Foldable)
 import Data.Monoid ((<>), Monoid(..))
 import Data.Text (Text)
-import qualified Data.Text as T
 
 -- | Class of AST objects labeled with arbitrary data.
 class Labeled a where
@@ -178,27 +182,69 @@ instance Ord (TypeName a) where
 instance Labeled TypeName where
   label (TypeName l _) = l
 
--- | Qualified name: a variable or type optionally prefixed by a module path
-data Qualified a l = Qualified l (Maybe [VarName l]) (a l)
+-- | Qualified name: a variable or type optionally prefixed by a module or
+-- domain path
+data Qualified a l = Unqualified (a l)
+                   | Qualified l (Qualifier l) (Qualified a l)
   deriving (Show, Functor, Foldable, Traversable)
 
-getModulePrefix :: Qualified b a -> Text
-getModulePrefix (Qualified _ Nothing     _) = ""
-getModulePrefix (Qualified _ (Just mods) _) =
-  T.intercalate "::" (fmap getVarName mods) <> "::"
+data Qualifier l = RootModule l
+                 | ModuleName (VarName l)
+                 | DomainName (VarName l)
+  deriving (Show, Functor, Foldable, Traversable)
 
-instance Eq (b a) => Eq (Qualified b a) where
-  Qualified _ mods1 ident1 == Qualified _ mods2 ident2 =
-    mods1 == mods2 && ident1 == ident2
+foldrQualifiers :: (Qualifier l -> b -> b) -> b -> Qualified a l -> b
+foldrQualifiers _ z (Unqualified _) = z
+foldrQualifiers f z (Qualified _ qualifier rest) = f qualifier (foldrQualifiers f z rest)
 
-instance (Eq (b a), Ord (b a)) => Ord (Qualified b a) where
-  compare (Qualified _ mods1 ident1) (Qualified _ mods2 ident2) =
-    case compare mods1 mods2 of
-      EQ -> compare ident1 ident2
-      o  -> o
+getQualifiers :: Qualified a l -> [Qualifier l]
+getQualifiers name = foldrQualifiers (:) [] name
 
-instance Labeled (Qualified b) where
+getUnqualified :: Qualified a l -> a l
+getUnqualified (Unqualified name) = name
+getUnqualified (Qualified _ _ rest) = getUnqualified rest
+
+getQualifierPrefix :: Qualified a l -> Text
+getQualifierPrefix = foldrQualifiers f ""
+  where
+    f (RootModule _)    _ = "::"
+    f (ModuleName name) t = getVarName name <> "::" <> t
+    f (DomainName name) t = getVarName name <> "."  <> t
+
+getQualifiedName :: Qualified VarName l -> Text
+getQualifiedName n = (getQualifierPrefix n <> getVarName (getUnqualified n))
+
+instance (Labeled a) => Labeled (Qualified a) where
+  label (Unqualified name) = label name
   label (Qualified l _ _) = l
+
+instance Labeled Qualifier where
+  label (RootModule l) = l
+  label (ModuleName name) = label name
+  label (DomainName name) = label name
+
+instance Eq (a l) => Eq (Qualified a l) where
+  (Unqualified a) == (Unqualified b) = a == b
+  (Qualified _ qualA as) == (Qualified _ qualB bs) = qualA == qualB && as == bs
+  _ == _ = False
+
+instance Eq (Qualifier l) where
+  (RootModule _) == (RootModule _) = True
+  (ModuleName a) == (ModuleName b) = a == b
+  (DomainName a) == (DomainName b) = a == b
+  _ == _ = False
+
+instance Ord (a l) => Ord (Qualified a l) where
+  compare a b = compare (asProduct a) (asProduct b)
+    where
+      asProduct q = (getQualifiers q, getUnqualified q)
+
+instance Ord (Qualifier l) where
+  compare a b = compare (asProduct a) (asProduct b)
+    where
+      asProduct (RootModule _)    = (Nothing, Nothing)
+      asProduct (ModuleName name) = (Just name, Nothing)
+      asProduct (DomainName name) = (Nothing, Just name)
 
 -- | A connectivity operator.
 data ConnOp a = ConnOp a ConnType
@@ -237,34 +283,14 @@ lookupAnnotations t (Annotation anns) = map snd matches
     matches = filter go anns
     go (TypeName _ name, _) = t == name
 
--- | A port reference (qualified or unqualified).
-data PortName a
-  = UPortName (VarName a)
-  | QPortName a (Qualified VarName a) (VarName a)
-  deriving (Show, Functor, Foldable, Traversable)
-
--- | Convert a port ID to a tuple, discarding the label.
-portNameToTuple :: PortName l -> (Maybe ([VarName l], VarName l), VarName l)
-portNameToTuple (UPortName     r) = (Nothing, r)
-portNameToTuple (QPortName _ (Qualified _ Nothing     _) r) = (Nothing, r)
-portNameToTuple (QPortName _ (Qualified _ (Just mods) l) r) = (Just (mods, l), r)
-
-instance Eq (PortName l) where
-  (==) a b = portNameToTuple a == portNameToTuple b
-
-instance Ord (PortName l) where
-  compare a b = portNameToTuple a `compare` portNameToTuple b
-
-instance Labeled PortName where
-  label (UPortName x) = label x
-  label (QPortName l _ _) = l
+type PortName a = Qualified VarName a
 
 -- | A top-level statement in a Lobster module.
 data Stmt a
   = StmtModuleDecl     a (VarName a) [Stmt a]
   | StmtClassDecl      a Bool (TypeName a) [VarName a] [Stmt a]
   | StmtPortDecl       a (VarName a) [PortAttr a]
-  | StmtDomainDecl     a (VarName a) (TypeName a) [Exp a]
+  | StmtDomainDecl     a (VarName a) (Qualified TypeName a) [Exp a]
   | StmtAnonDomainDecl a Bool (VarName a) [Stmt a]
   | StmtAssign         a (VarName a) (Exp a)
   | StmtConnection     a (PortName a) (ConnOp a) (PortName a)

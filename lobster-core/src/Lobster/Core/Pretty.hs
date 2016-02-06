@@ -15,7 +15,6 @@
 -- AST types.
 module Lobster.Core.Pretty () where
 
-import qualified Data.Text as T
 import Text.PrettyPrint.Mainland
 
 import Lobster.Core.AST
@@ -81,11 +80,8 @@ instance Pretty (VarName a) where
 instance Pretty (TypeName a) where
   ppr (TypeName _ x) = fromText x
 
-instance Pretty (b a) => Pretty (Qualified b a) where
-  ppr (Qualified _ Nothing ident) = ppr ident
-  ppr (Qualified _ (Just mods) ident) =
-    let path = T.intercalate "::" (getVarName `fmap` mods) <> "::"
-    in fromText path <> ppr ident
+instance Pretty (a l) => Pretty (Qualified a l) where
+  ppr qual = fromText (getQualifierPrefix qual) <> ppr (getUnqualified qual)
 
 instance Pretty (ConnOp a) where
   ppr (ConnOp _ x) = ppr x
@@ -107,10 +103,6 @@ instance Pretty (Annotation a) where
 instance Pretty (PortAttr a) where
   ppr (PortAttr name Nothing)  = ppr name <> text "=" <> text "*"
   ppr (PortAttr name (Just e)) = ppr name <> text "=" <> ppr e
-
-instance Pretty (PortName a) where
-  ppr (UPortName name) = ppr name
-  ppr (QPortName _ n1 n2) = ppr n1 <> dot <> ppr n2
 
 ppExplicit :: Bool -> Doc
 ppExplicit True  = text "explicit" <> space

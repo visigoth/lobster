@@ -21,6 +21,7 @@ module Lobster.Core.Eval
   , modulePorts
   , moduleConnections
   , moduleRootDomain
+  , moduleRootModule
   , idDomain
   , pathDomain
   , idPort
@@ -79,7 +80,6 @@ import Control.Lens hiding (op)
 import Control.Monad (unless)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
-import Data.List (foldl')
 import Data.Monoid ((<>), mempty)
 import Data.Text (Text)
 import Data.Text.Lazy (fromChunks)
@@ -87,7 +87,7 @@ import Data.Text.Lazy.Encoding (encodeUtf8)
 
 import Lobster.Core.Util
 import Lobster.Core.Error
-import Lobster.Core.Lexer (runAlex)
+import Lobster.Core.Lexer (Span, runAlex)
 import Lobster.Core.Parser (parseExpression)
 
 import qualified Data.Map             as M
@@ -274,7 +274,7 @@ data Module l = Module
   , _modulePorts            :: M.Map PortId (Port l)
   , _moduleConnections      :: M.Map ConnectionId (Connection l)
   , _moduleRootDomain       :: DomainId
-  , _moduleFocusedModule    :: ModuleId
+  , _moduleRootModule       :: ModuleId
   , _moduleNextModuleId     :: Int
   , _moduleNextDomainId     :: Int
   , _moduleNextPortId       :: Int
@@ -288,7 +288,7 @@ emptyModule l = Module
   , _modulePorts            = M.empty
   , _moduleConnections      = M.empty
   , _moduleRootDomain       = (DomainId 0)
-  , _moduleFocusedModule    = (ModuleId 0)
+  , _moduleRootModule       = (ModuleId 0)
   , _moduleNextModuleId     = 1
   , _moduleNextDomainId     = 1
   , _moduleNextPortId       = 0
@@ -334,8 +334,14 @@ revConn conn = (`execState` conn) $ do
 
 -- | Access environment associated with the focused module.
 moduleEnv :: Traversal' (Module l) (Env l)
-moduleEnv f mod = let modId = mod ^. moduleFocusedModule
-                  in (moduleModules . ix modId) f mod
+moduleEnv f m = let modId = m ^. moduleRootModule
+                in (moduleModules . ix modId) f m
+
+-- | Get root environment for focused module
+getEnv :: Eval l (Env l)
+getEnv = do
+  env <- preuse moduleEnv
+  maybeLose (MiscError "internal error: no focused module") env
 
 -- | A partial lens for a domain by ID in a module.
 idDomain :: DomainId -> Lens' (Module l) (Domain l)
@@ -350,12 +356,12 @@ idConnection :: ConnectionId -> Lens' (Module l) (Connection l)
 idConnection connId = singular (moduleConnections . ix connId)
 
 -- | Look up a domain by path name.
-pathDomain :: Module l -> Text -> Maybe (Domain l)
+pathDomain :: Module Span -> Text -> Maybe (Domain Span)
 pathDomain m t = case runAlex (toLBS t) parseExpression of
-  Right (A.ExpVar (A.Qualified _ mods (A.VarName _ name))) -> do
+  Right (A.ExpVar qualName) -> do
     rootEnv <- m ^? moduleEnv
-    let modNames = maybe [] (fmap A.getVarName) mods
-    env <- lookup' m modNames rootEnv
+    env <- lookupEnv m qualName rootEnv
+    let name = A.getVarName (A.getUnqualified qualName)
     (domId, _) <- env ^? envSubdomains . ix name
     m ^? moduleDomains . ix domId
   Right _ -> Nothing
@@ -402,20 +408,25 @@ maybeLose e x = lift $ note e x
 -- | Given a qualified reference, returns the appropriate environment for
 -- looking up the reference, paired with an unqualified version of the
 -- reference.
-lookup :: A.Qualified a l -> Eval l (Maybe (a l, Env l))
-lookup (A.Qualified _ mods ref) = do
-  mod     <- get
+lookupName :: A.Qualified a l -> Eval l (Maybe (a l, Env l))
+lookupName qualName = do
+  m       <- get
   rootEnv <- preuse moduleEnv
-  let modNames = maybe [] (fmap A.getVarName) mods
-  let env      = lookup' mod modNames =<< rootEnv
+  let ref = A.getUnqualified qualName
+  let env = lookupEnv m qualName =<< rootEnv
   return $ ((,) ref) <$> env
 
-lookup' :: Module l -> [Text] -> Env l -> Maybe (Env l)
-lookup' m [] env = Just env
-lookup' m (mod:mods) env = do
-  modId  <- env ^? envSubmodules . ix mod
-  subEnv <- m ^? moduleModules . ix modId
-  lookup' m mods subEnv
+lookupEnv :: Module l -> A.Qualified a l -> Env l -> Maybe (Env l)
+lookupEnv m qualName topEnv = A.foldrQualifiers f (Just topEnv) qualName
+  where
+    f _ Nothing          = Nothing
+    f (A.RootModule _) _ = m ^? moduleEnv
+    f (A.ModuleName modName) (Just env) = do
+      modId <- env ^? envSubmodules . ix (A.getVarName modName)
+      m ^? moduleModules . ix modId
+    f (A.DomainName dom) (Just env) = do
+      (_, modId) <- env ^? envSubdomains . ix (A.getVarName dom)
+      m ^? moduleModules . ix modId
 
 -- | Add a named module to the current environment.
 addModule :: Text -> Eval l ModuleId
@@ -431,40 +442,36 @@ addClass (A.TypeName _ name) cl = do
   moduleEnv . envClasses . at name ?= cl
 
 -- | Look up a class definition.
-lookupClass :: A.TypeName l -> Eval l (Class l)
-lookupClass (A.TypeName l name) = do
-  x <- preuse (moduleEnv . envClasses . ix name)
-  maybeLose (UndefinedClass l name) x
-  -- TODO: qualified class references
+lookupClass :: A.Qualified A.TypeName l -> Eval l (Class l)
+lookupClass qualName = do
+  x <- lookupName qualName
+  (A.TypeName l name, env) <- maybeLose (UndefinedPath (A.label qualName) path) x
+  let c = env ^? envClasses . ix name
+  maybeLose (UndefinedClass l (path <> name)) c
+  where
+    path = A.getQualifierPrefix qualName
 
 -- | Look up a variable name in the current domain.  Raises an
 -- 'UndefinedVar' error if it is not found.
-lookupVar :: A.VarName l -> Eval l (Value l)
-lookupVar (A.VarName l name) = do
-  x <- preuse (moduleEnv . envVars . ix name)
-  maybeLose (UndefinedVar l name) x
-
--- | Convert a port name to a string for error messages.
-fullPortName :: A.PortName l -> Text
-fullPortName (A.UPortName (A.VarName _ name)) = name
-fullPortName (A.QPortName _ m@(A.Qualified _ _ (A.VarName _ n1)) (A.VarName _ n2)) =
-  A.getModulePrefix m <> n1 <> "." <> n2
+lookupVar :: A.Qualified A.VarName l -> Eval l (Value l)
+lookupVar qualName = do
+  x <- lookupName qualName
+  (A.VarName l name, env) <- maybeLose (UndefinedPath (A.label qualName) path) x
+  let v = env ^? envVars . ix name
+  maybeLose (UndefinedVar l (path <> name)) v
+  where
+    path = A.getQualifierPrefix qualName
 
 -- | Resolve a port in the current domain, returning its port
 -- id if it is valid.
-lookupPort :: A.PortName l -> Eval l PortId
-lookupPort (A.UPortName (A.VarName l name)) = do
-  port  <- use (moduleEnv . envPorts . at name)
-  port' <- maybeLose (UndefinedPort l name) port
-  return port'
-lookupPort pid@(A.QPortName _ (A.Qualified lm (A.VarName l1 domN)) (A.VarName l2 portN)) = do
-  -- look up subdomain, get domain id and subdomain environment
-  x <- use (moduleEnv . envSubdomains . at domN)
-  (_, subEnv) <- maybeLose (UndefinedDomain l1 domN) x
-  -- look up port in subdomain environment
-  let y = subEnv ^. envPorts . at portN
-  port <- maybeLose (UndefinedPort l2 (fullPortName pid)) y
-  return port
+lookupPort :: A.Qualified A.VarName l -> Eval l PortId
+lookupPort qualName = do
+  x <- lookupName qualName
+  (A.VarName l name, env) <- maybeLose (UndefinedPath (A.label qualName) path) x
+  let pid = env ^? envPorts . ix name
+  maybeLose (UndefinedVar l (path <> name)) pid
+  where
+    path = A.getQualifierPrefix qualName
 
 -- | Add a port definition to the current graph.
 addPort :: Port l -> Eval l PortId
@@ -483,12 +490,6 @@ getPort pid = do
   case ports ^? ix pid of
     Just port -> return port
     Nothing   -> lose $ MiscError "internal error: undefined port"
-
--- | Get a module by ID.
-getModule :: ModuleId -> Eval l (Module l)
-getModule modId = do
-  modules <- use moduleModules
-  moduleDomains . ix modId
 
 -- | Get a domain by ID.
 getDomain :: DomainId -> Eval l (Domain l)
@@ -529,16 +530,19 @@ connLevel pnameL pidL pnameR pidR = do
        -- inside and outside self-connection syntatically.  If the
        -- connection is defined inside the domain, it's internal.
        -- Otherwise, treat it like any other domain-to-domain connection.
-       case (pnameL, pnameR) of
-         (A.UPortName _, A.UPortName _) ->
-           return ConnLevelInternal
-         (A.QPortName _ _ _, A.QPortName _ _ _) ->
-           return ConnLevelPeer
-         _ -> lose $ MiscError "internal error: weird self connection"
+       if | isDomainQualified pnameL && isDomainQualified pnameR -> return ConnLevelPeer
+          | isDomainQualified pnameL -> lose $ MiscError "internal error: weird self connection"
+          | otherwise -> return ConnLevelInternal
      | isPeer       -> return ConnLevelPeer
      | isParent     -> return ConnLevelParent
      | isChild      -> return ConnLevelChild
      | otherwise    -> lose $ MiscError "internal error: invalid connection"
+
+  where
+
+    isDomainQualified qualName = any isDomain (A.getQualifiers qualName)
+    isDomain (A.DomainName _) = True
+    isDomain _                = False
 
 {-
 -- | Return true if an edge already exists in the graph.
@@ -572,7 +576,7 @@ addConnection l portL portR cty ann = do
 
 -- | Add a connection to the current module.
 addConnection :: l
-              -> A.Qualified A.PortName l -> A.Qualified A.PortName l
+              -> A.PortName l ->  A.PortName l
               -> A.ConnType -> A.Annotation l -> Eval l ()
 addConnection l pnameL pnameR cty ann = do
   pidL   <- lookupPort pnameL
@@ -613,6 +617,7 @@ newEnv classes locals = Env
   { _envClasses    = classes
   , _envPorts      = M.empty
   , _envSubdomains = M.empty
+  , _envSubmodules = M.empty
   , _envVars       = locals
   }
 
@@ -644,22 +649,22 @@ newDomain l name cls ann = do
 -- | Execute an action in a new environment for a module.
 inModEnv :: ModuleId -> Eval l a -> Eval l a
 inModEnv modId f = do
-  oldMod <- use moduleFocusedModule
-  moduleFocusedModule .= modId
+  oldMod <- use moduleRootModule
+  moduleRootModule .= modId
   result <- f
-  moduleFocusedModule .= oldMod
+  moduleRootModule .= oldMod
   return result
 
 -- | Execute an action in a new environment for a domain.
 inDomEnv :: Domain l -> ModuleId -> Eval l a -> Eval l a
 inDomEnv dom modId f = do
   oldDomId <- use moduleRootDomain
-  oldModId <- use moduleFocusedModule
-  moduleRootDomain    .= (dom ^. domainId)
-  moduleFocusedModule .= modId
+  oldModId <- use moduleRootModule
+  moduleRootDomain .= (dom ^. domainId)
+  moduleRootModule .= modId
   result <- f
-  moduleRootDomain    .= oldDomId
-  moduleFocusedModule .= oldModId
+  moduleRootDomain .= oldDomId
+  moduleRootModule .= oldModId
   return result
 
 -- | Return true if a name is bound in the current environment
@@ -791,13 +796,14 @@ evalStmt ann (A.StmtPortDecl l (A.VarName _ name) attrs) = do
   _ <- addPort port
   moduleEnv . envPorts . at name ?= pid
 
-evalStmt ann (A.StmtModuleDecl _ (A.VarName _ name) body) = do
-  env   <- use moduleEnv
+evalStmt _ (A.StmtModuleDecl _ (A.VarName _ name) body) = do
+  env   <- getEnv
   modId <- case env ^? envSubmodules . ix name of
-    Just subEnvId -> subEnvId
+    Just subEnvId -> return subEnvId
     Nothing       -> addModule name
   subEnv <- inModEnv modId $ do
     evalStmts body
+    getEnv
   moduleModules . at modId ?= subEnv
 
 evalStmt ann (A.StmtClassDecl l isExp ty@(A.TypeName _ name) args body) = do
@@ -818,6 +824,7 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   -- evaluate domain body in new environment
   subEnv <- inDomEnv dom modId $ do
     evalStmts (cls ^. classBody)
+    getEnv
   -- add subdomain's environment to our environment
   moduleEnv . envSubdomains . at name ?= (domId, modId)
   moduleModules . at modId ?= subEnv
@@ -825,7 +832,7 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
 evalStmt ann (A.StmtAnonDomainDecl l isExp var@(A.VarName l2 name) body) = do
   cls <- getAnonClassName l2 name
   evalStmt mempty (A.StmtClassDecl l isExp cls [] body)
-  evalStmt ann (A.StmtDomainDecl l var cls [])
+  evalStmt ann (A.StmtDomainDecl l var (A.Unqualified cls) [])
 
 evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
   whenM (isBound envVars name) (lose $ DuplicateVar l name)
@@ -839,19 +846,14 @@ evalStmt _ (A.StmtAssign l (A.VarName _ name) e) = do
 --
 -- TODO: throw error if mod list is not empty
 evalStmt _ (A.StmtConnection _
-              (A.Qualified _ _ pidL@(A.UPortName _))
-              (A.ConnOp _ A.ConnNegative)
-              (A.Qualified _ modsR pidR@(A.UPortName _))) = do
-  portL <- lookupPort pidL
-  portR <- lookupPort pidR
-  addNegativeConn portL portR
-  addNegativeConn portR portL
-
-evalStmt _ (A.StmtConnection l
               pidL
               (A.ConnOp _ A.ConnNegative)
-              pidR) =
-  lose $ BadNegativeConn l (fullPortName pidL) (fullPortName pidR)
+              pidR) = do
+  portL <- lookupPort pidL
+  portR <- lookupPort pidR
+  -- TODO: connection must be internal!
+  addNegativeConn portL portR
+  addNegativeConn portR portL
 
 evalStmt ann (A.StmtConnection l pidL (A.ConnOp _ cty) pidR) = do
   addConnection l pidL pidR cty ann
