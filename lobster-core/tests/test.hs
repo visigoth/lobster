@@ -7,6 +7,7 @@ import Data.List (isSuffixOf)
 import System.Directory (getDirectoryContents)
 
 import qualified LexTest as LT
+import qualified ParseTest as PT
 
 type Fixtures = [(FilePath, LBS.ByteString)]
 
@@ -20,6 +21,7 @@ tests :: Fixtures -> Fixtures -> TestTree
 tests valid invalid = testGroup "lobster-core"
   [ testEnvTests valid invalid
   , LT.unitTests valid invalid
+  , PT.unitTests valid invalid
   ]
 
 testEnvTests :: Fixtures -> Fixtures -> TestTree
