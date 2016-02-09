@@ -6,8 +6,10 @@ import qualified Data.ByteString.Lazy as LBS
 import Data.List (isSuffixOf)
 import System.Directory (getDirectoryContents)
 
+import Fixtures (exampleDir, getFixture)
 import qualified LexTest as LT
 import qualified ParseTest as PT
+import qualified EvalTest as ET
 
 type Fixtures = [(FilePath, LBS.ByteString)]
 
@@ -22,6 +24,7 @@ tests valid invalid = testGroup "lobster-core"
   [ testEnvTests valid invalid
   , LT.unitTests valid invalid
   , PT.unitTests valid invalid
+  , ET.unitTests
   ]
 
 testEnvTests :: Fixtures -> Fixtures -> TestTree
@@ -32,13 +35,10 @@ testEnvTests valid invalid = testGroup "test environment tests"
       length invalid >= 1 @? "at least one invalid fixture is available"
   ]
 
-exampleDir :: FilePath
-exampleDir = "tests/examples/"
-
 lobsterExamples :: IO Fixtures
 lobsterExamples = do
   files <- filter (".lsr" `isSuffixOf`) <$> getDirectoryContents exampleDir
-  contents <- mapM LBS.readFile ((exampleDir ++) <$> files)
+  contents <- mapM getFixture files
   return (zip files contents)
 
 validExamples :: IO Fixtures
