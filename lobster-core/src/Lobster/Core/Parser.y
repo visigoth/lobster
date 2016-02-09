@@ -57,7 +57,6 @@ import qualified Data.Text as T
   '*'               { Token _ _ (TokOperator OpStar) }
   '->'              { Token _ _ (TokOperator OpRArrow) }
   '::'              { Token _ _ (TokOperator OpDoubleColon) }
-  '.*'              { Token _ _ (TokOperator OpDotStar) }
 
   '-->'             { Token _ _ (TokConnOperator OpConnLeftToRight) }
   '<--'             { Token _ _ (TokConnOperator OpConnRightToLeft) }
@@ -297,11 +296,12 @@ QualVarPattern
   | VarName '::' QualVarPattern { Qualified (label $1 <> label $3) (ModuleName $1) $3 }
   | VarName '.'  VarPattern     { Qualified (label $1 <> label $3) (DomainName $1) (Unqualified $3) }
   | VarPattern { Unqualified $1 }
+  | '.' '*' { Unqualified (AnyPattern (spanToks $1 $2)) }
+  | 'this' '.' VarPattern { Unqualified $3 }
 
 VarPattern :: { VarPattern Span }
 VarPattern
   : '*'     { AnyPattern (tokSpan $1) }
-  | '.*'    { AnyPattern (tokSpan $1) }
   | VarName { IdentPattern $1 }
 
 FlowPred :: { FlowPred Span }
@@ -314,6 +314,7 @@ QualVarPatternList :: { [Qualified VarPattern Span] }
 QualVarPatternList
   : {- empty -} { [] }
   | VarPattern QualVarPatternList { Unqualified $1 : $2 }
+  | '.' '*' QualVarPatternList { Unqualified (AnyPattern (spanToks $1 $2)) : $3 }
   | '[' QualVarPattern ']' QualVarPatternList { $2 : $4 }
 
 

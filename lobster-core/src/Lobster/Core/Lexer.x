@@ -118,7 +118,6 @@ $digit+             { tok tokInt }
 "::"                { op OpDoubleColon }
 "."                 { op OpPeriod }
 "*"                 { op OpStar }
-".*"                { op OpDotStar }
 
 "-->"               { connOp OpConnLeftToRight }
 "<--"               { connOp OpConnRightToLeft }
@@ -167,7 +166,6 @@ data Operator
   | OpDoubleColon
   | OpPeriod
   | OpStar
-  | OpDotStar
   deriving (Eq, Ord, Show)
 
 -- | An operator that can appear in an expression.
