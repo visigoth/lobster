@@ -80,23 +80,24 @@ class Hi() {} // high type
 class Lo() {} // low type
 class Se() {} // secret type
 
-domain high = Network(Hi);
-domain secret = Network(Se);
-domain low = Network(Lo);
-
-domain encrypt = Encrypt();
-domain logger = Review();
-domain internet = InternetC();
-
-
-secret.write --> high.read;
-high.write --> encrypt.in;
-encrypt.out --> logger.in;
-internet.write -- logger.in;
-low.write --> secret.read;
-low.write --> internet.read;
-low.read <-- internet.write;
-
-
-assert [high.write] -> [internet.read] :: .* [encrypt.*] .*;
-
+// TODO: lobster-core does not allow types to be used as expressions - should
+// that be allowed?
+//domain high = Network(Hi);
+//domain secret = Network(Se);
+//domain low = Network(Lo);
+//
+//domain encrypt = Encrypt();
+//domain logger = Review();
+//domain internet = InternetC();
+//
+//
+//secret.write --> high.read;
+//high.write --> encrypt.in;
+//encrypt.out --> logger.in;
+//internet.write -- logger.in;
+//low.write --> secret.read;
+//low.write --> internet.read;
+//low.read <-- internet.write;
+//
+//
+//assert [high.write] -> [internet.read] :: .* [encrypt.*] .*;

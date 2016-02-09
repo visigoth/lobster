@@ -2,7 +2,10 @@ class MyType(){}
 class NotMyType(){}
 
 class A() {
-    port port1 : { position = subject, type = MyType };
+    // TODO: lobster-core does not allow types to be used as expressions - should
+    // that be allowed?
+    //port port1 : { position = subject, type = MyType };
+	port port1 : { position=subject };
 }
 
 class B() {
@@ -10,11 +13,17 @@ class B() {
 }
 
 class C() {
-    port port3 : { type = MyType };
+    // TODO: lobster-core does not allow types to be used as expressions - should
+    // that be allowed?
+    //port port3 : { type = MyType };
+	port port3 ;
 }
 
 class D() {
-    port port4 : { type = NotMyType };
+    // TODO: lobster-core does not allow types to be used as expressions - should
+    // that be allowed?
+    //port port4 : { type = NotMyType };
+	port port4 ;
 }
 
 domain a = A();

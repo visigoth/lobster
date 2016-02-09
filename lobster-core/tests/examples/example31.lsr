@@ -15,18 +15,23 @@ class B() {
 class A() {
   port a :{position=subject} ;
   port b;
-  port e : {type=C};
+  // TODO: lobster-core does not allow types to be used as expressions - should
+  // that be allowed?
+  //port e : {type=C};
+  port e ;
  }
 
 class C() {}
 
-w = A; 
+// TODO: lobster-core does not allow types to be used as expressions - should
+// that be allowed?
+//w = A;
 
 
 domain d = A();
 domain e = A();
 domain f = A();
-d_a = d.b; 
+d_a = d.b;
 //d_a -- e.b;
 d.a -- e.b;
 e.a --> d.b;
