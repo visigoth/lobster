@@ -342,7 +342,10 @@ mkUnaryOp e op = ExpUnaryOp (label e) op e
 happyError :: Token -> Alex a
 happyError t = alexError $ ParseError (tokSpan t) msg
   where
-    msg = T.pack ("syntax error at '" ++ T.unpack (tokText t) ++ "'")
+    msg = T.pack ("syntax error at '"
+               ++ T.unpack (tokText t)
+               ++ "', "
+               ++ show (spanStart (tokSpan t)))
 }
 
 -- vim: set ft=happy ts=2 et:
