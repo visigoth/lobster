@@ -15,6 +15,7 @@
 -- AST types.
 module Lobster.Core.Pretty () where
 
+import Data.Monoid (mconcat)
 import Text.PrettyPrint.Mainland
 
 import Lobster.Core.AST
@@ -77,6 +78,10 @@ instance Pretty (LitPosition a) where
 instance Pretty (VarName a) where
   ppr (VarName _ x) = fromText x
 
+instance Pretty (VarPattern a) where
+  ppr (AnyPattern _)       = text "*"
+  ppr (IdentPattern ident) = ppr ident
+
 instance Pretty (TypeName a) where
   ppr (TypeName _ x) = fromText x
 
@@ -85,6 +90,11 @@ instance Pretty (a l) => Pretty (Qualified a l) where
 
 instance Pretty (ConnOp a) where
   ppr (ConnOp _ x) = ppr x
+
+instance Pretty (FlowPred a) where
+  ppr (NeverPathFP _)  = text "never"
+  ppr (ExistsPathFP _) = text "exists"
+  ppr (PathFP xs)      = mconcat (fmap ppr xs)
 
 ----------------------------------------------------------------------
 -- Annotations
@@ -146,6 +156,9 @@ instance Pretty (Stmt a) where
     ppr e1 <+> ppr conn <+> ppr e2 <> semi
   ppr (StmtAnnotation _ a stmt) =
     ppr a </> ppr stmt
+  ppr (StmtAssertion _ ldom rdom fp) =
+    let br x = text "[" <> ppr x <> text "]"
+    in text "assert" <> br ldom <> text "->" <> br rdom <> text "::" <> ppr fp <> semi
   ppr (StmtComment _ a) =
     -- TODO: linewrap long comments
     text "//" <+> fromText a

@@ -860,6 +860,9 @@ evalStmt ann (A.StmtConnection l pidL (A.ConnOp _ cty) pidR) = do
 
 evalStmt ann1 (A.StmtAnnotation _ ann2 stmt) = evalStmt (ann1 <> ann2) stmt
 
+-- TODO: Collect assertions in `Module` type.
+evalStmt _ (A.StmtAssertion _ _ _ _) = return ()
+
 -- Ignore comments.
 --
 -- XXX this swallows the annotation, which isn't ideal.  this

@@ -35,10 +35,10 @@ import qualified Data.Text as T
   'output'          { Token _ _ (TokKeyword KwOutput) }
   'port'            { Token _ _ (TokKeyword KwPort) }
   'subject'         { Token _ _ (TokKeyword KwSubject) }
---  'assert'          { Token _ _ (TokKeyword KwAssert) }
---  'exists'          { Token _ _ (TokKeyword KwExists) }
---  'never'           { Token _ _ (TokKeyword KwNever) }
---  'this'            { Token _ _ (TokKeyword KwThis) }
+  'assert'          { Token _ _ (TokKeyword KwAssert) }
+  'exists'          { Token _ _ (TokKeyword KwExists) }
+  'never'           { Token _ _ (TokKeyword KwNever) }
+  'this'            { Token _ _ (TokKeyword KwThis) }
 
   'true'            { Token _ _ (TokBool True) }
   'false'           { Token _ _ (TokBool False) }
@@ -55,9 +55,9 @@ import qualified Data.Text as T
   ':'               { Token _ _ (TokOperator OpColon) }
   '.'               { Token _ _ (TokOperator OpPeriod) }
   '*'               { Token _ _ (TokOperator OpStar) }
---  '->'              { Token _ _ (TokOperator OpRArrow) }
+  '->'              { Token _ _ (TokOperator OpRArrow) }
   '::'              { Token _ _ (TokOperator OpDoubleColon) }
---  '.*'              { Token _ _ (TokOperator OpDotStar) }
+  '.*'              { Token _ _ (TokOperator OpDotStar) }
 
   '-->'             { Token _ _ (TokConnOperator OpConnLeftToRight) }
   '<--'             { Token _ _ (TokConnOperator OpConnRightToLeft) }
@@ -240,8 +240,8 @@ Stmt
     { StmtConnection (unionSpan (label $1) (tokSpan $4)) $1 $2 $3 }
   | '[' Annotation ']' Stmt
     { StmtAnnotation (unionSpan (tokSpan $1) (label $4)) $2 $4 }
-
--- TODO: handle assertion statements
+  | 'assert' '[' QualVarPattern ']' '->' '[' QualVarPattern ']' '::' FlowPred ';'
+    { StmtAssertion (spanToks $1 $11) $3 $7 $10 }
 
 -- A backwards list of statements (0 or more).
 StmtList_rev :: { [Stmt Span] }
@@ -289,7 +289,33 @@ ExpList
 ----------------------------------------------------------------------
 -- Assertions
 
--- TODO: Implement parser for assertion language.
+-- A qualified name: a variable pattern optionally prefixed with a module or domain path.
+-- A variable pattern may be a variable name, or the name might be a wildcard: `*"
+QualVarPattern :: { Qualified VarPattern Span }
+QualVarPattern
+  : '::' QualVarPattern { Qualified (tokSpan $1 <> label $2) (RootModule (tokSpan $1)) $2 }
+  | VarName '::' QualVarPattern { Qualified (label $1 <> label $3) (ModuleName $1) $3 }
+  | VarName '.'  VarPattern     { Qualified (label $1 <> label $3) (DomainName $1) (Unqualified $3) }
+  | VarPattern { Unqualified $1 }
+
+VarPattern :: { VarPattern Span }
+VarPattern
+  : '*'     { AnyPattern (tokSpan $1) }
+  | '.*'    { AnyPattern (tokSpan $1) }
+  | VarName { IdentPattern $1 }
+
+FlowPred :: { FlowPred Span }
+FlowPred
+  : 'never'  { NeverPathFP (tokSpan $1) }
+  | 'exists' { ExistsPathFP (tokSpan $1) }
+  | QualVarPatternList { PathFP $1 }
+
+QualVarPatternList :: { [Qualified VarPattern Span] }
+QualVarPatternList
+  : {- empty -} { [] }
+  | VarPattern QualVarPatternList { Unqualified $1 : $2 }
+  | '[' QualVarPattern ']' QualVarPatternList { $2 : $4 }
+
 
 {
 lexwrap :: (Token -> Alex a) -> Alex a
