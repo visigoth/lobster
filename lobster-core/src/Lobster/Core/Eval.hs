@@ -80,6 +80,7 @@ import Control.Lens hiding (op)
 import Control.Monad (unless)
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
+import Data.List (foldl')
 import Data.Monoid ((<>), mempty)
 import Data.Text (Text)
 import Data.Text.Lazy (fromChunks)
@@ -275,6 +276,7 @@ data Module l = Module
   , _moduleConnections      :: M.Map ConnectionId (Connection l)
   , _moduleRootDomain       :: DomainId
   , _moduleRootModule       :: ModuleId
+  , _moduleTopModule        :: ModuleId -- RootModule updates in sub-envs, TopModule does not
   , _moduleNextModuleId     :: Int
   , _moduleNextDomainId     :: Int
   , _moduleNextPortId       :: Int
@@ -289,6 +291,7 @@ emptyModule l = Module
   , _moduleConnections      = M.empty
   , _moduleRootDomain       = (DomainId 0)
   , _moduleRootModule       = (ModuleId 0)
+  , _moduleTopModule        = (ModuleId 0)
   , _moduleNextModuleId     = 1
   , _moduleNextDomainId     = 1
   , _moduleNextPortId       = 0
@@ -337,11 +340,22 @@ moduleEnv :: Traversal' (Module l) (Env l)
 moduleEnv f m = let modId = m ^. moduleRootModule
                 in (moduleModules . ix modId) f m
 
+-- | Access environment associated with the module's topmost environment.
+topEnv :: Traversal' (Module l) (Env l)
+topEnv f m = let modId = m ^. moduleTopModule
+             in (moduleModules . ix modId) f m
+
 -- | Get root environment for focused module
 getEnv :: Eval l (Env l)
 getEnv = do
   env <- preuse moduleEnv
   maybeLose (MiscError "internal error: no focused module") env
+
+-- | Get top-level environment
+getTopEnv :: Eval l (Env l)
+getTopEnv = do
+  env <- preuse topEnv
+  maybeLose (MiscError "internal error: no top-level environment") env
 
 -- | A partial lens for a domain by ID in a module.
 idDomain :: DomainId -> Lens' (Module l) (Domain l)
@@ -360,7 +374,7 @@ pathDomain :: Module Span -> Text -> Maybe (Domain Span)
 pathDomain m t = case runAlex (toLBS t) parseExpression of
   Right (A.ExpVar qualName) -> do
     rootEnv <- m ^? moduleEnv
-    env <- lookupEnv m qualName rootEnv
+    env <- hush (lookupEnv m qualName rootEnv)
     let name = A.getVarName (A.getUnqualified qualName)
     (domId, _) <- env ^? envSubdomains . ix name
     m ^? moduleDomains . ix domId
@@ -408,25 +422,33 @@ maybeLose e x = lift $ note e x
 -- | Given a qualified reference, returns the appropriate environment for
 -- looking up the reference, paired with an unqualified version of the
 -- reference.
-lookupName :: A.Qualified a l -> Eval l (Maybe (a l, Env l))
+lookupName :: A.Qualified a l -> Eval l (a l, Env l)
 lookupName qualName = do
   m       <- get
-  rootEnv <- preuse moduleEnv
+  rootEnv <- if A.isModuleScoped qualName then getTopEnv else getEnv
   let ref = A.getUnqualified qualName
-  let env = lookupEnv m qualName =<< rootEnv
-  return $ ((,) ref) <$> env
+  case lookupEnv m qualName rootEnv of
+    Left  e   -> lose e
+    Right env -> return (ref, env)
 
-lookupEnv :: Module l -> A.Qualified a l -> Env l -> Maybe (Env l)
-lookupEnv m qualName topEnv = A.foldrQualifiers f (Just topEnv) qualName
+lookupEnv :: Module l -> A.Qualified a l -> Env l -> Either (Error l) (Env l)
+lookupEnv m qualName rootEnv = foldl' go (Right rootEnv) (A.getQualifiers qualName)
   where
-    f _ Nothing          = Nothing
-    f (A.RootModule _) _ = m ^? moduleEnv
-    f (A.ModuleName modName) (Just env) = do
-      modId <- env ^? envSubmodules . ix (A.getVarName modName)
-      m ^? moduleModules . ix modId
-    f (A.DomainName dom) (Just env) = do
-      (_, modId) <- env ^? envSubdomains . ix (A.getVarName dom)
-      m ^? moduleModules . ix modId
+    go (Left e) _ = Left e
+
+    go _ (A.RootModule _) = case m ^? topEnv of
+      Nothing -> Left (MiscError "internal error: no top-level environment")
+      Just e  -> Right e
+
+    go (Right env) (A.ModuleName modName) =
+      note (UndefinedModule (A.label modName) (A.getVarName modName)) $ do
+        modId <- env ^? envSubmodules . ix (A.getVarName modName)
+        m ^? moduleModules . ix modId
+
+    go (Right env) (A.DomainName dom) =
+      note (UndefinedDomain (A.label dom) (A.getVarName dom)) $ do
+        (_, modId) <- env ^? envSubdomains . ix (A.getVarName dom)
+        m ^? moduleModules . ix modId
 
 -- | Add a named module to the current environment.
 addModule :: Text -> Eval l ModuleId
@@ -444,8 +466,7 @@ addClass (A.TypeName _ name) cl = do
 -- | Look up a class definition.
 lookupClass :: A.Qualified A.TypeName l -> Eval l (Class l)
 lookupClass qualName = do
-  x <- lookupName qualName
-  (A.TypeName l name, env) <- maybeLose (UndefinedPath (A.label qualName) path) x
+  (A.TypeName l name, env) <- lookupName qualName
   let c = env ^? envClasses . ix name
   maybeLose (UndefinedClass l (path <> name)) c
   where
@@ -455,8 +476,7 @@ lookupClass qualName = do
 -- 'UndefinedVar' error if it is not found.
 lookupVar :: A.Qualified A.VarName l -> Eval l (Value l)
 lookupVar qualName = do
-  x <- lookupName qualName
-  (A.VarName l name, env) <- maybeLose (UndefinedPath (A.label qualName) path) x
+  (A.VarName l name, env) <- lookupName qualName
   let v = env ^? envVars . ix name
   maybeLose (UndefinedVar l (path <> name)) v
   where
@@ -466,8 +486,7 @@ lookupVar qualName = do
 -- id if it is valid.
 lookupPort :: A.Qualified A.VarName l -> Eval l PortId
 lookupPort qualName = do
-  x <- lookupName qualName
-  (A.VarName l name, env) <- maybeLose (UndefinedPath (A.label qualName) path) x
+  (A.VarName l name, env) <- lookupName qualName
   let pid = env ^? envPorts . ix name
   maybeLose (UndefinedVar l (path <> name)) pid
   where
@@ -753,7 +772,7 @@ buildLocals l vars exps = do
 
 -- | Build a new environment for a subdomain given a class and its
 -- arguments.
-subdomainEnv :: l -> Class l -> [A.Exp l] -> Eval l (ModuleId, Env l)
+subdomainEnv :: l -> Class l -> [A.Exp l] -> Eval l ModuleId
 subdomainEnv l cl args = do
   let clArgs = cl ^. classArgs
   locals <- buildLocals l clArgs args
@@ -762,7 +781,7 @@ subdomainEnv l cl args = do
   let env = newEnv classes locals
   -- Add subdomain env to the current graph
   moduleModules . at modId ?= env
-  return (modId, env)
+  return modId
 
 -- | Return a unique anonymous class name for a domain.
 getAnonClassName :: l -> Text -> Eval l (A.TypeName l)
@@ -815,9 +834,8 @@ evalStmt ann (A.StmtClassDecl l isExp ty@(A.TypeName _ name) args body) = do
 evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
   whenM (isBound envSubdomains name) (lose $ DuplicateDomain l name)
   -- look up class and evaluate arguments
-  cls <- lookupClass ty
-  (modId, env) <- subdomainEnv l cls args
-  moduleModules . at modId ?= env
+  cls   <- lookupClass ty
+  modId <- subdomainEnv l cls args
   -- create new domain and add it to the graph
   dom <- newDomain l name cls ann
   let domId = dom ^. domainId
@@ -826,8 +844,8 @@ evalStmt ann (A.StmtDomainDecl l (A.VarName _ name) ty args) = do
     evalStmts (cls ^. classBody)
     getEnv
   -- add subdomain's environment to our environment
-  moduleEnv . envSubdomains . at name ?= (domId, modId)
   moduleModules . at modId ?= subEnv
+  moduleEnv . envSubdomains . at name ?= (domId, modId)
 
 evalStmt ann (A.StmtAnonDomainDecl l isExp var@(A.VarName l2 name) body) = do
   cls <- getAnonClassName l2 name

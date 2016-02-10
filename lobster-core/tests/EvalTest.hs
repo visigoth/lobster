@@ -5,19 +5,18 @@ module EvalTest
 import Test.Tasty
 import Test.Tasty.HUnit
 
--- import Lobster.Core
+import Control.Lens
+import qualified Data.Graph.Inductive as G
+import Lobster.Core
 
-import Fixtures (withPolicy)
+import Fixtures (withModule)
 
 unitTests :: TestTree
 unitTests = testGroup "Eval tests" $
-  [ testModules
+  [ testCase "cross-module reference" $ withModule "modules.lsr" testCrossModuleReference
   ]
 
-testModules :: TestTree
-testModules = testCase "making cross-module references" $
-  withPolicy "modules.lsr" $ \policy -> do
-    assertSuccess
-
-assertSuccess :: Assertion
-assertSuccess = return ()
+testCrossModuleReference :: Module Span -> Assertion
+testCrossModuleReference m =
+  let graph = moduleGraph m
+  in putStrLn (show (G.edges (graph ^. moduleGraphGraph)))

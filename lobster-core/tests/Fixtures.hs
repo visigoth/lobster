@@ -2,6 +2,7 @@ module Fixtures where
 
 import qualified Data.ByteString.Lazy as LBS
 import Data.Text (unpack)
+import Test.Tasty (TestTree)
 import Test.Tasty.HUnit
 
 import Lobster.Core
@@ -19,3 +20,11 @@ withPolicy path f = do
     Left err     -> assertFailure (unpack (errorMessage err))
     Right policy -> f policy
 
+withModule :: FilePath -> (Module Span -> Assertion) -> Assertion
+withModule path f = withPolicy path $ \policy ->
+  case evalPolicy policy of
+    Left err -> assertFailure (unpack (errorMessage err))
+    Right m  -> f m
+
+testModule :: FilePath -> String -> (Module Span -> Assertion) -> TestTree
+testModule path name f = testCase name $ withModule path $ \m -> f m

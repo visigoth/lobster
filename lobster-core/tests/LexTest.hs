@@ -12,7 +12,7 @@ import Lobster.Core
 type Fixtures = [(FilePath, LBS.ByteString)]
 
 unitTests :: Fixtures -> Fixtures -> TestTree
-unitTests valid invalid = testGroup "Lexer tests" $
+unitTests valid _ = testGroup "Lexer tests" $
   fmap (uncurry testValid) valid
 
 testValid :: FilePath -> LBS.ByteString -> TestTree

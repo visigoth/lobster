@@ -36,7 +36,9 @@ module Lobster.Core.AST
   , Qualifier(..)
   , foldrQualifiers
   , getQualifiedName
+  , getQualifiedTypeName
   , getQualifiers
+  , isModuleScoped
   , getUnqualified
   , getQualifierPrefix
   , ConnOp(..)
@@ -193,7 +195,7 @@ data Qualified a l = Unqualified (a l)
 data Qualifier l = RootModule l
                  | ModuleName (VarName l)
                  | DomainName (VarName l)
-  deriving (Show, Functor, Foldable, Traversable)
+  deriving (Functor, Foldable, Traversable)
 
 foldrQualifiers :: (Qualifier l -> b -> b) -> b -> Qualified a l -> b
 foldrQualifiers _ z (Unqualified _) = z
@@ -201,6 +203,13 @@ foldrQualifiers f z (Qualified _ qualifier rest) = f qualifier (foldrQualifiers 
 
 getQualifiers :: Qualified a l -> [Qualifier l]
 getQualifiers name = foldrQualifiers (:) [] name
+
+isModuleScoped :: Qualified a l -> Bool
+isModuleScoped = foldrQualifiers f False
+  where
+    f (RootModule _) _     = True
+    f (ModuleName _) _     = True
+    f (DomainName _) accum = accum
 
 getUnqualified :: Qualified a l -> a l
 getUnqualified (Unqualified name) = name
@@ -215,6 +224,9 @@ getQualifierPrefix = foldrQualifiers f ""
 
 getQualifiedName :: Qualified VarName l -> Text
 getQualifiedName n = (getQualifierPrefix n <> getVarName (getUnqualified n))
+
+getQualifiedTypeName :: Qualified TypeName l -> Text
+getQualifiedTypeName n = (getQualifierPrefix n <> getTypeName (getUnqualified n))
 
 instance (Labeled a) => Labeled (Qualified a) where
   label (Unqualified name) = label name
@@ -235,6 +247,11 @@ instance Eq (Qualifier l) where
   (ModuleName a) == (ModuleName b) = a == b
   (DomainName a) == (DomainName b) = a == b
   _ == _ = False
+
+instance Show (Qualifier l) where
+  show (RootModule _)    = "RootModule"
+  show (ModuleName name) = "ModuleName " ++ show (getVarName name)
+  show (DomainName name) = "DomainName " ++ show (getVarName name)
 
 instance Ord (a l) => Ord (Qualified a l) where
   compare a b = compare (asProduct a) (asProduct b)
