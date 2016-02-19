@@ -506,7 +506,7 @@ outputCondExpr c =
   case c of
     S.Not c1      -> C.ExpUnaryOp C.emptySpan C.UnaryOpNot (outputCondExpr c1)
     S.Op c1 op c2 -> C.ExpBinaryOp C.emptySpan (outputCondExpr c1) (outputOp op) (outputCondExpr c2)
-    S.Var i       -> C.ExpVar (L.mkName (S.idString i))
+    S.Var i       -> C.ExpVar (C.Unqualified (L.mkName (S.idString i)))
   where
     outputOp :: S.Op -> C.BinaryOp
     outputOp S.And = C.BinaryOpAnd

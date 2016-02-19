@@ -106,27 +106,30 @@ annotationString :: String -> AnnotationElement
 annotationString = L.ExpString . L.LitString L.emptySpan . Text.pack
 
 annotationName :: Name -> AnnotationElement
-annotationName = L.ExpVar
+annotationName = L.ExpVar . L.Unqualified
 
 annotateDecl :: [ConnectAnnotation] -> Decl -> Decl
 annotateDecl xs = L.StmtAnnotation L.emptySpan (L.Annotation xs)
 
 newDomain :: Name -> Name -> [Param] -> Decl
 newDomain binder (L.VarName s c) args =
-  L.StmtDomainDecl L.emptySpan binder (L.TypeName s c) (map L.ExpVar args)
+  L.StmtDomainDecl L.emptySpan binder (L.Unqualified (L.TypeName s c)) args'
+  where
+    args' = map (L.ExpVar . L.Unqualified) args
 
 newDomain' :: Name -> Name -> [Param] -> [ConnectAnnotation] -> Decl
 newDomain' binder ctor args xs = annotateDecl xs (newDomain binder ctor args)
 
 domPort :: Name -> Name -> DomPort
-domPort a b = L.QPortName L.emptySpan a b
+domPort a b = L.Qualified L.emptySpan (L.DomainName a) (L.Unqualified b)
 
 extPort :: Name -> DomPort
-extPort b = L.UPortName b
+extPort b = L.Unqualified b
 
 portDomain :: DomPort -> Maybe Name
-portDomain (L.UPortName _) = Nothing
-portDomain (L.QPortName _ d _) = Just d
+portDomain (L.Unqualified _) = Nothing
+portDomain (L.Qualified _ (L.DomainName d) _) = Just d
+portDomain (L.Qualified _ _ rest) = portDomain rest
 
 left :: DomPort -> DomPort -> Decl
 left = connect L.ConnRightToLeft
