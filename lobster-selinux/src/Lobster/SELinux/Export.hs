@@ -16,6 +16,7 @@ module Lobster.SELinux.Export (
   ) where
 
 import Control.Applicative
+import Control.Error (hush)
 import Control.Lens
 import Data.List (find)
 import Data.Maybe (isJust, catMaybes, fromMaybe)
@@ -71,7 +72,8 @@ expSE :: Exp l -> Maybe SEBoolExp
 expSE e =
   case e of
     ExpBool (LitBool _ b)                -> return (SEBoolLit b)
-    ExpVar (VarName _ n)                 -> return (SEBoolVar (SEName n))
+    ExpVar (Unqualified (VarName _ n))   -> return (SEBoolVar (SEName n))
+    ExpVar (Qualified _ _ _)             -> error "Cannot convert qualified variable"
     ExpUnaryOp  _    UnaryOpNot       e  -> SENot <$> expSE e
     ExpBinaryOp _ e1 BinaryOpAnd      e2 -> SEAnd <$> expSE e1 <*> expSE e2
     ExpBinaryOp _ e1 BinaryOpOr       e2 -> SEOr  <$> expSE e1 <*> expSE e2
@@ -130,20 +132,32 @@ instance Pretty SEStmt where
 -- Cross-Module Port Lookups
 
 -- | Look up a subdomain by name.
-lookupSubdomain :: Module l -> Domain l -> Text -> Maybe (Domain l)
-lookupSubdomain m dom name =
+lookupSubdomain :: Module l -> Domain l -> Qualified VarName l -> Maybe (Domain l)
+lookupSubdomain m dom (Unqualified (VarName _ name)) =
   find ((name ==) . view domainName) (map getDom subdoms)
   where
     getDom x = view (idDomain x) m
     subdoms = S.toList (dom ^. domainSubdomains)
+lookupSubdomain m dom qualname = do
+  let name = getVarName (getUnqualified qualname)
+  root <- m ^? moduleEnv
+  env <- hush (lookupEnv m qualname root)
+  (subid, _) <- M.lookup name (env ^. envSubdomains)
+  return (m ^. idDomain subid)
 
 -- | Look up a domain port by name.
-lookupPort :: Module l -> Domain l -> Text -> Maybe (Port l)
-lookupPort m dom name =
+lookupPort :: Module l -> Domain l -> Qualified VarName l -> Maybe (Port l)
+lookupPort m dom (Unqualified (VarName _ name)) =
   find ((name ==) . view portName) (map getPort ports)
   where
     getPort x = view (idPort x) m
     ports = S.toList (dom ^. domainPorts)
+lookupPort m dom qualname = do
+  let name = getVarName (getUnqualified qualname)
+  root <- m ^? moduleEnv
+  env <- hush (lookupEnv m qualname root)
+  portId <- M.lookup name (env ^. envPorts)
+  return (m ^. idPort portId)
 
 -- | Follow annotations across a cross module port.
 crossModulePort :: Module l
@@ -159,8 +173,8 @@ crossModulePort m conn l t =
   if portIsModule name
      then
        case lookupAnnotation t (conn ^. connectionAnnotation) of
-              Just [ ExpVar (VarName _ dom2)
-                   , ExpVar (VarName _ port2)] -> do
+              Just [ ExpVar dom2
+                   , ExpVar port2] -> do
                 dom3  <- lookupSubdomain m dom1 dom2
                 port3 <- lookupPort      m dom3 port2
                 return (port3 ^. portId)

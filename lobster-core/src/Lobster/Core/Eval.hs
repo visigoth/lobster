@@ -27,6 +27,12 @@ module Lobster.Core.Eval
   , idPort
   , idConnection
   , isntNegativeConn
+  , lookupEnv
+  , moduleEnv
+
+    -- * Env
+  , envSubdomains
+  , envPorts
 
     -- * Evaluation
   , evalPolicy
