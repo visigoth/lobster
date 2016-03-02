@@ -19,6 +19,45 @@ a web service that provides a JSON-based API to import, export,
 and analyze Lobster policies. This document describes the data
 types and request URLs that make up this Lobster API.
 
+# Lobster Utilities
+
+The Lobster distribution also contains several command-line
+utilities that can be used to test these features outside of
+the IDE. In this section, we document the most useful utilities
+that can be used to exercise the Lobster DSL.
+
+## m4-lobster
+
+The `m4-lobster` utility imports SELinux policy projects using M4
+macros into the Lobster language. It is equivalent to the
+`/import/selinux` endpoint in the V3SPA REST API.
+
+Running this command will import a reference policy from the
+`v3spa-server/data/refpolicy/20130424` directory, writing the
+output to a single Lobster module in `refpolicy.lsr`.
+
+```
+$ m4-lobster v3spa-server/data/refpolicy/20130424 > refpolicy.lsr
+```
+
+## lobster-json
+
+The `lobster-json` utility evaluates a Lobster module and converts it
+to the JSON representation used by the IDE for visualization.
+
+Running this command will convert `refpolicy.lsr` to `refpolicy.json`:
+
+```
+$ lobster-json refpolicy.lsr > refpolicy.json
+```
+
+## v3spa-server
+
+The `v3spa-server` application runs the Web API server for the Lobster
+integration with the Invincea IDE. To start the web service, simply
+run the `v3spa-server` program from a directory that contains a `refpolicy`
+subdirectory, which is used by the `/import/selinux` endpoint.
+
 # V3SPA 1.0 API Endpoints
 
 Path                          Method    Request Format  Result Type
@@ -37,7 +76,7 @@ requests defined in this document.
 All endpoints return a `Result` JSON response, with the `result`
 field containing an object of the type described in 'Result Type'.
 
-# V3SPA 2.0 Proposed API Endpoints
+# V3SPA 2.0 API Endpoints
 
 Path                                  Method    Description
 ----                                  ------    -----------
