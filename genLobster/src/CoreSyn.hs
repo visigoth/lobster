@@ -5,6 +5,7 @@ module CoreSyn
   , nameString
   , mkName
   , DomPort
+  , ModPort
   , Dir
   , Param
   , ConnectAnnotation
@@ -27,6 +28,7 @@ module CoreSyn
   , newComment
 
   , domPort
+  , modPort
   , extPort
   , portDomain
   , left
@@ -49,6 +51,7 @@ type Name = L.VarName L.Span
 type Param = Name
 type Dir = L.ConnType
 type DomPort = L.PortName L.Span
+type ModPort = L.PortName L.Span
 type AnnotationElement = L.Exp L.Span
 type ConnectAnnotation = L.AnnotationElement L.Span
 type Decl = L.Stmt L.Span
@@ -122,6 +125,9 @@ newDomain' binder ctor args xs = annotateDecl xs (newDomain binder ctor args)
 
 domPort :: Name -> Name -> DomPort
 domPort a b = L.Qualified L.emptySpan (L.DomainName a) (L.Unqualified b)
+
+modPort :: Name -> Name -> Name -> ModPort
+modPort m d p = L.Qualified L.emptySpan (L.ModuleName m) (domPort d p)
 
 extPort :: Name -> DomPort
 extPort b = L.Unqualified b

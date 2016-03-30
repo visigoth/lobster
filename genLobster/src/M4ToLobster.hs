@@ -451,6 +451,7 @@ processSubAttributes subs0 = do
 -- Generation of Lobster code
 
 type Dom = L.Name
+type Mod = L.Name
 type Port = L.Name
 
 activePort :: Port
@@ -470,6 +471,9 @@ objAttrPort = L.mkName "attribute_obj"
 
 toDom :: S.IsIdentifier i => i -> Dom
 toDom = L.mkName . lowercase . S.idString
+
+toMod :: S.IsIdentifier i => i -> Mod
+toMod = L.mkName . lowercase . S.idString
 
 toPort :: S.IsIdentifier i => i -> Port
 toPort = L.mkName . lowercase . S.idString
@@ -515,34 +519,20 @@ outputCondExpr c =
     outputOp S.Equals = C.BinaryOpEqual
     outputOp S.Notequal = C.BinaryOpNotEqual
 
--- | If both ends of the edge are located in the same module, then we
--- connect them directly. Otherwise, we split either or both ends into
--- separate edges: The main edge connects to the "ext" port of the
--- module domain, and encodes its final destination in an annotation.
--- Then a secondary edge connects the internal port to the "ext" port
--- of its module.
 moduleEdges ::
   St -> (S.Identifier, Port) -> (S.Identifier, Port) -> [L.ConnectAnnotation] -> [(Maybe M4.ModuleId, L.Decl)]
 moduleEdges st (d1, p1) (d2, p2) anns
   | m1 == m2 = [(m1, L.neutral' (L.domPort (toDom d1) p1) (L.domPort (toDom d2) p2) anns)]
-  | otherwise = (Nothing, L.neutral' dp1' dp2' (a1 ++ a2 ++ anns)) : e1 ++ e2
+  | otherwise = [(Nothing, L.neutral' qualPort1 qualPort2 anns)]
   where
     m1 = Map.lookup d1 (type_modules st)
     m2 = Map.lookup d2 (type_modules st)
-    extSubj m = L.domPort (toDom m) (L.mkName "module_subj")
-    extObj  m = L.domPort (toDom m) (L.mkName "module_obj")
-    dp1 = L.domPort (toDom d1) p1
-    dp2 = L.domPort (toDom d2) p2
-    (dp1', a1, e1) = case m1 of
-      Nothing -> (dp1, [], [])
-      Just m -> ( extSubj m
-                , [L.mkAnnotation (L.mkName "Lhs") [L.annotationName (toDom d1), L.annotationName p1]]
-                , [(Just m, L.neutral dp1 (L.extPort (L.mkName "module_subj")))])
-    (dp2', a2, e2) = case m2 of
-      Nothing -> (dp2, [], [])
-      Just m -> ( extObj m
-                , [L.mkAnnotation (L.mkName "Rhs") [L.annotationName (toDom d2), L.annotationName p2]]
-                , [(Just m, L.neutral dp2 (L.extPort (L.mkName "module_obj")))])
+    qualPort1 = toQualPort m1 d1 p1
+    qualPort2 = toQualPort m2 d2 p2
+
+    toQualPort m d p = case m of
+      Just modId -> L.modPort (toMod modId) (toDom d) p
+      Nothing    -> L.domPort (toDom d) p
 
 outputAllowRule :: St -> (AllowRule, Map S.PermissionId (Set P.Pos)) -> [(Maybe M4.ModuleId, L.Decl)]
 outputAllowRule st (AllowRule subject object cls conds, m) =
