@@ -15,6 +15,7 @@ module CoreSyn
   , annotationString
   , annotationName
 
+  , lobsterModule
   , newClass
   , newExplicitClass
   , newDomain
@@ -61,6 +62,9 @@ mkName s = L.VarName L.emptySpan (Text.pack s)
 
 nameString :: Name -> String
 nameString (L.VarName _ s) = Text.unpack s
+
+lobsterModule :: Name -> [Decl] -> Decl
+lobsterModule name decls = L.StmtModuleDecl L.emptySpan name decls
 
 newClass :: Name -> [Param] -> [Decl] -> Decl
 newClass (L.VarName s c) ps body =

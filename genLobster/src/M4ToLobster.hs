@@ -646,7 +646,7 @@ outputDomtransMacro st (n, ds) = (m, domDecl) : concatMap connectArg args
 outputLobster :: M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster _ (st, subattrs) =
   domtransDecl :
-  [ L.anonExplicitDomain (toDom m) (moduleSubjPort : moduleObjPort : reverse ds)
+  [ L.lobsterModule (toMod m) (moduleSubjPort : moduleObjPort : reverse ds)
     | (Just m, ds) <- Map.assocs groupedDecls ] ++
   Map.findWithDefault [] Nothing groupedDecls
   where

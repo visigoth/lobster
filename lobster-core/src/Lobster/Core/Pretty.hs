@@ -134,7 +134,9 @@ instance Pretty (Stmt a) where
                      </> indent 2 (pprStmts body)
                      </> rbrace
   ppr (StmtModuleDecl _ varName body) =
-    text "mod" <> ppr varName <> parens (pprCommaSep body)
+    text "mod" <+> ppr varName <+> lbrace
+                               </> indent 2 (pprStmts body)
+                               </> rbrace
   ppr (StmtPortDecl _ name []) =
     text "port" <+> ppr name <> semi
   ppr (StmtPortDecl _ name attrs) =
