@@ -15,11 +15,8 @@ import Data.Aeson
 import Snap
 
 import V3SPA.Server.Snap
-import V3SPA.Server.Parse
 import V3SPA.Server.Paths
-import V3SPA.Server.Import.SELinux
-import V3SPA.Server.Import.IPTables
-import V3SPA.Server.Export.SELinux
+import V3SPA.Server.ProjectResource
 
 ----------------------------------------------------------------------
 -- Request Handlers
@@ -34,12 +31,20 @@ handleVersion = method GET $ respond Null
 -- | Routing information for the web service.
 site :: V3Snap ()
 site = route
-  [ ("/parse",           handleParse)
-  , ("/paths",           handlePaths)
-  , ("/version",         handleVersion)
-  , ("/import/iptables", handleImportIptables)
-  , ("/import/selinux",  handleImportSELinux)
-  , ("/export/selinux",  handleExportSELinux)
+  [ ("/projects",                        method GET    handleListProjects)
+  , ("/projects",                        method POST   handleCreateProject)
+  , ("/projects/import/selinux",         method POST   handleImportSELinux)
+  , ("/projects/import/iptables",        method POST   handleImportIptables)
+  , ("/projects/:name",                  method GET    handleGetProject)
+  , ("/projects/:name",                  method PUT    handleUpdateProject)
+  , ("/projects/:name",                  method DELETE handleDestroyProject)
+  , ("/projects/:name/export/selinux",   method GET    handleExportSELinux)
+  --, ("/projects/:name/modules",          method POST handleCreateModule)
+  , ("/projects/:name/modules/:module",  method PUT    handleCreateModule)
+  , ("/projects/:name/modules/:module",  method GET    handleGetModule)
+  , ("/projects/:name/modules/:module",  method DELETE handleDestroyModule)
+  , ("/projects/:name/json",             method GET    handleExportJson)
+  , ("/projects/:name/paths",            method GET    handleExportPaths)
   ]
 
 handler opts = do

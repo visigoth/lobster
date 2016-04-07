@@ -22,6 +22,7 @@ import Snap
 import Lobster.Core (Span(..), Error(..))
 import V3SPA.Server.Version
 
+import qualified Data.ByteString.Lazy     as LBS
 import qualified Data.Text.Lazy           as T
 import qualified Data.Text.Lazy.Encoding  as E
 import qualified Data.Aeson.Encode.Pretty as AP
@@ -34,6 +35,7 @@ newtype V3Snap a = V3Snap { runV3Snap :: ReaderT Options Snap a }
            , MonadIO, MonadCatchIO, MonadSnap, MonadReader Options)
 
 -- | Read the request body with a 100MiB limit.
+readBody :: MonadSnap m => m LBS.ByteString
 readBody = readRequestBody (100 * 1024 * 1024)
 
 -- | Read the request body as a string.
@@ -41,7 +43,7 @@ readBodyString :: V3Snap String
 readBodyString = T.unpack . E.decodeUtf8 <$> readBody
 
 -- | Encode a result as JSON and write it to the response.
-writeJSON :: ToJSON a => a -> V3Snap ()
+writeJSON :: (MonadSnap m, ToJSON a) => a -> m ()
 writeJSON x = do
   writeLBS (AP.encodePretty' conf x)
   writeLBS "\r\n"
@@ -57,9 +59,14 @@ mkResp result errors =
          , "errors"  .= errors
          ]
 
+respondOk :: MonadSnap m => m ()
+respondOk = modifyResponse $ setResponseCode 200
+
 -- | Send a successful response.
-respond :: ToJSON a => a -> V3Snap ()
-respond x = writeJSON (mkResp x [])
+respond :: (MonadSnap m, ToJSON a) => a -> m ()
+respond x = do
+  modifyResponse $ setHeader "Content-Type" "application/json"
+  writeJSON (mkResp x [])
 
 -- | Send an error response as JSON from an error object.
 sendError :: Value -> V3Snap a
