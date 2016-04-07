@@ -18,6 +18,7 @@ import Control.Monad (filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
 import Data.Text (Text)
+import Data.String (fromString)
 import Filesystem.Path.CurrentOS (FilePath, (</>), (<.>))
 import System.Directory ( createDirectoryIfMissing
                         , doesDirectoryExist
@@ -59,8 +60,11 @@ listProjects :: MonadIO m => m ProjectList
 listProjects = do
   allItems <- liftIO $ getDirectoryContents (Path.encodeString basePath)
   let items = filter ((/= '.') . head) allItems
-  dirs <- liftIO $ filterM doesDirectoryExist items
+  dirs <- liftIO $ filterM isDirectory items
   return $ ProjectList (project . Text.pack <$> dirs)
+  where
+    isDirectory dir = let path = basePath </> fromString dir
+                      in doesDirectoryExist (Path.encodeString path)
 
 putModule :: MonadIO m => Module -> LBS.ByteString -> Project -> m ()
 putModule m source p = do
