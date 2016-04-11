@@ -14,15 +14,22 @@ module V3SPA.Server.Snap where
 
 import Control.Applicative (Applicative, Alternative, (<$>))
 import Control.Error
+import Control.Exception (catch)
 import Control.Monad.CatchIO (MonadCatchIO)
 import Control.Monad.Reader
 import Data.Aeson
+import Data.Monoid ((<>))
+import Data.String (fromString)
+import Data.Text (Text)
 import Snap
 
 import Lobster.Core (Span(..), Error(..))
 import V3SPA.Server.Version
 
+import qualified Data.ByteString          as BS
 import qualified Data.ByteString.Lazy     as LBS
+import qualified Data.Text.Encoding       as ST
+import qualified Data.Text.Encoding.Error as ST
 import qualified Data.Text.Lazy           as T
 import qualified Data.Text.Lazy.Encoding  as E
 import qualified Data.Aeson.Encode.Pretty as AP
@@ -47,6 +54,33 @@ writeJSON :: (MonadSnap m, ToJSON a) => a -> m ()
 writeJSON x = do
   writeLBS (AP.encodePretty' conf x)
   writeLBS "\r\n"
+
+----------------------------------------------------------------------
+-- Request Handling
+
+-- | Get a required parameter. If the parameter is missing or cannot be decoded
+-- using UTF8, sends an error response and skips the rest of the calling
+-- handler.
+getTextParam :: MonadSnap m => BS.ByteString -> m Text
+getTextParam name = do
+  maybeBS <- getParam name
+  decoded <- case maybeBS of
+    Just bs -> liftIO $
+      catch (return $ Right $ ST.decodeUtf8With ST.strictDecode bs) onDecodeError
+    Nothing -> do
+      modifyResponse $ setResponseCode 400
+      writeBS ("Required parameter, " <> name <> ", is missing")
+      getResponse >>= finishWith
+  case decoded of
+    Right t -> return t
+    Left  e -> do
+      modifyResponse $ setResponseCode 400
+      writeBS ("Error decoding request parameter using UTF-8: " <> fromString (show e))
+      getResponse >>= finishWith
+  where
+    onDecodeError :: ST.UnicodeException -> IO (Either ST.UnicodeException a)
+    onDecodeError = return . Left
+-- TODO: JSON formating for error responses?
 
 ----------------------------------------------------------------------
 -- Response Handling
