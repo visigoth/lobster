@@ -17,19 +17,19 @@ import Control.Lens hiding ((.=), (<.>))
 import Control.Monad (filterM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
-import Data.Text (Text)
+import Data.List (isPrefixOf, isSuffixOf)
 import Data.String (fromString)
-import Filesystem.Path.CurrentOS (FilePath, (</>), (<.>))
+import Data.Text (Text)
+import System.FilePath ((</>), (<.>), makeRelative, takeDirectory)
 import System.Directory ( createDirectoryIfMissing
                         , doesDirectoryExist
                         , doesFileExist
                         , getDirectoryContents
+                        , removeDirectoryRecursive
                         )
-import Prelude hiding (FilePath)
 
-import qualified Data.ByteString.Lazy      as LBS
-import qualified Data.Text                 as Text
-import qualified Filesystem.Path.CurrentOS as Path
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text            as Text
 
 data Project = Project { _projectName    :: Text
                        , _projectModules :: Maybe [Module]
@@ -58,35 +58,93 @@ project name = Project { _projectName = name, _projectModules = Nothing }
 
 listProjects :: MonadIO m => m ProjectList
 listProjects = do
-  allItems <- liftIO $ getDirectoryContents (Path.encodeString basePath)
-  let items = filter ((/= '.') . head) allItems
-  dirs <- liftIO $ filterM isDirectory items
+  items <- listDirectory basePath
+  dirs  <- filterM isDirectory items
   return $ ProjectList (project . Text.pack <$> dirs)
   where
     isDirectory dir = let path = basePath </> fromString dir
-                      in doesDirectoryExist (Path.encodeString path)
+                      in liftIO $ doesDirectoryExist path
+
+createProject :: MonadIO m => Text -> m (Maybe Project)
+createProject name = do
+  exists <- isProjectDir name
+  if exists
+  then return Nothing
+  else do
+    let p = project name & projectModules .~ Just []
+    liftIO $ createDirectoryIfMissing True (projectPath p)
+    return (Just p)
+
+getProject :: (Functor m, MonadIO m) => Text -> m (Maybe Project)
+getProject name = do
+  exists <- isProjectDir name
+  if exists
+  then do
+    let p = project name
+    moduleFiles <- findFilesRecursive (return . isLobster) [projectPath p]
+    let moduleNames = makeRelative (projectPath p) <$> moduleFiles
+    let modules     = Module . fromString <$> moduleNames
+    return $ Just $ project name & projectModules .~ Just modules
+  else return Nothing
+
+destroyProject :: (Functor m, MonadIO m) => Text -> m (Maybe ())
+destroyProject name = do
+  let path = projectPath (project name)
+  exists <- liftIO $ doesDirectoryExist path
+  if exists
+  then Just <$> liftIO (removeDirectoryRecursive path)
+  else return Nothing
+
+isProjectDir :: MonadIO m => Text -> m Bool
+isProjectDir name = let path = basePath </> Text.unpack name
+                    in liftIO $ doesDirectoryExist path
+
+isLobster :: FilePath -> Bool
+isLobster = isSuffixOf ".lsr"
 
 putModule :: MonadIO m => Module -> LBS.ByteString -> Project -> m ()
 putModule m source p = do
   let path = modulePath m p
-  let dir  = Path.directory path
-  liftIO $ createDirectoryIfMissing True (Path.encodeString dir)
-  liftIO $ LBS.writeFile (Path.encodeString path) source
+  let dir  = takeDirectory path
+  liftIO $ createDirectoryIfMissing True dir
+  liftIO $ LBS.writeFile path source
 
 getModuleSource :: (Functor m, MonadIO m) => Module -> Project -> m (Maybe LBS.ByteString)
 getModuleSource m p = do
   let path = modulePath m p
-  exists <- liftIO $ doesFileExist (Path.encodeString path)
+  exists <- liftIO $ doesFileExist path
   case exists of
-    True  -> Just <$> liftIO (LBS.readFile (Path.encodeString path))
+    True  -> Just <$> liftIO (LBS.readFile path)
     False -> return Nothing
 
 basePath :: FilePath
 basePath = "projects"
 
 projectPath :: Project -> FilePath
-projectPath p = basePath </> Path.fromText (p ^. projectName)
+projectPath p = basePath </> Text.unpack (p ^. projectName)
 
 -- TODO: Handle path separators in module name
 modulePath :: Module -> Project -> FilePath
-modulePath m p = projectPath p </> Path.fromText (m ^. moduleName)  <.> "lsr"
+modulePath m p = projectPath p </> Text.unpack (m ^. moduleName)  <.> "lsr"
+
+-- | List all entries in a directory except for entries beginning with `.`
+listDirectory :: MonadIO m => FilePath -> m [FilePath]
+listDirectory path = do
+  items <- liftIO $ getDirectoryContents path
+  return $ filter (not . isPrefixOf ".") items
+
+findFilesRecursive :: (Functor m, MonadIO m)
+                   => (FilePath -> m Bool) -> [FilePath] -> m [FilePath]
+findFilesRecursive predicate (d:ds) = do
+  matches <- predicate d
+  isDir   <- liftIO $ doesDirectoryExist d
+  nested  <- if isDir
+             then do
+               items <- listDirectory d
+               return $ (d </>) <$> items
+             else return []
+  let rec = findFilesRecursive predicate (nested ++ ds)
+  if matches
+  then (d:) <$> rec
+  else rec
+findFilesRecursive _ [] = return []

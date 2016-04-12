@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module V3SPA.Server.ProjectResource where
 
 import Snap
@@ -11,13 +13,26 @@ handleListProjects = do
   respondOk
   respond ps
 
+handleCreateProject :: MonadSnap m => m ()
+handleCreateProject = do
+  name <- getTextParam "name"
+  proj <- createProject name
+  respondOk
+  respond proj
 
-handleCreateProject = undefined
 handleImportSELinux = undefined
 handleImportIptables = undefined
 handleGetProject = undefined
 handleUpdateProject = undefined
-handleDestroyProject = undefined
+
+handleDestroyProject :: MonadSnap m => m ()
+handleDestroyProject = do
+  name   <- getTextParam "name"
+  result <- destroyProject name
+  case result of
+    Just _  -> modifyResponse $ setResponseCode 204
+    Nothing -> modifyResponse $ setResponseCode 404
+
 handleExportSELinux = undefined
 handleCreateModule = undefined
 handleGetModule = undefined

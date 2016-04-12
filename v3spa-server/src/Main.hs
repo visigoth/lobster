@@ -32,9 +32,9 @@ handleVersion = method GET $ respond Null
 site :: V3Snap ()
 site = route
   [ ("/projects",                        method GET    handleListProjects)
-  , ("/projects",                        method POST   handleCreateProject)
   , ("/projects/import/selinux",         method POST   handleImportSELinux)
   , ("/projects/import/iptables",        method POST   handleImportIptables)
+  , ("/projects/:name",                  method POST   handleCreateProject)
   , ("/projects/:name",                  method GET    handleGetProject)
   , ("/projects/:name",                  method PUT    handleUpdateProject)
   , ("/projects/:name",                  method DELETE handleDestroyProject)
