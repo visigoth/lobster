@@ -17,12 +17,23 @@ handleCreateProject :: MonadSnap m => m ()
 handleCreateProject = do
   name <- getTextParam "name"
   proj <- createProject name
+  -- TODO: handle case where proj is Nothing, when project already exists
   respondOk
   respond proj
 
 handleImportSELinux = undefined
 handleImportIptables = undefined
-handleGetProject = undefined
+
+handleGetProject :: MonadSnap m => m ()
+handleGetProject = do
+  name      <- getTextParam "name"
+  maybeProj <- getProject name
+  case maybeProj of
+    Just proj -> do
+      respondOk
+      respond proj
+    Nothing -> modifyResponse $ setResponseCode 404
+
 handleUpdateProject = undefined
 
 handleDestroyProject :: MonadSnap m => m ()
