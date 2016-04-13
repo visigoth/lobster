@@ -31,6 +31,7 @@ import System.Directory ( copyFile
                         , doesFileExist
                         , getDirectoryContents
                         , removeDirectoryRecursive
+                        , removeFile
                         )
 
 import qualified Data.ByteString.UTF8 as BS
@@ -128,6 +129,14 @@ getModuleSource m p = do
   exists <- liftIO $ doesFileExist path
   case exists of
     True  -> Just <$> liftIO (LBS.readFile path)
+    False -> return Nothing
+
+destroyModule :: (Functor m, MonadIO m) => Module -> Project -> m (Maybe ())
+destroyModule m p = do
+  let path = modulePath m p
+  exists <- liftIO $ doesFileExist path
+  case exists of
+    True  -> Just <$> liftIO (removeFile path)
     False -> return Nothing
 
 basePath :: FilePath

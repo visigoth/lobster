@@ -75,7 +75,7 @@ handleCreateModules = do
     onFile _ ((_, Left policyViolation):_) = reportPolicyViolation policyViolation
 
 
-handleGetModule :: (Functor m, MonadSnap m) => m ()
+handleGetModule :: MonadSnap m => m ()
 handleGetModule = do
   projName <- getRequiredParam "name"
   modName  <- getRequiredParam "module"
@@ -88,7 +88,15 @@ handleGetModule = do
     Nothing -> do
       modifyResponse $ setResponseCode 404
 
-handleDestroyModule = undefined
+handleDestroyModule :: MonadSnap m => m ()
+handleDestroyModule = do
+  projName <- getRequiredParam "name"
+  modName  <- getRequiredParam "module"
+  result   <- destroyModule (mkModule modName) (mkProject projName)
+  case result of
+    Just _  -> modifyResponse $ setResponseCode 204
+    Nothing -> modifyResponse $ setResponseCode 404
+
 handleExportJson = undefined
 handleExportPaths = undefined
 
