@@ -58,7 +58,6 @@ importModule p modSrc = do
 -- | "POST /import/selinux" --- import SELinux to Lobster
 handleImportSELinux :: V3Snap ()
 handleImportSELinux = method POST $ do
-  modifyResponse $ setContentType "application/json"
   body    <- readBody
   req     <- hoistMiscErr $ note "malformed JSON request" $ decode body
   refPath <- refPolicyDir (seReqRefpolicy req)

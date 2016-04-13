@@ -48,6 +48,7 @@ readBodyString = T.unpack . E.decodeUtf8 <$> readBody
 -- | Encode a result as JSON and write it to the response.
 writeJSON :: (MonadSnap m, ToJSON a) => a -> m ()
 writeJSON x = do
+  modifyResponse $ setHeader "Content-Type" "application/json"
   writeLBS (AP.encodePretty' conf x)
   writeLBS "\r\n"
 
@@ -118,9 +119,7 @@ respondOk = modifyResponse $ setResponseCode 200
 
 -- | Send a successful response.
 respond :: (MonadSnap m, ToJSON a) => a -> m ()
-respond x = do
-  modifyResponse $ setHeader "Content-Type" "application/json"
-  writeJSON (mkResp x [])
+respond x = writeJSON (mkResp x [])
 
 -- | Send an error response as JSON from an error object.
 sendError :: Value -> V3Snap a
