@@ -46,6 +46,10 @@ module V3SPA.Server.Version where
 -- - connections are now a map indexed by connection ID
 -- - added '/paths?id=N' for path queries starting at domain N
 -- - added 'left_dom' and 'right_dom' to connections
+--
+-- Version 6:
+--
+-- - Whole new API, supports projects that are persisted on server; projects may
+--   contain any number of "modules", which are distinct lobster files
 version :: Int
-version = 5
-
+version = 6
