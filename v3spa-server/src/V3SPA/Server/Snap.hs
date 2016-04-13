@@ -59,7 +59,7 @@ formMultipart :: MediaType
 formMultipart = "multipart" // "form-data"
 
 lobsterType :: MediaType
-lobsterType = "application" // "vnd.lobster+json"
+lobsterType = "application" // "vnd.lobster"
 
 
 ----------------------------------------------------------------------
