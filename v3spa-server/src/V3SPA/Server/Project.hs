@@ -74,15 +74,15 @@ listProjects = do
     isDirectory dir = let path = basePath </> fromString dir
                       in liftIO $ doesDirectoryExist path
 
-createProject :: MonadIO m => ByteString -> m (Maybe Project)
+createProject :: (Functor m, MonadIO m) => ByteString -> m Project
 createProject name = do
-  exists <- isProjectDir name
-  if exists
-  then return Nothing
-  else do
-    let p = mkProject name & projectModules .~ Just []
-    liftIO $ createDirectoryIfMissing True (projectPath p)
-    return (Just p)
+  maybeProject <- getProject name
+  case maybeProject of
+    Just project -> return project
+    Nothing -> do
+      let p = mkProject name & projectModules .~ Just []
+      liftIO $ createDirectoryIfMissing True (projectPath p)
+      return p
 
 getProject :: (Functor m, MonadIO m) => ByteString -> m (Maybe Project)
 getProject name = do

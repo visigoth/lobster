@@ -55,32 +55,24 @@ handleExportSELinux = undefined
 handleCreateModules :: MonadSnap m => m ()
 handleCreateModules = do
   requireContentType formMultipart
-  projName  <- getRequiredParam "name"
-  maybeProj <- getProject projName
-  proj      <- case maybeProj of
-    Just proj -> return proj
-    Nothing   -> do
-      modifyResponse $ setResponseCode 404
-      getResponse >>= finishWith
+  projName <- getRequiredParam "name"
+  project  <- createProject projName
   tempDir  <- liftIO getTemporaryDirectory
-  modCount <- F.handleFileUploads tempDir uploadPolicy partUploadPolicy (onFile proj 0)
+  F.handleFileUploads tempDir uploadPolicy partUploadPolicy (onFile project)
+  updated  <- createProject projName  -- get project again to get updated modules list
   respondOk
-  writeBS ("Recived " <> fromString (show modCount) <> " modules")
+  respond updated
   where
-    onFile :: (MonadSnap m, Num n)
-           => Project -> n -> [(F.PartInfo, Either F.PolicyViolationException FilePath)] -> m n
-    onFile _    count [] = return count
-    onFile proj count ((info, Right tempPath):fs) =
+    onFile :: (MonadSnap m)
+           => Project -> [(F.PartInfo, Either F.PolicyViolationException FilePath)] -> m ()
+    onFile _       [] = return ()
+    onFile project ((info, Right tempPath):fs) =
       case F.partFileName info of
         Just fileName -> do
-          putModule (mkModule fileName) tempPath proj
-          onFile proj (count + 1) fs
-        Nothing -> do
-          reportFilenameRequirement
-          return 0
-    onFile _ _ ((_, Left policyViolation):_) = do
-      reportPolicyViolation policyViolation
-      return 0
+          putModule (mkModule fileName) tempPath project
+          onFile project fs
+        Nothing -> reportFilenameRequirement
+    onFile _ ((_, Left policyViolation):_) = reportPolicyViolation policyViolation
 
 
 handleGetModule = undefined
