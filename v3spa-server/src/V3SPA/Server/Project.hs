@@ -20,7 +20,11 @@ import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.List (isPrefixOf, isSuffixOf)
 import Data.String (fromString)
-import System.FilePath ((</>), (<.>), makeRelative, splitExtension, takeDirectory)
+import System.FilePath ( (</>), (<.>)
+                       , dropExtension
+                       , makeRelative
+                       , splitExtension
+                       , takeDirectory)
 import System.Directory ( copyFile
                         , createDirectoryIfMissing
                         , doesDirectoryExist
@@ -91,7 +95,7 @@ getProject name = do
   then do
     let p = mkProject name
     moduleFiles <- findFilesRecursive (return . isLobster) [projectPath p]
-    let moduleNames = makeRelative (projectPath p) <$> moduleFiles
+    let moduleNames = dropExtension . makeRelative (projectPath p) <$> moduleFiles
     let modules     = Module . fromString <$> moduleNames
     return $ Just $ mkProject name & projectModules .~ Just modules
   else return Nothing
