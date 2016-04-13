@@ -18,8 +18,7 @@ import Control.Monad.CatchIO (MonadCatchIO)
 import Control.Monad.Reader
 import Data.Aeson
 import Data.Monoid ((<>))
-import Data.String (fromString)
-import Network.HTTP.Media (MediaType, (//), matches, parseAccept)
+import Network.HTTP.Media (MediaType, RenderHeader, (//), matches, parseAccept, renderHeader)
 import Snap
 
 import Lobster.Core (Span(..), Error(..))
@@ -52,6 +51,17 @@ writeJSON x = do
   writeLBS (AP.encodePretty' conf x)
   writeLBS "\r\n"
 
+
+----------------------------------------------------------------------
+-- Media Types
+
+formMultipart :: MediaType
+formMultipart = "multipart" // "form-data"
+
+lobsterType :: MediaType
+lobsterType = "application" // "vnd.lobster+json"
+
+
 ----------------------------------------------------------------------
 -- Request Handling
 
@@ -69,9 +79,6 @@ getRequiredParam name = do
       getResponse >>= finishWith
 -- TODO: JSON formating for error responses?
 
-formMultipart :: MediaType
-formMultipart = "multipart" // "form-data"
-
 requireContentType :: MonadSnap m => MediaType -> m ()
 requireContentType requiredType = do
   contentType <- getContentType
@@ -79,7 +86,7 @@ requireContentType requiredType = do
   then return ()
   else do
     modifyResponse $ setResponseCode 415  -- Unsupported Media Type
-    writeBS ("Expected " <> fromString (show requiredType) <> ", but got " <> fromString (show contentType))
+    writeBS ("Expected " <> renderHeader requiredType <> ", but got " <> renderHeader contentType)
     getResponse >>= finishWith
 
 getContentType :: MonadSnap m => m MediaType
@@ -88,6 +95,11 @@ getContentType = do
   let maybeContentType = getHeader "Content-Type" req >>= parseAccept
   let defaultType = "application" // "octet-stream"
   return $ fromMaybe defaultType maybeContentType
+
+setContentType' :: (MonadSnap m, RenderHeader h) => h -> m Response
+setContentType' t = do
+  modifyResponse $ setHeader "Content-Type" (renderHeader t)
+  getResponse
 
 
 ----------------------------------------------------------------------
