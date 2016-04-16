@@ -42,9 +42,13 @@ module CoreSyn
   , connect'
 
   , showLobster
+  , showLobsterBS
   ) where
 
+import Data.Text.Lazy.Encoding (encodeUtf8)
+
 import qualified Lobster.Core as L
+import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text as Text
 import qualified Text.PrettyPrint.Mainland as P
 
@@ -167,3 +171,6 @@ connect' d a b xs = annotateDecl xs (connect d a b)
 
 showLobster :: [Decl] -> String
 showLobster ds = P.pretty 0 (P.ppr (L.Policy L.emptySpan ds))
+
+showLobsterBS :: [Decl] -> LBS.ByteString
+showLobsterBS ds = encodeUtf8 (P.prettyLazyText 0 (P.ppr (L.Policy L.emptySpan ds)))

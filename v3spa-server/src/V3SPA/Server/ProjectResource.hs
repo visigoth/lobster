@@ -2,15 +2,20 @@
 
 module V3SPA.Server.ProjectResource where
 
+import Control.Error (note)
 import Control.Monad.IO.Class (liftIO)
+import Data.Aeson (decode)
 import Data.Monoid ((<>))
 import Data.String (fromString)
 import Snap
 import System.Directory (getTemporaryDirectory)
+import System.FilePath (dropExtension)
 
+import V3SPA.Server.Import.SELinux (importModules)
 import V3SPA.Server.Project
 import V3SPA.Server.Snap
 
+import qualified Data.ByteString.Lazy  as LBS
 import qualified Snap.Util.FileUploads as F
 
 handleListProjects :: MonadSnap m => m ()
@@ -27,7 +32,22 @@ handleCreateProject = do
   respondOk
   respond proj
 
-handleImportSELinux = undefined
+handleImportSELinux :: V3Snap ()
+handleImportSELinux = do
+  projName <- getRequiredParam "name"
+  body     <- readBody
+  req      <- hoistMiscErr $ note "malformed JSON request" $ decode body
+  project  <- createProject projName
+  modules  <- importModules req
+  mapM_ (putSEModule project) modules
+  updated  <- createProject projName  -- get project again to get updated modules list
+  respondOk
+  respond updated
+  where
+    putSEModule project (modName, source) = do
+      let m = mkModule (fromString (dropExtension modName))
+      putModule m source project
+
 handleImportIptables = undefined
 
 handleGetProject :: MonadSnap m => m ()
@@ -63,17 +83,17 @@ handleCreateModules = do
   respondOk
   respond updated
   where
-    onFile :: (MonadSnap m)
+    onFile :: MonadSnap m
            => Project -> [(F.PartInfo, Either F.PolicyViolationException FilePath)] -> m ()
+    onFile project ((info, Right filePath):fs) = do
+      fileName <- case F.partFileName info of
+        Just name -> return name
+        Nothing -> reportFilenameRequirement >> return "(anon)"
+      source <- liftIO $ LBS.readFile filePath
+      putModule (mkModule fileName) source project
+      onFile project fs
     onFile _       [] = return ()
-    onFile project ((info, Right tempPath):fs) =
-      case F.partFileName info of
-        Just fileName -> do
-          putModule (mkModule fileName) tempPath project
-          onFile project fs
-        Nothing -> reportFilenameRequirement
     onFile _ ((_, Left policyViolation):_) = reportPolicyViolation policyViolation
-
 
 handleGetModule :: MonadSnap m => m ()
 handleGetModule = do

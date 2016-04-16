@@ -25,8 +25,7 @@ import System.FilePath ( (</>), (<.>)
                        , makeRelative
                        , splitExtension
                        , takeDirectory)
-import System.Directory ( copyFile
-                        , createDirectoryIfMissing
+import System.Directory ( createDirectoryIfMissing
                         , doesDirectoryExist
                         , doesFileExist
                         , getDirectoryContents
@@ -116,12 +115,12 @@ isProjectDir name = let path = basePath </> BS.toString name
 isLobster :: FilePath -> Bool
 isLobster = isSuffixOf ".lsr"
 
-putModule :: MonadIO m => Module -> FilePath -> Project -> m ()
+putModule :: MonadIO m => Module -> LBS.ByteString -> Project -> m ()
 putModule m source p = do
   let path = modulePath m p
   let dir  = takeDirectory path
   liftIO $ createDirectoryIfMissing True dir
-  liftIO $ copyFile source path
+  liftIO $ LBS.writeFile path source
 
 getModuleSource :: (Functor m, MonadIO m) => Module -> Project -> m (Maybe LBS.ByteString)
 getModuleSource m p = do

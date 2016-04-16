@@ -42,7 +42,7 @@ readBody :: MonadSnap m => m LBS.ByteString
 readBody = readRequestBody (100 * 1024 * 1024)
 
 -- | Read the request body as a string.
-readBodyString :: V3Snap String
+readBodyString :: MonadSnap m => m String
 readBodyString = T.unpack . E.decodeUtf8 <$> readBody
 
 -- | Encode a result as JSON and write it to the response.
@@ -61,6 +61,9 @@ formMultipart = "multipart" // "form-data"
 
 lobsterType :: MediaType
 lobsterType = "application" // "vnd.lobster"
+
+selinuxJsonType :: MediaType
+selinuxJsonType = "application" // "vnd.v3spa.selinux+json"
 
 
 ----------------------------------------------------------------------
@@ -97,10 +100,9 @@ getContentType = do
   let defaultType = "application" // "octet-stream"
   return $ fromMaybe defaultType maybeContentType
 
-setContentType' :: (MonadSnap m, RenderHeader h) => h -> m Response
+setContentType' :: (MonadSnap m, RenderHeader h) => h -> m ()
 setContentType' t = do
   modifyResponse $ setHeader "Content-Type" (renderHeader t)
-  getResponse
 
 
 ----------------------------------------------------------------------
@@ -122,7 +124,7 @@ respond :: (MonadSnap m, ToJSON a) => a -> m ()
 respond x = writeJSON (mkResp x [])
 
 -- | Send an error response as JSON from an error object.
-sendError :: Value -> V3Snap a
+sendError :: MonadSnap m => Value -> m a
 sendError obj = do
   writeJSON obj
   r <- getResponse
@@ -130,14 +132,14 @@ sendError obj = do
 
 -- | Run an action that may fail in the "V3Snap" monad,
 -- catching errors and returning them as a JSON response.
-hoistErr :: Either (Error Span) a -> V3Snap a
+hoistErr :: MonadSnap m => Either (Error Span) a -> m a
 hoistErr (Left e)  = sendError (mkResp Null [e])
 hoistErr (Right x) = return x
 
 -- | Run an action that may fail with a string in the
 -- "V3Snap" monad, catching errors and returning them
 -- as a JSON response.
-hoistMiscErr :: Either String a -> V3Snap a
+hoistMiscErr :: MonadSnap m => Either String a -> m a
 hoistMiscErr = hoistErr . fmapL MiscError
 
 -- | Pretty JSON configuration for parsed Lobster.

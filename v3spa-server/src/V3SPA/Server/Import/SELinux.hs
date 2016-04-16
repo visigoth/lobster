@@ -11,28 +11,32 @@
 --
 
 module V3SPA.Server.Import.SELinux
-  ( handleImportSELinux
+  ( importModules
   ) where
 
 import Control.Applicative ((<$>), (<*>))
 import Control.Error
+import Control.Lens
 import Control.Monad.Reader
 import Data.Aeson
+import Data.Map.Strict (Map)
 import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 
 import SCD.M4.ModuleFiles
 import Snap
 
-import CoreSyn (showLobster)
+import CoreSyn (showLobsterBS)
 import V3SPA.Server.Snap
 
-import qualified SCD.M4.Syntax            as M4
-import qualified M4ToLobster              as M
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Map.Strict      as Map
+import qualified SCD.M4.Syntax        as M4
+import qualified M4ToLobster          as M
 
 data SELinuxImportRequest = SELinuxImportRequest
   { seReqRefpolicy :: String
-  , seReqModules   :: [ModuleSource]
+  , seReqModules   :: Map String ModuleSource
   } deriving Show
 
 instance FromJSON SELinuxImportRequest where
@@ -50,26 +54,32 @@ instance FromJSON ModuleSource where
                  <*> v .: "fc"
   parseJSON _ = mzero
 
-importModule :: M4.Policy -> ModuleSource -> V3Snap M4.Policy
+importModule :: MonadSnap m => M4.Policy -> ModuleSource -> m M4.Policy
 importModule p modSrc = do
   m <- hoistMiscErr $ readPolicyModuleSource modSrc
   return $ addPolicyModule m p
 
--- | "POST /import/selinux" --- import SELinux to Lobster
-handleImportSELinux :: V3Snap ()
-handleImportSELinux = method POST $ do
-  body    <- readBody
-  req     <- hoistMiscErr $ note "malformed JSON request" $ decode body
-  refPath <- refPolicyDir (seReqRefpolicy req)
-  policy0 <- liftIO $ readPolicy Nothing refPath
-  policy1 <- foldM importModule policy0 (seReqModules req)
+--- | Given an import request, produces a list of pairs containing module names
+-- paired with Lobster source code.
+importModules :: SELinuxImportRequest -> V3Snap [(String, LBS.ByteString)]
+importModules req = do
+  refPath  <- refPolicyDir (seReqRefpolicy req)
+  policy0  <- liftIO $ readPolicy Nothing refPath
+  let sources = Map.toList (seReqModules req)
+  policies <- mapM (importModule policy0) (snd <$> sources)
   let subAttrFile = refPath ++ "/subattributes"
   ok      <- liftIO $ doesFileExist subAttrFile
   subAttr <- liftIO $
     if not ok then return []
     else fmap M.parseSubAttributes (readFile subAttrFile)
-  lsr     <- hoistMiscErr (fmapL show $ M.toLobster subAttr policy1)
-  respond (showLobster lsr)
+  let eitherLsrSources = M.toLobster subAttr <$> policies
+  let policyNames      = fst <$> sources
+  lsrSources <- hoistMiscErr (foldr combineEithers (Right []) eitherLsrSources & _Left %~ show)
+  return $ zip policyNames (showLobsterBS <$> lsrSources)
+  where
+    combineEithers (Right m) (Right ms) = Right (m:ms)
+    combineEithers (Left e)  _          = Left e
+    combineEithers _         (Left e)   = Left e
 
 -- | Return the directory that contains reference policy versions.
 refPolicyBaseDir :: V3Snap FilePath
