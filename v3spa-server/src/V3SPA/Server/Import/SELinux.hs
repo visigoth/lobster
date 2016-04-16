@@ -19,7 +19,6 @@ import Control.Error
 import Control.Lens
 import Control.Monad.Reader
 import Data.Aeson
-import Data.Map.Strict (Map)
 import System.Directory (doesFileExist)
 import System.FilePath ((</>))
 
@@ -30,13 +29,12 @@ import CoreSyn (showLobsterBS)
 import V3SPA.Server.Snap
 
 import qualified Data.ByteString.Lazy as LBS
-import qualified Data.Map.Strict      as Map
 import qualified SCD.M4.Syntax        as M4
 import qualified M4ToLobster          as M
 
 data SELinuxImportRequest = SELinuxImportRequest
   { seReqRefpolicy :: String
-  , seReqModules   :: Map String ModuleSource
+  , seReqModules   :: [ModuleSource]
   } deriving Show
 
 instance FromJSON SELinuxImportRequest where
@@ -65,15 +63,15 @@ importModules :: SELinuxImportRequest -> V3Snap [(String, LBS.ByteString)]
 importModules req = do
   refPath  <- refPolicyDir (seReqRefpolicy req)
   policy0  <- liftIO $ readPolicy Nothing refPath
-  let sources = Map.toList (seReqModules req)
-  policies <- mapM (importModule policy0) (snd <$> sources)
+  let sources     = seReqModules req
+  let policyNames = moduleSourceName <$> sources
+  policies <- mapM (importModule policy0) sources
   let subAttrFile = refPath ++ "/subattributes"
   ok      <- liftIO $ doesFileExist subAttrFile
   subAttr <- liftIO $
     if not ok then return []
     else fmap M.parseSubAttributes (readFile subAttrFile)
   let eitherLsrSources = M.toLobster subAttr <$> policies
-  let policyNames      = fst <$> sources
   lsrSources <- hoistMiscErr (foldr combineEithers (Right []) eitherLsrSources & _Left %~ show)
   return $ zip policyNames (showLobsterBS <$> lsrSources)
   where
