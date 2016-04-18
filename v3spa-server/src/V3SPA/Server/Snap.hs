@@ -1,5 +1,7 @@
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeSynonymInstances #-}
 --
 -- Snap.hs --- Snap utilities for the V3SPA web service.
 --
@@ -25,10 +27,20 @@ import Lobster.Core (Span(..), Error(..))
 import V3SPA.Server.Version
 
 import qualified Data.ByteString          as BS
+import qualified Data.ByteString.Char8    as C
 import qualified Data.ByteString.Lazy     as LBS
 import qualified Data.Text.Lazy           as T
 import qualified Data.Text.Lazy.Encoding  as E
 import qualified Data.Aeson.Encode.Pretty as AP
+
+class IsError a where
+  toError :: a -> Error Span
+
+instance IsError String where
+  toError = MiscError
+
+instance IsError (Error Span) where
+  toError = id
 
 -- | Snap monad extended with a "Reader" for configuration data.
 --
@@ -74,14 +86,21 @@ selinuxJsonType = "application" // "vnd.v3spa.selinux+json"
 -- handler.
 getRequiredParam :: MonadSnap m => BS.ByteString -> m BS.ByteString
 getRequiredParam name = do
-  maybeBS <- getParam name
-  case maybeBS of
-    Just bs -> return bs
-    Nothing -> do
-      modifyResponse $ setResponseCode 400
-      writeBS ("Required parameter, " <> name <> ", is missing")
-      getResponse >>= finishWith
--- TODO: JSON formating for error responses?
+  p <- getParam name
+  handleError 400 (note ("Required parameter, '" <> C.unpack name <> "', is missing") p)
+
+-- | Like `getRequiredParam`, but also takes a function to parse the parameter.
+parseRequiredParam :: (IsError e, MonadSnap m) => (BS.ByteString -> Either e a) -> BS.ByteString -> m a
+parseRequiredParam f name = do
+  p <- getRequiredParam name
+  handleError 400 (f p)
+
+-- | Like `parseRequiredParam`, except that if the parameter does not exist then
+-- the parsing function may provide a default value.
+parseParam :: (IsError e, MonadSnap m) => (Maybe BS.ByteString -> Either e a) -> BS.ByteString -> m a
+parseParam f name = do
+  p <- getParam name
+  handleError 400 (f p)
 
 requireContentType :: MonadSnap m => MediaType -> m ()
 requireContentType requiredType = do
@@ -146,6 +165,12 @@ hoistErr (Right x) = return x
 -- as a JSON response.
 hoistMiscErr :: MonadSnap m => Either String a -> m a
 hoistMiscErr = hoistErr . fmapL MiscError
+
+handleError :: (IsError e, MonadSnap m) => Int -> Either e a -> m a
+handleError statusCode (Left e) = do
+  modifyResponse $ setResponseCode statusCode
+  sendError (mkResp Null [toError e])
+handleError _ (Right x) = return x
 
 -- | Pretty JSON configuration for parsed Lobster.
 conf :: AP.Config

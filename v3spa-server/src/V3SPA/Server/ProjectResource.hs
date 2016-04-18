@@ -16,6 +16,7 @@ import V3SPA.Server.Import.SELinux (importModules)
 import V3SPA.Server.Project
 import V3SPA.Server.Snap
 
+import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy  as LBS
 import qualified Snap.Util.FileUploads as F
 
@@ -44,6 +45,7 @@ handleImportSELinux = do
   putModule m lsr project
   respondCreated ("/projects/" <> projName <> "/modules/imported%2Fselinux")
 
+-- TODO
 handleImportIptables = undefined
 
 handleGetProject :: MonadSnap m => m ()
@@ -55,8 +57,6 @@ handleGetProject = do
       respondOk
       respond proj
     Nothing -> modifyResponse $ setResponseCode 404
-
-handleUpdateProject = undefined
 
 handleDestroyProject :: MonadSnap m => m ()
 handleDestroyProject = do
@@ -124,8 +124,8 @@ handleDestroyModule = do
     Just _  -> modifyResponse $ setResponseCode 204
     Nothing -> modifyResponse $ setResponseCode 404
 
+-- TODO
 handleExportJson = undefined
-handleExportPaths = undefined
 
 
 ----------------------------------------------------------------------

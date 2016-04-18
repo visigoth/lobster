@@ -15,7 +15,7 @@ import Data.Aeson
 import Snap
 
 import V3SPA.Server.Snap
-import V3SPA.Server.Paths
+import V3SPA.Server.Paths (handleExportPaths)
 import V3SPA.Server.ProjectResource
 
 ----------------------------------------------------------------------
@@ -31,11 +31,10 @@ handleVersion = method GET $ respond Null
 -- | Routing information for the web service.
 site :: V3Snap ()
 site = route
-  [ ("/projects",                                method GET    handleListProjects)
-  , ("/projects/import/iptables",                method POST   handleImportIptables)
+  [ ("/import/iptables",                         handleImportIptables)
+  , ("/projects",                                method GET    handleListProjects)
   , ("/projects/:name",                          method POST   handleCreateProject)
   , ("/projects/:name",                          method GET    handleGetProject)
-  , ("/projects/:name",                          method PUT    handleUpdateProject)
   , ("/projects/:name",                          method DELETE handleDestroyProject)
   , ("/projects/:name/import/selinux",           method POST   handleImportSELinux)
   , ("/projects/:name/modules",                  method POST   handleCreateModules)
@@ -44,6 +43,7 @@ site = route
   , ("/projects/:name/modules/:module/selinux",  method GET    handleExportSELinux)
   , ("/projects/:name/json",                     method GET    handleExportJson)
   , ("/projects/:name/paths",                    method GET    handleExportPaths)
+  , ("/version",                                 handleVersion)
   ]
 
 handler opts = do

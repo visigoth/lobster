@@ -11,7 +11,7 @@
 --
 
 module V3SPA.Server.Paths
-  ( handlePaths
+  ( handleExportPaths
   ) where
 
 import Control.Applicative ((<$>))
@@ -22,6 +22,7 @@ import Data.Text (Text, pack)
 import Snap
 
 import Lobster.Core
+import V3SPA.Server.Project hiding (Module)
 import V3SPA.Server.Snap
 
 import qualified Data.ByteString.Char8 as BS
@@ -31,27 +32,27 @@ import qualified Data.Text             as T
 import qualified Data.Text.Encoding    as TE
 
 -- | Get the domain ID from query parameters.
-paramDomainId :: V3Snap (Maybe DomainId)
-paramDomainId = do
-  r <- getQueryParam "id"
-  return $ maybe Nothing ((DomainId . fst <$>) . BS.readInt) r
+paramDomainId :: BS.ByteString -> Either String DomainId
+paramDomainId param =
+  let maybeId = (DomainId . fst ) <$> BS.readInt param
+  in note "Parameter 'id' must be an integer." maybeId
 
 -- | Get the query limit from HTTP parameters.
-paramLimit :: V3Snap (Maybe Int)
-paramLimit = do
-  r <- getQueryParam "limit"
-  return $ maybe Nothing ((fst <$>) . BS.readInt) r
+paramLimit :: Maybe BS.ByteString -> Either String (Maybe Int)
+paramLimit maybeParam = note "Parameter 'limit' must be an integer." $
+  case maybeParam of
+    Just param -> Just . fst <$> BS.readInt param
+    Nothing    -> Just Nothing
 
 -- | Get the query direction from HTTP parameters.
-paramDirection :: V3Snap (Either (Error l) GTDirection)
-paramDirection = do
-  r <- getQueryParam "direction"
-  case r of
-    Nothing -> return (Right GTForward)
+paramDirection :: Maybe BS.ByteString -> Either String GTDirection
+paramDirection param =
+  case param of
+    Nothing -> Right GTForward
     Just x
-      | x == "forward"  -> return (Right GTForward)
-      | x == "backward" -> return (Right GTBackward)
-      | otherwise       -> return (Left (MiscError "invalid direction"))
+      | x == "forward"  -> Right GTForward
+      | x == "backward" -> Right GTBackward
+      | otherwise       -> Left "invalid direction"
 
 -- | Parse a comma-separate list of permission names.
 parsePerms :: Text -> S.Set Perm
@@ -60,16 +61,15 @@ parsePerms t = S.fromList (catMaybes (map parsePerm xs))
     xs = T.splitOn "," t
 
 -- | Get the initial permission filter set from HTTP parameters.
-paramPerms :: V3Snap (Maybe (S.Set Perm))
-paramPerms = do
-  r <- fmap TE.decodeUtf8 <$> getQueryParam "perms"
-  return $ fmap parsePerms r
+paramPerms :: Maybe BS.ByteString -> Either String (Maybe (S.Set Perm))
+paramPerms maybeParam = Right (parsePerms . TE.decodeUtf8 <$> maybeParam)
 
 -- | Get the transitive permission filter set from HTTP parameters.
-paramTransPerms :: V3Snap (S.Set Perm)
-paramTransPerms = do
-  r <- fmap TE.decodeUtf8 <$> getQueryParam "trans_perms"
-  return $! maybe S.empty parsePerms r
+paramTransPerms :: Maybe BS.ByteString -> Either String (S.Set Perm)
+paramTransPerms maybeParam = Right $
+  case maybeParam of
+    Just param -> parsePerms (TE.decodeUtf8 param)
+    Nothing    -> S.empty
 
 -- | Output a path node as JSON.
 pathNodeJSON :: Module l -> GTNode -> Value
@@ -104,23 +104,26 @@ isType m domId _ = isJust ann
     ann = lookupAnnotation "Type" (dom ^. domainAnnotation)
 -}
 
--- | "POST /paths?id=N" --- path query
-handlePaths :: V3Snap ()
-handlePaths = method POST $ do
-  modifyResponse $ setContentType "application/json"
-  body   <- readBody
-  m      <- hoistErr $ readPolicyBS body
+-- | Concatenate module sources and extract information flow paths.
+handleExportPaths :: MonadSnap m => m ()
+handleExportPaths = do
+  projName <- getRequiredParam                   "name"
+  domId    <- parseRequiredParam paramDomainId   "id"
+  qdir     <- parseParam         paramDirection  "direction"
+  limit    <- parseParam         paramLimit      "limit"
+  perms    <- parseParam         paramPerms      "perms"
+  tperms   <- parseParam         paramTransPerms "trans_perms"
+  let proj = mkProject projName
+  lobsterSource <- (handleError 404 . note ("Project not found." :: String)) =<< getConcatenatedModuleSources proj
 
-  domId  <- hoistMiscErr =<< (note "parameter 'id' not supplied" <$> paramDomainId)
+  m      <- hoistErr $ readPolicyBS lobsterSource
   dom    <- hoistMiscErr (note "domain not found" $ m ^? moduleDomains . ix domId)
-  qdir   <- hoistErr =<< paramDirection
-  limit  <- paramLimit
   let mg  = moduleGraph m
   let gr  = mg ^. moduleGraphGraph
   let mdm = mg ^. moduleGraphDomainMap
   n      <- hoistMiscErr (note "domain not eligible" $ mdm ^? ix (dom ^. domainId))
 
-  perms  <- paramPerms
-  tperms <- paramTransPerms
   let (ps, full) = getPaths m qdir perms tperms 10 limit gr n
-  respond (pathSetJSON m ps full)
+  let paths      = pathSetJSON m ps full
+  respondOk
+  respond paths

@@ -14,11 +14,13 @@ module V3SPA.Server.Project where
 
 import Control.Applicative ((<$>))
 import Control.Lens hiding ((.=), (<.>))
-import Control.Monad (filterM)
+import Control.Monad (filterM, foldM)
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.List (isPrefixOf, isSuffixOf)
+import Data.Maybe (fromMaybe)
+import Data.Monoid ((<>), mempty)
 import Data.String (fromString)
 import System.FilePath ( (</>), (<.>)
                        , dropExtension
@@ -129,6 +131,18 @@ getModuleSource m p = do
   case exists of
     True  -> Just <$> liftIO (LBS.readFile path)
     False -> return Nothing
+
+getConcatenatedModuleSources :: (Functor m, MonadIO m) => Project -> m (Maybe LBS.ByteString)
+getConcatenatedModuleSources proj = do
+  maybeProject <- getProject (proj ^. projectName)
+  case maybeProject of
+    Just project -> do
+      let modules = fromMaybe [] (project ^. projectModules)
+      Just <$> foldM (\sources m -> do
+        maybeSource <- getModuleSource m project
+        let source = fromMaybe mempty maybeSource  -- Should not get `Nothing` here, because iterating module list
+        return $ sources <> "\n\n" <> source) mempty modules
+    Nothing -> return Nothing
 
 destroyModule :: (Functor m, MonadIO m) => Module -> Project -> m (Maybe ())
 destroyModule m p = do
