@@ -119,6 +119,11 @@ mkResp result errors =
 respondOk :: MonadSnap m => m ()
 respondOk = modifyResponse $ setResponseCode 200
 
+respondCreated :: MonadSnap m => BS.ByteString -> m ()
+respondCreated resourcePath = do
+  modifyResponse $ setResponseCode 201
+                 . addHeader "Location" resourcePath
+
 -- | Send a successful response.
 respond :: (MonadSnap m, ToJSON a) => a -> m ()
 respond x = writeJSON (mkResp x [])

@@ -39,10 +39,9 @@ handleImportSELinux = do
   req      <- hoistMiscErr $ note "malformed JSON request" $ decode body
   project  <- createProject projName
   lsr      <- importModules req
-  putModule (mkModule ("imported/selinux")) lsr project
-  updated  <- createProject projName  -- get project again to get updated modules list
-  respondOk
-  respond updated
+  let m = mkModule ("imported/selinux")
+  putModule m lsr project
+  respondCreated (fromString (dropExtension (modulePath m project)))
 
 handleImportIptables = undefined
 
