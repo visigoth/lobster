@@ -59,25 +59,19 @@ importModule p modSrc = do
 
 --- | Given an import request, produces a list of pairs containing module names
 -- paired with Lobster source code.
-importModules :: SELinuxImportRequest -> V3Snap [(String, LBS.ByteString)]
+importModules :: SELinuxImportRequest -> V3Snap LBS.ByteString
 importModules req = do
-  refPath  <- refPolicyDir (seReqRefpolicy req)
-  policy0  <- liftIO $ readPolicy Nothing refPath
-  let sources     = seReqModules req
-  let policyNames = moduleSourceName <$> sources
-  policies <- mapM (importModule policy0) sources
+  refPath <- refPolicyDir (seReqRefpolicy req)
+  policy0 <- liftIO $ readPolicy Nothing refPath
+  policy1 <- foldM importModule policy0 (seReqModules req)
   let subAttrFile = refPath ++ "/subattributes"
   ok      <- liftIO $ doesFileExist subAttrFile
   subAttr <- liftIO $
     if not ok then return []
     else fmap M.parseSubAttributes (readFile subAttrFile)
-  let eitherLsrSources = M.toLobster subAttr <$> policies
-  lsrSources <- hoistMiscErr (foldr combineEithers (Right []) eitherLsrSources & _Left %~ show)
-  return $ zip policyNames (showLobsterBS <$> lsrSources)
-  where
-    combineEithers (Right m) (Right ms) = Right (m:ms)
-    combineEithers (Left e)  _          = Left e
-    combineEithers _         (Left e)   = Left e
+  let eitherLsr = M.toLobster subAttr policy1
+  lsr     <- hoistMiscErr (eitherLsr & _Left %~ show)
+  return $ showLobsterBS lsr
 
 -- | Return the directory that contains reference policy versions.
 refPolicyBaseDir :: V3Snap FilePath
