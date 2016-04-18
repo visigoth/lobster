@@ -619,7 +619,7 @@ outputDomtransMacro st (n, ds) = (m, domDecl) : concatMap connectArg args
     m = Map.lookup n (type_modules st)
 
     domDecl :: L.Decl
-    domDecl = L.newDomain' d (L.mkName "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
+    domDecl = L.newDomain' d (L.mkQualifiedName [L.rootModule] "Domtrans_pattern") [L.mkName (show (S.idString (ds !! 1)))]
       [L.mkAnnotation (L.mkName "Macro") (map (L.annotationString . S.idString) ds)]
 
     connectArg :: (S.Identifier, L.Name, S.Identifier, L.Name) -> [(Maybe M4.ModuleId, L.Decl)]

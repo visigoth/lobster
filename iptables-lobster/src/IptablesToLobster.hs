@@ -34,7 +34,7 @@ toLobster s = do
       (Left e, _)      -> Left e
       (Right _, final) ->
         return $ preamble ++ [mkHost (L.mkName "Host") (stateToLobster final)] ++ [host]
-  where host = L.newDomain (L.mkName "host") (L.mkName "Host") []
+  where host = L.newDomain (L.mkName "host") (L.mkQualifiedName [] "Host") []
         -- separate these out so we have the correct initial values;
         -- undefined is okay for now on these because it gets reset
         -- immediately by translateChain
@@ -60,10 +60,10 @@ parseIptables s =
 stateToLobster :: S -> [L.Decl]
 stateToLobster S { sRules, sActions, sEdges } =
     ruleDecls ++ actionDecls ++ edgeDecls
-  where ruleDecls = [ L.newDomain name (L.mkName "Rule") [L.mkName $ ppRuleOpts rule]
+  where ruleDecls = [ L.newDomain name (L.mkQualifiedName [] "Rule") [L.mkName $ ppRuleOpts rule]
                     | (name, rule) <- Map.toList sRules
                     ]
-        actionDecls = [ L.newDomain name (L.mkName "Action") [L.mkName action]
+        actionDecls = [ L.newDomain name (L.mkQualifiedName [] "Action") [L.mkName action]
                       | (name, action) <- Map.toList sActions
                       ]
         ppRuleOpts rule =
@@ -513,11 +513,11 @@ mkHost name decls = L.newClass name [] (builtins ++ decls)
                    , L.newComment "All outgoing interfaces"
                    , L.newPort (L.mkName "out")
                    , L.newComment "Rejected packets flow here"
-                   , L.newDomain (L.mkName "reject") (L.mkName "Destination") []
+                   , L.newDomain (L.mkName "reject") (L.mkQualifiedName [] "Destination") []
                    , L.newComment "Dropped packets flow here"
-                   , L.newDomain (L.mkName "drop") (L.mkName "Destination") []
+                   , L.newDomain (L.mkName "drop") (L.mkQualifiedName [] "Destination") []
                    , L.newComment "This host's routing table"
-                   , L.newDomain routing (L.mkName "RoutingTable") []
+                   , L.newDomain routing (L.mkQualifiedName [] "RoutingTable") []
                    , L.newComment "This host's userspace"
-                   , L.newDomain userspace (L.mkName "UserSpace") []
+                   , L.newDomain userspace (L.mkQualifiedName [] "UserSpace") []
                    ]

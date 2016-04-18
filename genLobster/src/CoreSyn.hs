@@ -2,8 +2,12 @@
 module CoreSyn
   ( Decl
   , Name
+  , QualifiedName
+  , Qualifier
   , nameString
   , mkName
+  , mkQualifiedName
+  , rootModule
   , DomPort
   , ModPort
   , Dir
@@ -53,6 +57,8 @@ import qualified Data.Text as Text
 import qualified Text.PrettyPrint.Mainland as P
 
 type Name = L.VarName L.Span
+type Qualifier = L.Qualifier L.Span
+type QualifiedName = L.Qualified L.VarName L.Span
 type Param = Name
 type Dir = L.ConnType
 type DomPort = L.PortName L.Span
@@ -63,6 +69,16 @@ type Decl = L.Stmt L.Span
 
 mkName :: String -> Name
 mkName s = L.VarName L.emptySpan (Text.pack s)
+
+mkQualifiedName :: [Qualifier] -> String -> QualifiedName
+mkQualifiedName (q:qs) name = L.Qualified L.emptySpan q (mkQualifiedName qs name)
+mkQualifiedName []     name = L.Unqualified (mkName name)
+
+rootModule :: Qualifier
+rootModule = L.RootModule L.emptySpan
+
+moduleName :: Name -> Qualifier
+moduleName name = L.ModuleName name
 
 nameString :: Name -> String
 nameString (L.VarName _ s) = Text.unpack s
@@ -122,13 +138,15 @@ annotationName = L.ExpVar . L.Unqualified
 annotateDecl :: [ConnectAnnotation] -> Decl -> Decl
 annotateDecl xs = L.StmtAnnotation L.emptySpan (L.Annotation xs)
 
-newDomain :: Name -> Name -> [Param] -> Decl
-newDomain binder (L.VarName s c) args =
-  L.StmtDomainDecl L.emptySpan binder (L.Unqualified (L.TypeName s c)) args'
+newDomain :: Name -> QualifiedName -> [Param] -> Decl
+newDomain binder className args =
+  L.StmtDomainDecl L.emptySpan binder (typeName className) args'
   where
+    typeName (L.Unqualified (L.VarName s c)) = L.Unqualified (L.TypeName s c)
+    typeName (L.Qualified l qualifier rest)    = L.Qualified l qualifier (typeName rest)
     args' = map (L.ExpVar . L.Unqualified) args
 
-newDomain' :: Name -> Name -> [Param] -> [ConnectAnnotation] -> Decl
+newDomain' :: Name -> QualifiedName -> [Param] -> [ConnectAnnotation] -> Decl
 newDomain' binder ctor args xs = annotateDecl xs (newDomain binder ctor args)
 
 domPort :: Name -> Name -> DomPort

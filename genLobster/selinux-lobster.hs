@@ -125,6 +125,8 @@ processPolicy policy = classDecls ++ domainDecls ++ connectionDecls
     toPortId = L.mkName . idString -- FIXME: lowercase?
     toClassId :: ClassId -> L.Name
     toClassId = L.mkName . capitalize . idString
+    toQualifiedClassId :: [L.Qualifier] -> ClassId -> L.QualifiedName
+    toQualifiedClassId qualifiers = L.mkQualifiedName qualifiers . capitalize . idString
     toIdentifier :: TypeOrAttributeId -> L.Name
     toIdentifier = L.mkName . lowercase . idString
     toIdentifier' :: TypeOrAttributeId -> ClassId -> L.Name
@@ -151,7 +153,7 @@ processPolicy policy = classDecls ++ domainDecls ++ connectionDecls
         stmts = [ L.newPort (toPortId p) | p <- perms ]
     domainDecls :: [L.Decl]
     domainDecls =
-      [ L.newDomain (toIdentifier' typeId classId) (toClassId classId) []
+      [ L.newDomain (toIdentifier' typeId classId) (toQualifiedClassId [] classId) []
       | (typeId, classIds) <- Map.assocs (object_classes finalSt)
       , classId <- Set.toList classIds
       ]
