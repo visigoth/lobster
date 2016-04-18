@@ -9,8 +9,9 @@ import Data.Monoid ((<>))
 import Data.String (fromString)
 import Snap
 import System.Directory (getTemporaryDirectory)
-import System.FilePath (dropExtension)
 
+import Lobster.Core (readPolicyBS)
+import Lobster.SELinux (exportSELinux)
 import V3SPA.Server.Import.SELinux (importModules)
 import V3SPA.Server.Project
 import V3SPA.Server.Snap
@@ -65,7 +66,18 @@ handleDestroyProject = do
     Just _  -> modifyResponse $ setResponseCode 204
     Nothing -> modifyResponse $ setResponseCode 404
 
-handleExportSELinux = undefined
+handleExportSELinux :: MonadSnap m => m ()
+handleExportSELinux = do
+  projName <- getRequiredParam "name"
+  modName  <- getRequiredParam "module"
+  content  <- getModuleSource (mkModule modName) (mkProject projName)
+  case content of
+    Just bs -> do
+      m <- hoistErr $ readPolicyBS bs
+      respondOk
+      respond (exportSELinux m)
+    Nothing -> do
+      modifyResponse $ setResponseCode 404
 
 handleCreateModules :: MonadSnap m => m ()
 handleCreateModules = do

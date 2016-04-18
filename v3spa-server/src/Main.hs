@@ -31,19 +31,19 @@ handleVersion = method GET $ respond Null
 -- | Routing information for the web service.
 site :: V3Snap ()
 site = route
-  [ ("/projects",                        method GET    handleListProjects)
-  , ("/projects/import/iptables",        method POST   handleImportIptables)
-  , ("/projects/:name",                  method POST   handleCreateProject)
-  , ("/projects/:name",                  method GET    handleGetProject)
-  , ("/projects/:name",                  method PUT    handleUpdateProject)
-  , ("/projects/:name",                  method DELETE handleDestroyProject)
-  , ("/projects/:name/import/selinux",   method POST   handleImportSELinux)
-  , ("/projects/:name/export/selinux",   method GET    handleExportSELinux)
-  , ("/projects/:name/modules",          method POST   handleCreateModules)
-  , ("/projects/:name/modules/:module",  method GET    handleGetModule)
-  , ("/projects/:name/modules/:module",  method DELETE handleDestroyModule)
-  , ("/projects/:name/json",             method GET    handleExportJson)
-  , ("/projects/:name/paths",            method GET    handleExportPaths)
+  [ ("/projects",                                method GET    handleListProjects)
+  , ("/projects/import/iptables",                method POST   handleImportIptables)
+  , ("/projects/:name",                          method POST   handleCreateProject)
+  , ("/projects/:name",                          method GET    handleGetProject)
+  , ("/projects/:name",                          method PUT    handleUpdateProject)
+  , ("/projects/:name",                          method DELETE handleDestroyProject)
+  , ("/projects/:name/import/selinux",           method POST   handleImportSELinux)
+  , ("/projects/:name/modules",                  method POST   handleCreateModules)
+  , ("/projects/:name/modules/:module",          method GET    handleGetModule)
+  , ("/projects/:name/modules/:module",          method DELETE handleDestroyModule)
+  , ("/projects/:name/modules/:module/selinux",  method GET    handleExportSELinux)
+  , ("/projects/:name/json",                     method GET    handleExportJson)
+  , ("/projects/:name/paths",                    method GET    handleExportPaths)
   ]
 
 handler opts = do

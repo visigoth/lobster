@@ -19,7 +19,6 @@ executable v3spa-server
                        V3SPA.Server.ProjectResource,
                        V3SPA.Server.Import.SELinux,
                        V3SPA.Server.Import.IPTables,
-                       V3SPA.Server.Export.SELinux,
                        V3SPA.Server.Version
   build-depends:       base >=4.6 && < 5,
                        containers ==0.5.*,
