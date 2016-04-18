@@ -41,7 +41,7 @@ handleImportSELinux = do
   lsr      <- importModules req
   let m = mkModule ("imported/selinux")
   putModule m lsr project
-  respondCreated (fromString (dropExtension (modulePath m project)))
+  respondCreated ("/projects/" <> projName <> "/modules/imported%2Fselinux")
 
 handleImportIptables = undefined
 
