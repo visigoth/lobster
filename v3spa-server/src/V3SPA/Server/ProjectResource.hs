@@ -30,7 +30,6 @@ handleCreateProject :: MonadSnap m => m ()
 handleCreateProject = do
   name <- getRequiredParam "name"
   proj <- createProject name
-  -- TODO: handle case where proj is Nothing, when project already exists
   respondOk
   respond proj
 
@@ -44,9 +43,6 @@ handleImportSELinux = do
   let m = mkModule ("imported/selinux")
   putModule m lsr project
   respondCreated ("/projects/" <> projName <> "/modules/imported%2Fselinux")
-
--- TODO
-handleImportIptables = undefined
 
 handleGetProject :: MonadSnap m => m ()
 handleGetProject = do
