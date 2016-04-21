@@ -1,6 +1,7 @@
 # v3spa-lobster API Reference
 
 James Bielman `<jamesjb@galois.com>`
+Jesse Hallett `<jesse@galois.com>`
 
 # Revision History
 
@@ -11,6 +12,10 @@ James Bielman `<jamesjb@galois.com>`
 ## Revision 2 (9 December 2015):
 
 - Fix bugs, document data structures in TypeScript.
+
+## Revision 3 (20 April 2016):
+
+- Document v3spa-lobster 2.0 interface.
 
 # Introduction
 
@@ -30,13 +35,13 @@ that can be used to exercise the Lobster DSL.
 
 The `m4-lobster` utility imports SELinux policy projects using M4
 macros into the Lobster language. It is equivalent to the
-`/import/selinux` endpoint in the V3SPA REST API.
+`/projects/:name/import/selinux` endpoint in the V3SPA REST API.
 
 Running this command will import a reference policy from the
 `v3spa-server/data/refpolicy/20130424` directory, writing the
 output to a single Lobster module in `refpolicy.lsr`.
 
-```
+```sh
 $ m4-lobster v3spa-server/data/refpolicy/20130424 > refpolicy.lsr
 ```
 
@@ -47,7 +52,7 @@ to the JSON representation used by the IDE for visualization.
 
 Running this command will convert `refpolicy.lsr` to `refpolicy.json`:
 
-```
+```sh
 $ lobster-json refpolicy.lsr > refpolicy.json
 ```
 
@@ -58,42 +63,44 @@ integration with the Invincea IDE. To start the web service, simply
 run the `v3spa-server` program from a directory that contains a `refpolicy`
 subdirectory, which is used by the `/import/selinux` endpoint.
 
-# V3SPA 1.0 API Endpoints
-
-Path                          Method    Request Format  Result Type
-----                          ------    --------------  ---------------
-`/version`                    `GET`     -               `null`
-`/parse`                      `POST`    `raw`           `Module`
-`/paths`                      `POST`    `raw`           `Paths`
-`/import/iptables`            `POST`    `raw`           `string`
-`/import/selinux`             `POST`    `SEPolicy`      `string`
-`/export/selinux`             `POST`    `raw`           `string`
-
-Endpoints with a 'Request Format' of `raw` receive their input
-by `POST`ing policy source directly. All other formats are JSON
-requests defined in this document.
-
-All endpoints return a `Result` JSON response, with the `result`
-field containing an object of the type described in 'Result Type'.
+The server will create a directory called `projects` under the working
+directory. Policy files that are uploaded or imported to the server will be
+stored in the `projects` directory.
 
 # V3SPA 2.0 API Endpoints
 
-Path                                  Method    Description
-----                                  ------    -----------
-`/projects`                           `GET`     List projects
-`/projects`                           `POST`    Create project
-`/projects/import/selinux`            `POST`    Import SELinux project
-`/projects/import/iptables`           `POST`    Import IPTables project
-`/projects/:name`                     `GET`     Get project settings
-`/projects/:name`                     `PUT`     Update project settings
-`/projects/:name`                     `DELETE`  Delete project
-`/projects/:name/export/selinux`      `GET`     Export project as SELinux
-`/projects/:name/modules`             `POST`    Add module to project
-`/projects/:name/modules/:name`       `PUT`     Add or update module
-`/projects/:name/modules/:name`       `GET`     Get module Lobster source
-`/projects/:name/modules/:name`       `DELETE`  Delete module from project
-`/projects/:name/json`                `GET`     Get project graph as JSON
-`/projects/:name/paths`               `GET`     Path query on project graph
+Path                                       Method    Request Format                       Result Type
+----                                       ------    --------------                       ---------------
+`/version`                                 `GET`     -                                    `null`
+`/import/iptables`                         `POST`   `text/x-iptables`                     `application/vnd.lobster`
+`/projects`                                `GET`    -                                     `application/vnd.v3spa.projects+json`
+`/projects/:name`                          `POST`   -                                     `application/vnd.v3spa.project+json`
+`/projects/:name`                          `GET`    -                                     `application/vnd.v3spa.project+json`
+`/projects/:name`                          `DELETE` -                                     `null`
+`/projects/:name/import/selinux`           `POST`   `application/vnd.v3spa.selinux+json`  `null`
+`/projects/:name/modules`                  `POST`   `multipart/form-data`                 `application/vnd.v3spa.project+json`
+`/projects/:name/modules/:module`          `GET`    -                                     `application/vnd.lobster`
+`/projects/:name/modules/:module`          `DELETE` -                                     `null`
+`/projects/:name/modules/:module/selinux`  `GET`    -                                     `text/x-type-enforcement`
+`/projects/:name/paths`                    `GET`    -                                     `application/vnd.v3spa.pathset+json`
+
+JSON responses will actually be wrapped in a response of type
+`application/vnd.v3spa.result+json`, which includes an `errors` field. The
+result type described in the table above will appear under a `result` field in
+the top-level wrapper.
+
+Media Type                            Description
+----------                            -----------
+`application/vnd.lobster`              Lobster source file
+`application/vnd.v3spa.pathset+json`   description of information flow in a set of modules, in JSON format
+`application/vnd.v3spa.project+json`   project metadata, including a list of files associated with the project
+`application/vnd.v3spa.projects+json`  list of projects
+`application/vnd.v3spa.result+json`    result JSON type; lists any errors, and reports server API version
+`application/vnd.v3spa.selinux+json`   JSON representation of SELinux policy
+`text/x-iptables`                      raw IPTables policy file
+`text/x-type-enforcement`              raw SELinux policy formatted as a `.te` file
+
+For more details on these media types, see the API Types section below.
 
 In V3SPA 2.0, we propose a REST interface that stores Lobster
 module state on the server to avoid repeatedly sending the source
@@ -104,61 +111,133 @@ from SELinux or IPTables, returning a project identifier. This identifier
 can then be passed back to perform queries such as returning JSON for
 visualization.
 
+## Basic Workflow
+
+Policy files are uploaded to the server, and are stored under a project
+namespace. Files are stored in Lobster format. SELinux policies can be uploaded
+(in JSON format); these are converted to Lobster files for storage on the server.
+
+Lobster files are uploaded to the server in batches using the
+`/projects/:name/modules` endpoint. Files are provided using
+`multipart/form-data` format.
+
+```sh
+$ curl -X POST \
+    -F 'file=@moduleA.lsr;filename=moduleA.lsr' \
+    -F 'file=@moduleB.lsr;filename=moduleB.lsr' \
+    http://localhost:8000/projects/myproject/modules
+```
+
+SELinux policies are uploaded to the `projects/:name/import/selinux` endpoint:
+
+```sh
+$ curl -H 'Content-Type: application/vnd.v3spa.selinux+json' -X POST \
+    --data-binary @policy.json \
+    http://localhost:8000/projects/myproject/import/selinux
+```
+
+Once the server has some stored policies, those polices can be queried.
+To get a list of information-flow paths through all files in a project, use the
+`/projects/:name/paths` endpoint:
+
+```sh
+$ curl 'http://localhost:8000/projects/myproject/paths?id=1'
+```
+
+See the documentation below for detailed information on each of these endpoints.
+
 ## `GET /version`
 
 Returns the version of the Lobster server. This simply returns a
-`Result` with a `null` value in the `result` field.
+`Result` with a `null` value in the `result` field. The server API version will
+be included in the `version` field, as is the case with all JSON responses.
 
-## `POST /parse`
+## `POST /import/iptables`
 
-Parse a complete Lobster policy into a JSON representation for
-visualization. The `POST` body must contain a complete Lobster policy
-definition.
+In the future there will be an endpoint that imports IPTables policies, and
+stores the resulting Lobster files in a project namespace. In the meantime this
+endpoint has been preserved from the v1 API.
 
-Returns a result of type `Module`.
+Convert IPTables policy to Lobster. The `POST` data is a IPTables policy
+source, and the result upon success is raw Lobster policy module.
 
-### Parameters
+## `GET /projects`
 
-The following query parameters may be included to filter the results:
+Responds with a list of all projects stored on the server.
 
-`maxdepth`
+## `POST /projects/:name`
 
-  ~ : integer
+Creates an empty project with the given name if none exists, and responds with
+project metadata. Responds with metadata of existing project otherwise.
 
-      The maximum depth to expand nodes, by default.
+## `GET /projects/:name`
 
-`path`
+Responds with project metadata in `application/vnd.v3spa.project+json` format.
+This includes a list of all stored project files.
 
-  ~ : string
+Responds with `404` status if there is no project with the given name.
 
-      Paths to expand children of, regardless of `maxdepth`. The path
-      must be included in the original result set to be eligible for
-      expansion.
+## `DELETE /projects/:name`
 
-`id`
+Delete a project and all of the stored files associated with that project.
 
-  ~ : integer
+## `POST /projects/:name/import/selinux`
 
-      Node identifiers to expand to children of, regardless of `maxdepth`. The
-      node with this ID must be included in the original result set to be
-      eligible for expansion.
+Convert an SELinux policy module to Lobster, and store the result in the given
+project namespace.
 
-### Examples
+The `POST` body is an SELinux in JSON format.
 
-`POST /parse?maxdepth=1&path=apache&path=ssh`
+In the future this endpoint will create a separate Lobster file for each module
+in the SELinux policy. For the time being, this endpoint will put everything
+into a single file called 'imported/selinux'. (Note that the slash must be
+encoded as '%2F' when accessing that file by name). The response includes
+a `Location` header with a path to the module that is created.
 
-Return JSON showing only top-level domains, except for the `apache`
-and `ssh` modules, which will be expanded to show their immediate children.
+If there is an existing file called 'imported/selinux' in the given project
+namespace, it will be overwritten.
 
-## `POST /paths`
+## `POST /projects/:name/modules`
 
-Analyze paths in the information flow graph.
+Upload Lobster files in batch. The request format is `multipart/form-data`.
 
-The `POST` body is a complete Lobster module in source form.
+Any files in the uploaded form data will be saved under the given project
+namespace. Files will be stored using the `filename` parameter given with the
+file in the `multipart/form-data` payload. Therefore a `filename` parameter
+*must* be included with each uploaded file.
 
-Returns a `PathSet` result.
+Existing files with matching names will be overwritten. Existing files with
+names that do not conflict with uploaded filenames will not be affected.
 
-### Parameters
+Filenames may include slashes. But note that slashes must be URL-encoded as
+'%2F' when looking up the file by name using, e.g., the
+`/projects/:name/modules/:module` endpoint.
+
+## `GET /projects/:name/modules/:module`
+
+Download a Lobster file that has been stored on the server. The `:module`
+parameter is the name of the stored file. The response is raw Lobster format.
+
+Filenames may includes slashes. But note that slashes must be URL-encoded as
+'%2F'. The best practice is to use a URL-encode function to encode the entire
+project name and filename regardless.
+
+## `DELETE /projects/:name/modules/:module`
+
+Remove a stored file from the server.
+
+## `GET /projects/:name/modules/:module/selinux`
+
+Convert a stored file to a raw SELinux `.te` file, and download the result.
+
+## `GET /projects/:name/paths`
+
+Analyze paths in the information flow graph made up of all stored files under
+the given project namespace.
+
+Returns a `application/vnd.v3spa.pathset+json` result.
+
+This endpoint accepts the following query parameters:
 
 `id`
   ~ : `number` **required**
@@ -189,28 +268,6 @@ Returns a `PathSet` result.
 
     Comma-separated list of permissions to traverse on connections
     between domains other than the initial domain.
-
-## `POST /import/iptables`
-
-Convert IPTables policy to Lobster.
-
-The `POST` data is a IPTables policy source, and the result upon success
-is raw Lobster policy module.
-
-## `POST /import/selinux`
-
-Convert an SELinux policy module to Lobster.
-
-The `POST` body is an `SEPolicy` in JSON format.
-
-The result upon success is a raw Lobster policy module.
-
-## `POST /export/selinux`
-
-Export a Lobster policy as an SELinux policy.
-
-The `POST` data is raw Lobster policy source, and the result upon
-success is a raw SELinux `.te` file.
 
 # API Types
 
@@ -347,7 +404,7 @@ The first line of a file:
   },
   "end": {
     "line": 2,
-    "col": 0    
+    "col": 0
   }
 }
 ~~~~
@@ -758,7 +815,7 @@ is represented in JSON as follows:
 }
 ~~~~
 
-## `SEPolicy`
+## `application/vnd.v3spa.selinux+json`
 
 A request to import one or more SELinux policy modules against
 a reference policy.
@@ -820,7 +877,7 @@ interface ModuleSource {
 
     Contents of the module's `.fc` file.
 
-## `PathSet`
+## `application/vnd.v3spa.pathset+json`
 
 A set of domains reachable from an initial domain, as returned by
 a path query.
