@@ -278,7 +278,7 @@ This endpoint accepts the following query parameters:
 
 Definitions of JSON types are shown in TypeScript syntax for reference.
 
-## `Result`
+## `application/vnd.v3spa.result+json`
 
 All responses from the server are returned as a JSON object containing
 the server's version, a list of errors, and a result.
@@ -936,3 +936,66 @@ interface PathNode {
   ~ : `string`
 
     ID of the right hand side domain of the connection.
+
+## `application/vnd.lobster`
+
+Format of raw Lobster policy files.
+
+## `application/vnd.v3spa.project+json`
+
+Metadata relating to a stored project, including a list of stored files.
+
+```js
+interface Project {
+  name: string;
+  modules?: ProjectModule[];
+}
+```
+
+### Fields
+
+`conn`
+  ~ : `string`
+
+    Name of the project - matches up with ':name' path parameter in API URLs.
+
+`modules`
+  ~ : `ProjectModule[]`
+
+    List of stored files associated with the project. This field may be absent; for example, when listing projects the `modules` field is not included.
+
+## `ProjectModule`
+
+Metadata relating to a file stored on the server. Files are stored in Lobster format.
+Each file, or "module" may contain zero or more Lobster modules defined using the `mod` keyword.
+
+```js
+interface ProjectModule {
+  name: string;
+}
+```
+
+### Fields
+
+`name`
+  ~ : `string`
+
+    Name of the stored file - matches up with the ':module' path parameter in API URLs.
+
+## `application/vnd.v3spa.projects+json`
+
+Lists projects stored on the server.
+
+```js
+interface Projects {
+  items: Project[];
+}
+```
+
+### Fields
+
+`items`
+
+  ~ : `Project[]`
+
+    List of projects.
