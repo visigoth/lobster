@@ -4,7 +4,7 @@ module V3SPA.Server.ProjectResource where
 
 import Control.Error (note)
 import Control.Monad.IO.Class (liftIO)
-import Data.Aeson (decode)
+import Data.Aeson (Value(Null), decode)
 import Data.Monoid ((<>))
 import Data.String (fromString)
 import Snap
@@ -16,7 +16,6 @@ import V3SPA.Server.Import.SELinux (importModules)
 import V3SPA.Server.Project
 import V3SPA.Server.Snap
 
-import qualified Data.ByteString.Char8 as C
 import qualified Data.ByteString.Lazy  as LBS
 import qualified Snap.Util.FileUploads as F
 
@@ -43,6 +42,7 @@ handleImportSELinux = do
   let m = mkModule ("imported/selinux")
   putModule m lsr project
   respondCreated ("/projects/" <> projName <> "/modules/imported%2Fselinux")
+  respond Null
 
 handleGetProject :: MonadSnap m => m ()
 handleGetProject = do
@@ -52,7 +52,9 @@ handleGetProject = do
     Just proj -> do
       respondOk
       respond proj
-    Nothing -> modifyResponse $ setResponseCode 404
+    Nothing -> do
+      modifyResponse $ setResponseCode 404
+      hoistMiscErr (Left "project not found")
 
 handleDestroyProject :: MonadSnap m => m ()
 handleDestroyProject = do
@@ -61,6 +63,7 @@ handleDestroyProject = do
   case result of
     Just _  -> modifyResponse $ setResponseCode 204
     Nothing -> modifyResponse $ setResponseCode 404
+  respond Null
 
 handleExportSELinux :: MonadSnap m => m ()
 handleExportSELinux = do
@@ -74,6 +77,7 @@ handleExportSELinux = do
       respond (exportSELinux m)
     Nothing -> do
       modifyResponse $ setResponseCode 404
+      hoistMiscErr (Left "Project or module not found.")
 
 handleCreateModules :: MonadSnap m => m ()
 handleCreateModules = do

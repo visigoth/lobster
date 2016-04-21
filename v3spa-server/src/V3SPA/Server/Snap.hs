@@ -60,13 +60,16 @@ readBodyString = T.unpack . E.decodeUtf8 <$> readBody
 -- | Encode a result as JSON and write it to the response.
 writeJSON :: (MonadSnap m, ToJSON a) => a -> m ()
 writeJSON x = do
-  modifyResponse $ setHeader "Content-Type" "application/json"
+  setContentType' resultType
   writeLBS (AP.encodePretty' conf x)
   writeLBS "\r\n"
 
 
 ----------------------------------------------------------------------
 -- Media Types
+
+resultType :: MediaType
+resultType = "application" // "vnd.v3spa.result+json"
 
 formMultipart :: MediaType
 formMultipart = "multipart" // "form-data"

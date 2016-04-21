@@ -84,10 +84,11 @@ Path                                       Method    Request Format             
 `/projects/:name/modules/:module/selinux`  `GET`    -                                     `text/x-type-enforcement`
 `/projects/:name/paths`                    `GET`    -                                     `application/vnd.v3spa.pathset+json`
 
-JSON responses will actually be wrapped in a response of type
-`application/vnd.v3spa.result+json`, which includes an `errors` field. The
-result type described in the table above will appear under a `result` field in
-the top-level wrapper.
+With the exception of the `/projects/:name/modules/:module` endpoints,
+responses will actually be wrapped in a response of type
+`application/vnd.v3spa.result+json`, which includes a `result` and an `errors`
+field. The result type described in the table above will appear under
+a `result` field in the top-level wrapper.
 
 Media Type                            Description
 ----------                            -----------
@@ -197,6 +198,8 @@ a `Location` header with a path to the module that is created.
 If there is an existing file called 'imported/selinux' in the given project
 namespace, it will be overwritten.
 
+If the named project does not exist, it will be created automatically.
+
 ## `POST /projects/:name/modules`
 
 Upload Lobster files in batch. The request format is `multipart/form-data`.
@@ -212,6 +215,8 @@ names that do not conflict with uploaded filenames will not be affected.
 Filenames may include slashes. But note that slashes must be URL-encoded as
 '%2F' when looking up the file by name using, e.g., the
 `/projects/:name/modules/:module` endpoint.
+
+If the named project does not exist, it will be created automatically.
 
 ## `GET /projects/:name/modules/:module`
 

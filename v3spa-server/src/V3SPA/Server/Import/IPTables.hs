@@ -34,4 +34,5 @@ handleImportIptables = method POST $ do
   modifyResponse $ setContentType "application/json"
   body <- readBodyString
   lsr  <- hoistErr $ importIptables body
+  respondOk
   respond (showLobster lsr)
