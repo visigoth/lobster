@@ -371,9 +371,8 @@ processAliasesModule m = processAliasesImplementation (M4.implementation m)
 processPolicyModule :: M4.PolicyModule -> M ()
 processPolicyModule m = processImplementation (M4.implementation m)
 
-processPolicy :: M4.Policy -> M ()
-processPolicy policy = do
-  let modules = M4.policyModules policy
+processPolicy :: [M4.PolicyModule] -> M ()
+processPolicy modules = do
   mapM_ processAliasesModule modules
   mapM_ processPolicyModule  modules
 
@@ -765,10 +764,30 @@ toLobster subattributes policy0 = do
           [ (i, toList ids)
           | ClassPermissionDef i ids _ <- classPermissionDefs policy0 ]
   let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
-  let policy = policy0 { policyModules = map (expandPolicyModule macros) (policyModules policy0) }
-  let action = processPolicy policy >> processAttributes >> processSubAttributes subattributes
+  let modules = map (expandPolicyModule macros) (policyModules policy0)
+  let policy = policy0 { policyModules = modules }
+  let action = processPolicy modules >> processAttributes >> processSubAttributes subattributes
   let (subattrs, finalSt) = runState (runReaderT action initEnv) initSt
   return (outputLobster policy (finalSt, subattrs))
+
+toLobsterModule :: [SubAttribute] -> PolicyModule -> Either Error [L.Decl]
+toLobsterModule subattributes policyModule = do
+  let iface = interfaceElements (interface policyModule)
+  let patternMacros = Map.empty  -- TODO
+  let interfaceMacros =
+        Map.fromList
+          [ (i, stmts)
+          | InterfaceElement InterfaceType _doc i stmts <- iface ]
+  let templateMacros =
+        Map.fromList
+          [ (i, stmts)
+          | InterfaceElement TemplateType _doc i stmts <- iface ]
+  let classSetMacros = Map.empty  -- TODO
+  let macros = Macros (Map.unions [patternMacros, interfaceMacros, templateMacros]) classSetMacros
+  let modules = [expandPolicyModule macros policyModule]
+  let action = processPolicy modules >> processAttributes >> processSubAttributes subattributes
+  let (subattrs, finalSt) = runState (runReaderT action initEnv) initSt
+  return (outputLobster undefined (finalSt, subattrs))
 
 capitalize :: String -> String
 capitalize "" = ""
