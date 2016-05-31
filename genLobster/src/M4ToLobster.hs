@@ -6,6 +6,7 @@ import Control.Monad.Reader
 import Control.Monad.State.Strict
 import Data.Char
 import Data.Foldable (toList)
+import Data.List (foldl')
 import Data.Map (Map)
 import Data.Set (Set)
 import qualified Data.Map as Map
@@ -52,6 +53,7 @@ data St = St
   , domtrans_macros  :: !(Set (S.Identifier, [S.TypeOrAttributeId]))
   , type_modules     :: !(Map S.Identifier M4.ModuleId)
   , type_aliases     :: !(Map S.Identifier S.Identifier)
+  , roles            :: !(Map S.TypeOrAttributeId (Set S.RoleId))
   , unique_supply    :: Int
   }
 
@@ -73,6 +75,7 @@ initSt = St
   , domtrans_macros  = Set.empty
   , type_modules     = Map.empty
   , type_aliases     = Map.empty
+  , roles            = Map.empty
   , unique_supply    = 0
   }
 
@@ -193,6 +196,13 @@ addAttrib attr =
     { attrib_members = addkeyMapSet attr (attrib_members st)
     }
 
+-- TODO: This currently ignores the `Sign` on types and attributes in role statements.
+addRoles :: S.RoleId -> [S.SignedId S.TypeOrAttributeId] -> M ()
+addRoles roleId domains =
+  modify $ \st -> st
+  { roles = foldl' (\m (S.SignedId _ t) -> insertMapSet t roleId m) (roles st) domains
+  }
+
 addTypeAttrib :: S.TypeId -> S.AttributeId -> M ()
 addTypeAttrib ty attr = do
   ty' <- evalType ty
@@ -292,7 +302,7 @@ processStmt stmt =
         , c <- map (S.fromId . S.toId) $ filterSignedId $ toList cl
         ]
     Call _ _ -> return () -- FIXME
-    Role {}           -> return () -- role
+    Role roleId ts    -> addRoles roleId ts
     AttributeRole {}  -> return () -- attribute_role
     RoleAttribute {}  -> return () -- roleattribute
     RoleTransition {} -> return ()
