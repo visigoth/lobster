@@ -8,6 +8,7 @@ import Data.Char
 import Data.Foldable (toList)
 import Data.List (foldl')
 import Data.Map (Map)
+import Data.Maybe (maybeToList)
 import Data.Set (Set)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
@@ -652,6 +653,12 @@ outputDomtransMacro st (n, ds) = (m, domDecl) : concatMap connectArg args
         argDom n = S.toId (ds !! n)
         macroDom = S.mkId (L.nameString d)
 
+rolesAnn :: S.TypeOrAttributeId -> St -> Maybe L.ConnectAnnotation
+rolesAnn ty st = do
+  roleIds <- Map.lookup ty (roles st)
+  let roleNames = fmap (L.annotationName . L.mkName . S.idString) (Set.toList roleIds)
+  return $ L.mkAnnotation (L.mkName "Roles") roleNames
+
 outputLobster :: M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster _ (st, subattrs) =
   domtransDecl :
@@ -668,7 +675,7 @@ outputLobster _ (st, subattrs) =
     typeDecl (ty, classes) = (modId, decl)
       where
         modId  = Map.lookup (S.toId ty) (type_modules st)
-        decl   = L.anonDomain' (toDom ty) (header ++ stmts) [ann]
+        decl   = L.anonDomain' (toDom ty) (header ++ stmts) anns
         header = [ L.newPortPos activePort     C.PosSubject
                  , L.newPortPos subjMemberPort C.PosSubject
                  , L.newPortPos objMemberPort  C.PosObject
@@ -676,7 +683,7 @@ outputLobster _ (st, subattrs) =
         stmts  = [ L.newPortPos (toPort c) C.PosObject
                  | c <- Set.toList classes
                  ]
-        ann    = L.mkAnnotation (L.mkName "Type") []
+        anns   = L.mkAnnotation (L.mkName "Type") [] : maybeToList (rolesAnn ty st)
 
     attrDecl (ty, classes) = (modId, decl)
       where
