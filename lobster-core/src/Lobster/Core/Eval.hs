@@ -18,6 +18,7 @@ module Lobster.Core.Eval
   ( -- * Modules
     Module()
   , moduleDomains
+  , moduleModules
   , modulePorts
   , moduleConnections
   , moduleRootDomain
@@ -32,6 +33,7 @@ module Lobster.Core.Eval
 
     -- * Env
   , envSubdomains
+  , envSubmodules
   , envPorts
 
     -- * Evaluation
