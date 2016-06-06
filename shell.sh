@@ -1,4 +1,15 @@
 #!/bin/bash
+#
+# Use Nix[] to create a build environment that installs stack and the
+# appropriate GHC version. If you use Nix you can run:
+#
+#   $ ./shell.sh
+#
+# That will provide a shell with build dependencies set up. Then run build or
+# test tasks. E.g.:
+#
+#   $ make && make test && make release
+#
 
 function ldPathfromFlags {
   while IFS=' ' read -ra FLAGS; do
