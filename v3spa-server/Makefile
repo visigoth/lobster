@@ -13,4 +13,7 @@ dist/bin:
 ghc:
 	stack setup
 
+serve:
+	stack exec v3spa-server
+
 # vim: set noet:

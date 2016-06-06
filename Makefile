@@ -14,4 +14,7 @@ test:
 	cd lobster-core; stack clean && stack test
 	cd genLobster; stack clean && stack test
 
+serve: all
+	$(MAKE) -C v3spa-server serve
+
 # vim: set noet:
