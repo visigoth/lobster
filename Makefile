@@ -12,5 +12,6 @@ release: all
 test:
 	cd iptables-lobster; stack clean && stack test
 	cd lobster-core; stack clean && stack test
+	cd genLobster; stack clean && stack test
 
 # vim: set noet:
