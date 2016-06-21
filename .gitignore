@@ -2,3 +2,4 @@ cabal-dev
 cabal.sandbox.config
 .cabal-sandbox
 .stack-work
+.vagrant
