@@ -7,6 +7,7 @@ policy_module(dspam, 1.1.0)
 
 type dspam_t;
 type dspam_exec_t;
+type dspam_tmp_t;
 init_daemon_domain(dspam_t, dspam_exec_t)
 
 type dspam_initrc_exec_t;

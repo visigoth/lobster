@@ -49,6 +49,8 @@ gen_tunable(xserver_object_manager, false)
 
 attribute x_domain;
 
+type xdm_spool_t;
+
 # X Events
 attribute xevent_type;
 attribute input_xevent_type;
