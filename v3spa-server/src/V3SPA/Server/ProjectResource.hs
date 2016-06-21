@@ -10,11 +10,12 @@ import Data.String (fromString)
 import Snap
 import System.Directory (getTemporaryDirectory)
 
-import Lobster.Core (readPolicyBS)
+import Lobster.Core (readPolicyBS, moduleJSON)
 import Lobster.SELinux (exportSELinux)
 import V3SPA.Server.Import.SELinux (importModules)
 import V3SPA.Server.Project
 import V3SPA.Server.Snap
+import V3SPA.Server.Parse (queryPred)
 
 import qualified Data.ByteString.Lazy  as LBS
 import qualified Snap.Util.FileUploads as F
@@ -124,9 +125,16 @@ handleDestroyModule = do
     Just _  -> modifyResponse $ setResponseCode 204
     Nothing -> modifyResponse $ setResponseCode 404
 
--- TODO
-handleExportJson = undefined
-
+-- | Export the project in JSON format for visualization.
+handleExportJson :: MonadSnap m => m ()
+handleExportJson = do
+  projName <- getRequiredParam "name"
+  let proj = mkProject projName
+  lobsterSource <- (handleError 404 . note ("Project not found." :: String)) =<< getConcatenatedModuleSources proj
+  m <- hoistErr $ readPolicyBS lobsterSource
+  p <- queryPred m
+  respondOk
+  respond (moduleJSON m p)
 
 ----------------------------------------------------------------------
 -- helpers

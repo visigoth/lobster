@@ -12,6 +12,7 @@
 
 module V3SPA.Server.Parse
   ( handleParse
+  , queryPred
   ) where
 
 import Control.Applicative ((<$>), (<*>))
@@ -55,7 +56,7 @@ isNoDomainPred (ParserOptions Nothing [] []) = True
 isNoDomainPred _ = False
 
 -- | Get a list of text values for a query parameter.
-getTextParams :: BS.ByteString -> V3Snap [Text]
+getTextParams :: MonadSnap m => BS.ByteString -> m [Text]
 getTextParams name = do
   r <- rqQueryParam name <$> getRequest
   return $ maybe [] (map TE.decodeUtf8) r
@@ -68,28 +69,28 @@ readDomainId t =
     _            -> Nothing
 
 -- | Get the maximum depth from query parameters.
-getMaxDepth :: V3Snap (Maybe Int)
+getMaxDepth :: MonadSnap m => m (Maybe Int)
 getMaxDepth = do
   r <- getQueryParam "maxdepth"
   return $ maybe Nothing ((fst <$>) . BS.readInt) r
 
 -- | Get the list of filter domain paths from query parameters.
-getPaths :: V3Snap [Text]
+getPaths :: MonadSnap m => m [Text]
 getPaths = getTextParams "path"
 
 -- | Get the list of filter domain ids from query parameters.
-getIds :: V3Snap [DomainId]
+getIds :: MonadSnap m => m [DomainId]
 getIds = (catMaybes . map readDomainId) <$> getTextParams "id"
 
 -- | Get parser options from the request.
-getParserOptions :: V3Snap ParserOptions
+getParserOptions :: MonadSnap m => m ParserOptions
 getParserOptions =
   ParserOptions <$> getMaxDepth
                 <*> getPaths
                 <*> getIds
 
 -- | Build a filter predicate from query parameters.
-queryPred :: Module l -> V3Snap (DomainPred l)
+queryPred :: MonadSnap m => Module l -> m (DomainPred l)
 queryPred m = do
   opts <- getParserOptions
   if isNoDomainPred opts
@@ -97,14 +98,14 @@ queryPred m = do
     else queryPredFromOpts m opts
 
 -- | Build a filter predicate from parser options.
-queryPredFromOpts :: Module l -> ParserOptions -> V3Snap (DomainPred l)
+queryPredFromOpts :: MonadSnap m => Module l -> ParserOptions -> m (DomainPred l)
 queryPredFromOpts m opts =
   return $ runDomainPredBuilder $ do
     maybeM_ (addPred . maxDepth m)   (optDepth opts)
     mapM_   (addPred . isDomainPath) (optPaths opts)
     mapM_   (addPred . isDomainId)   (optIds opts)
 
--- | "POST /parse" --- parse Lobster to JSON
+-- | "POST /parse" --- parse Lobster to JSON (obsolete version)
 handleParse :: V3Snap ()
 handleParse = method POST $ do
   modifyResponse $ setContentType "application/json"
