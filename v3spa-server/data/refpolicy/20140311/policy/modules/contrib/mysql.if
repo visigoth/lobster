@@ -105,7 +105,7 @@ interface(`mysql_tcp_connect',`
 ########################################
 ## <summary>
 ##	Connect to mysqld with a unix
-#	domain stream socket.
+##	domain stream socket.
 ## </summary>
 ## <param name="domain">
 ##	<summary>
