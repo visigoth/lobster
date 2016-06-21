@@ -1,5 +1,7 @@
 .PHONY: all ghc clean
 
+THIS_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+
 all: ghc dist/bin
 	stack install --local-bin-path dist/bin
 
@@ -14,6 +16,6 @@ ghc:
 	stack setup
 
 serve:
-	stack exec v3spa-server
+	cd $(THIS_DIR)/data && stack exec v3spa-server
 
 # vim: set noet:
