@@ -661,13 +661,10 @@ rolesAnn ty st = do
 outputLobster :: M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster _ (st, subattrs) =
   domtransDecl :
-  [ L.lobsterModule (toMod m) (moduleSubjPort : moduleObjPort : reverse ds)
+  [ L.lobsterModule (toMod m) (reverse ds)
     | (Just m, ds) <- Map.assocs groupedDecls ] ++
   Map.findWithDefault [] Nothing groupedDecls
   where
-    moduleSubjPort = L.newPortPos (L.mkName "module_subj") C.PosSubject
-    moduleObjPort  = L.newPortPos (L.mkName "module_obj")  C.PosObject
-
     isAttr ty =
       Map.member (S.fromId (S.toId ty)) (attrib_members st)
 
