@@ -17,6 +17,12 @@ Jesse Hallett `<jesse@galois.com>`
 
 - Document v3spa-lobster 2.0 interface.
 
+## Revision 4 (29 June 2016):
+
+- Document JSON endpoint for visualization.
+- Document reference policy subattributes file.
+- Document issues with refpolicy syntax errors.
+
 # Introduction
 
 The V3SPA IDE and the Lobster DSL communicate via
@@ -67,23 +73,94 @@ The server will create a directory called `projects` under the working
 directory. Policy files that are uploaded or imported to the server will be
 stored in the `projects` directory.
 
+## V3SPA Reference Policies
+
+Inside the `v3spa-server/data/refpolicy` directory are several versions
+of the standard SELinux Reference Policy that can be used as a base when
+importing SELinux modules.
+
+There are some considerations that should be taking into account when
+adding new reference policies to this directory for use with V3SPA:
+
+### Policy Syntax Errors and Undefined Types
+
+Many released versions of the refpolicy have syntax errors, such as periods
+tokens when there should be commas in allow rules. Also, several modules
+in `contrib` have inconsistent usage of type names, leading to `undefined type`
+errors from the Lobster parser.
+
+It is generally trivial to address these issues so that a policy will work
+with the Lobster Parser.
+
+### Subattributes
+
+SELinux policies often define multiple attributes that are, in essence,
+subclasses of each other, but this relationship is not captured explicitly
+in the policy.
+
+For example, the `corenetwork` modules defines the following types:
+
+```
+attribute port_type;
+attribute defined_port_type;
+```
+
+Based on their names, it seems logical that `defined_port_type` is a
+*subattribute* of `port_type`, and this is borne out by how types are always
+added to `port_type` when they are added to `defined_port_type`:
+
+```
+type afs_bos_port_t, port_type, defined_port_type;
+type afs_fs_port_t, port_type, defined_port_type;
+type afs_ka_port_t, port_type, defined_port_type;
+# etc...
+```
+
+Capturing these subattribute relationships helps us reduce the size of the
+graph by removing redundant attribute membership connections. In order to do
+so, we have added an additional `subattributes` file to each reference policy.
+The `subattributes` file looks like this:
+
+```
+client_packet_type < packet_type
+server_packet_type < packet_type
+
+defined_port_type < port_type
+reserved_port_type < port_type
+unreserved_port_type < port_type
+rpc_port_type < reserved_port_type
+
+non_auth_file_type < file_type
+non_security_file_type < non_auth_file_type
+httpdcontent < non_security_file_type
+lockfile < non_security_file_type
+logfile < non_security_file_type
+pidfile < non_security_file_type
+```
+
+The syntax should be mostly obvious---the left hand attribute is the
+sub-attribute and the right hand attribute is the super-attribute. Currently,
+this file is generated and maintained manually, but it may be possible to do
+an analysis of how attributes are used and deduce these relationships
+automatically.
+
 # V3SPA 2.0 API Endpoints
 
 Path                                       Method    Request Format                       Result Type
 ----                                       ------    --------------                       ---------------
 `/version`                                 `GET`     -                                    `null`
-`/import/iptables`                         `POST`   `text/x-iptables`                     `application/vnd.lobster`
-`/projects`                                `GET`    -                                     `application/vnd.v3spa.projects+json`
-`/projects/:name`                          `POST`   -                                     `application/vnd.v3spa.project+json`
-`/projects/:name`                          `GET`    -                                     `application/vnd.v3spa.project+json`
-`/projects/:name`                          `DELETE` -                                     `null`
-`/projects/:name/import/selinux`           `POST`   `application/vnd.v3spa.selinux+json`  `null`
-`/projects/:name/modules`                  `POST`   `multipart/form-data`                 `application/vnd.v3spa.project+json`
-`/projects/:name/modules/:module`          `GET`    -                                     `application/vnd.lobster`
-`/projects/:name/modules/:module`          `DELETE` -                                     `null`
-`/projects/:name/modules/:module/selinux`  `GET`    -                                     `text/x-type-enforcement`
-`/projects/:mame/modules/:module/json`     `GET`    -                                     `application/vnd.v3spa.module+json`
-`/projects/:name/paths`                    `GET`    -                                     `application/vnd.v3spa.pathset+json`
+`/import/iptables`                         `POST`    `text/x-iptables`                     `application/vnd.lobster`
+`/projects`                                `GET`     -                                     `application/vnd.v3spa.projects+json`
+`/projects/:name`                          `POST`    -                                     `application/vnd.v3spa.project+json`
+`/projects/:name`                          `GET`     -                                     `application/vnd.v3spa.project+json`
+`/projects/:name`                          `DELETE`  -                                     `null`
+`/projects/:name/import/selinux`           `POST`    `application/vnd.v3spa.selinux+json`  `null`
+`/projects/:name/modules`                  `POST`    `multipart/form-data`                 `application/vnd.v3spa.project+json`
+`/projects/:name/modules/:module`          `GET`     -                                     `application/vnd.lobster`
+`/projects/:name/modules/:module`          `DELETE`  -                                     `null`
+`/projects/:name/modules/:module/selinux`  `GET`     -                                     `text/x-type-enforcement`
+`/projects/:name/json`                     `GET`     -                                     `application/vnd.v3spa.module+json`
+`/projects/:name/paths`                    `GET`     -                                     `application/vnd.v3spa.pathset+json`
 
 With the exception of the `/projects/:name/modules/:module` endpoints,
 responses will actually be wrapped in a response of type
@@ -184,12 +261,21 @@ Responds with `404` status if there is no project with the given name.
 
 Delete a project and all of the stored files associated with that project.
 
+## `GET /projects/:name/json`
+
+Convert a Lobster project into a JSON representation for
+visualization. The `POST` body must contain a complete Lobster policy
+definition.
+
+Returns a result of type `application/vnd.v3spa.module+json`. This
+includes a graph of all domains, ports, and connections in the project.
+
 ## `POST /projects/:name/import/selinux`
 
 Convert an SELinux policy module to Lobster, and store the result in the given
 project namespace.
 
-The `POST` body is an SELinux in JSON format.
+The `POST` body is an SELinux policy in JSON format.
 
 In the future this endpoint will create a separate Lobster file for each module
 in the SELinux policy. For the time being, this endpoint will put everything
