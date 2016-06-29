@@ -82,6 +82,7 @@ Path                                       Method    Request Format             
 `/projects/:name/modules/:module`          `GET`    -                                     `application/vnd.lobster`
 `/projects/:name/modules/:module`          `DELETE` -                                     `null`
 `/projects/:name/modules/:module/selinux`  `GET`    -                                     `text/x-type-enforcement`
+`/projects/:mame/modules/:module/json`     `GET`    -                                     `application/vnd.v3spa.module+json`
 `/projects/:name/paths`                    `GET`    -                                     `application/vnd.v3spa.pathset+json`
 
 With the exception of the `/projects/:name/modules/:module` endpoints,
@@ -98,6 +99,7 @@ Media Type                            Description
 `application/vnd.v3spa.projects+json`  list of projects
 `application/vnd.v3spa.result+json`    result JSON type; lists any errors, and reports server API version
 `application/vnd.v3spa.selinux+json`   JSON representation of SELinux policy
+`application/vnd.v3spa.module+json`    description of a module's domains in JSON format
 `text/x-iptables`                      raw IPTables policy file
 `text/x-type-enforcement`              raw SELinux policy formatted as a `.te` file
 
@@ -448,7 +450,7 @@ The first character of the second line in a source file:
 }
 ~~~~
 
-## `Module`
+## `application/vnd.v3spa.module+json`
 
 List of all objects in a Lobster module. Each domain, port, and
 connection has a unique identifier.
