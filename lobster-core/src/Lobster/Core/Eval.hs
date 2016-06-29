@@ -54,6 +54,7 @@ module Lobster.Core.Eval
   , domainClassAnnotation
   , domainIsExplicit
   , domainNegativeConns
+  , domainModule
 
     -- * Ports
   , Port()
@@ -206,6 +207,7 @@ data Domain l = Domain
   , _domainClassAnnotation  :: A.Annotation l
   , _domainIsExplicit       :: Bool
   , _domainNegativeConns    :: S.Set NegativeConn
+  , _domainModule           :: Text
   } deriving (Show, Functor)
 
 instance A.Labeled Domain where
@@ -226,6 +228,7 @@ topDomain l domId = Domain
   , _domainClassAnnotation  = mempty
   , _domainIsExplicit       = False
   , _domainNegativeConns    = S.empty
+  , _domainModule           = ""
   }
 
 -- | Relationship between the left and right domains of a
@@ -289,6 +292,7 @@ data Module l = Module
   , _moduleNextDomainId     :: Int
   , _moduleNextPortId       :: Int
   , _moduleNextConnectionId :: Int
+  , _modulePath             :: [Text]
   } deriving Show
 
 emptyModule :: l -> Module l
@@ -304,6 +308,7 @@ emptyModule l = Module
   , _moduleNextDomainId     = 1
   , _moduleNextPortId       = 0
   , _moduleNextConnectionId = 0
+  , _modulePath             = []
   }
 
 makePrisms ''Value
@@ -457,6 +462,16 @@ lookupEnv m qualName rootEnv = foldl' go (Right rootEnv) (A.getQualifiers qualNa
       note (UndefinedDomain (A.label dom) (A.getVarName dom)) $ do
         (_, modId) <- env ^? envSubdomains . ix (A.getVarName dom)
         m ^? moduleModules . ix modId
+
+-- | Return the current module path.
+getModulePath :: Eval l [Text]
+getModulePath = use modulePath
+
+-- | Return the current module name.
+getModuleName :: Eval l Text
+getModuleName = do
+  path <- getModulePath
+  return $ T.intercalate "::" path
 
 -- | Add a named module to the current environment.
 addModule :: Text -> Eval l ModuleId
@@ -655,6 +670,8 @@ newDomain l name cls ann = do
   domId  <- DomainId <$> (moduleNextDomainId <<+= 1)
   path   <- getMemberPath name
   parent <- use moduleRootDomain
+  mod    <- getModuleName
+
   let dom = Domain { _domainId              = domId
                    , _domainName            = name
                    , _domainPath            = path
@@ -667,6 +684,7 @@ newDomain l name cls ann = do
                    , _domainClassAnnotation = cls ^. classAnnotation
                    , _domainIsExplicit      = cls ^. classIsExplicit
                    , _domainNegativeConns   = S.empty
+                   , _domainModule          = mod
                    }
   -- Add subdomain to current graph
   moduleDomains . at domId ?= dom
@@ -674,11 +692,16 @@ newDomain l name cls ann = do
   return dom
 
 -- | Execute an action in a new environment for a module.
-inModEnv :: ModuleId -> Eval l a -> Eval l a
-inModEnv modId f = do
-  oldMod <- use moduleRootModule
+inModEnv :: Text -> ModuleId -> Eval l a -> Eval l a
+inModEnv name modId f = do
+  oldMod  <- use moduleRootModule
+  oldPath <- use modulePath
+
   moduleRootModule .= modId
+  modulePath       %= (name :)
   result <- f
+
+  modulePath       .= oldPath
   moduleRootModule .= oldMod
   return result
 
@@ -828,7 +851,7 @@ evalStmt _ (A.StmtModuleDecl _ (A.VarName _ name) body) = do
   modId <- case env ^? envSubmodules . ix name of
     Just subEnvId -> return subEnvId
     Nothing       -> addModule name
-  subEnv <- inModEnv modId $ do
+  subEnv <- inModEnv name modId $ do
     evalStmts body
     getEnv
   moduleModules . at modId ?= subEnv

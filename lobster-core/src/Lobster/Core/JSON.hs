@@ -63,6 +63,7 @@ domainJSON m dt =
       , "classAnnotations"  .= (dom ^. domainClassAnnotation)
       , "domainAnnotations" .= (dom ^. domainAnnotation)
       , "srcloc"            .= toJSON (A.label dom)
+      , "module"            .= (dom ^. domainModule)
       ]
 
 instance ToJSON A.Position where
