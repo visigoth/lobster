@@ -497,6 +497,7 @@ interface Domain {
   name: string;
   path: string;
   class: string;
+  module: string;
   subdomains: Map<string, Subdomain>;
   parent: string;
   ports: string[];
@@ -523,6 +524,11 @@ interface Domain {
   ~ : `string`
 
     Name of the class this domain was instantiated from.
+
+`module`
+  ~ : `string`
+
+    Name of the Lobster module this domain is defined in.
 
 `subdomains`
   ~ : `Map<string, Subdomain>`
