@@ -17,6 +17,7 @@ module V3SPA.Server.Parse
 
 import Control.Applicative ((<$>), (<*>))
 import Data.Maybe (catMaybes)
+import Data.Monoid ((<>))
 import Data.Text (Text)
 import Data.Text.Read (decimal)
 import Snap
@@ -93,9 +94,10 @@ getParserOptions =
 queryPred :: MonadSnap m => Module l -> m (DomainPred l)
 queryPred m = do
   opts <- getParserOptions
+  let prune = DomainPred $ pruneModule "selinux__"
   if isNoDomainPred opts
-    then return noDomainPred
-    else queryPredFromOpts m opts
+    then return prune
+    else (queryPredFromOpts m opts) >>= (return . (<> prune))
 
 -- | Build a filter predicate from parser options.
 queryPredFromOpts :: MonadSnap m => Module l -> ParserOptions -> m (DomainPred l)

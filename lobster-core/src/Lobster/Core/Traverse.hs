@@ -404,6 +404,10 @@ maxDepth m x dom = depth m dom <= x
 isDomainId :: DomainId -> Domain l -> Bool
 isDomainId domId dom = domId == dom ^. domainId
 
+-- | Predicate to prune domains in a module.
+pruneModule :: Text -> Domain l -> Bool
+pruneModule name dom = name /= dom ^. domainModule
+
 -- | Match a domain path against a path string.
 --
 -- The second path may end with a wildcard "*" which will match

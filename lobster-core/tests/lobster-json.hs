@@ -100,12 +100,15 @@ maybeM_ f x = maybe (return ()) f x
 
 optionsPred :: Options -> Module l -> DomainPred l
 optionsPred opts m
-  | isNoDomainPred opts = noDomainPred
+  | isNoDomainPred opts = DomainPred prune
   | otherwise =
     runDomainPredBuilder $ do
       maybeM_ (addPred . maxDepth m) (optionDepth opts)
       mapM_ (addPred . isDomainPath) (optionPaths opts)
       mapM_ (addPred . isDomainId) (optionIds opts)
+      addPred prune
+  where
+    prune = pruneModule "selinux__"
 
 main :: IO ()
 main = do

@@ -23,7 +23,7 @@ import Data.Maybe (isJust, catMaybes, fromMaybe)
 import Data.Text (Text)
 
 import Lobster.Core
-import Text.PrettyPrint.Mainland
+import Text.PrettyPrint.Mainland   as PP
 
 import qualified Data.Map          as M
 import qualified Data.Set          as S
@@ -90,7 +90,7 @@ data SEStmt
   | SEAllow    !Allow
   | SETrans    !SEName !SEName !SEName !SEName
   | SECall     !SEName [SEName]   -- m4 macro call
-  deriving (Eq, Ord, Show)
+  | SEMisc     !SEName (Annotation ())
 
 instance Pretty SEName where
   ppr (SEName x) = fromText x
@@ -106,6 +106,11 @@ instance Pretty SEBoolExp where
   ppr (SEOr e1 e2)       = parens (ppr e1 <+> text "||" <+> ppr e2)
   ppr (SEEqual e1 e2)    = parens (ppr e1 <+> text "==" <+> ppr e2)
   ppr (SENotEqual e1 e2) = parens (ppr e1 <+> text "!=" <+> ppr e2)
+
+braceList :: Pretty a => [a] -> Doc
+braceList []  = lbrace <> rbrace
+braceList [x] = ppr x
+braceList xs  = lbrace <+> (sep $ map ppr xs) <+> rbrace
 
 instance Pretty SEStmt where
   ppr (SEAttr name) =
@@ -127,6 +132,42 @@ instance Pretty SEStmt where
                            <+> ppr new <> semi
   ppr (SECall name args) =
     ppr name <> parens (commasep $ map ppr args)
+
+  ppr (SEMisc (SEName ty) ann)
+    | ty == "role"
+    , Just [name] <- lookupAnnotation "Name" ann
+    , Just types <- lookupAnnotation "Types" ann
+      = if null types
+        then text "role" <+> ppr name <> semi
+        else text "role" <+> ppr name <+> braceList types <> semi
+    | ty == "attribute_role"
+    , Just [ExpVar (Unqualified (VarName _ name))] <- lookupAnnotation "Name" ann
+      = text "attribute_role" <+> ppr (SEName name) <> semi
+    | ty == "role_attribute"
+    , Just [ExpVar (Unqualified (VarName _ name))] <- lookupAnnotation "Role" ann
+    , Just attributes <- lookupAnnotation "Attributes" ann
+      = text "roleattribute" <+> ppr (SEName name)
+                             <+> (commasep $ map ppr attributes)
+                             <>  semi
+    | ty == "type_alias"
+    , Just [ExpVar (Unqualified (VarName _ name))] <- lookupAnnotation "Name" ann
+    , Just aliases <- lookupAnnotation "Aliases" ann
+      = text "typealias" <+> ppr (SEName name) <+> braceList aliases <> semi
+    | ty == "role_transition"
+    , Just currentRoles <- lookupAnnotation "CurrentRoles" ann
+    , Just types <- lookupAnnotation "Types" ann
+    , Just [newRole] <- lookupAnnotation "NewRole" ann
+      = text "role_transition" <+> braceList currentRoles
+                               <+> braceList types
+                               <+> ppr newRole
+                               <>  semi
+    | ty == "role_allow"
+      , Just fromRoles <- lookupAnnotation "FromRole" ann
+      , Just toRoles <- lookupAnnotation "ToRole" ann
+        = text "allow" <+> braceList fromRoles
+                       <+> braceList toRoles
+                       <>  semi
+    | otherwise = PP.empty
 
 ----------------------------------------------------------------------
 -- Cross-Module Port Lookups
@@ -213,6 +254,15 @@ domainIsAttr = domainHasAnnotation "Attribute"
 domainIsTypeOrAttr :: Domain l -> Bool
 domainIsTypeOrAttr dom = domainIsType dom || domainIsAttr dom
 
+-- | Return the statement type name if a domain contains an
+-- annotation for a misc. SELinux statement.
+domainIsMiscStmt :: Domain l -> Maybe SEStmt
+domainIsMiscStmt dom =
+  let anns = fmap (const ()) (dom ^. domainAnnotation) in
+    case lookupAnnotation "SysDomain" anns of
+    Just [ExpVar (Unqualified (VarName _ name))] -> Just (SEMisc (SEName name) anns)
+    _ -> Nothing
+
 -- | Return true if a domain is a macro instantiation.
 domainIsMacro :: Domain l -> Maybe (SEName, [SEName])
 domainIsMacro dom =
@@ -248,7 +298,7 @@ portIsModule s
 connIsMembership :: Module l -> Connection l -> Maybe (Domain l, Domain l)
 connIsMembership m conn =
   let portL = m ^. idPort (leftPort m conn)
-      nameL = portL ^. portName                  
+      nameL = portL ^. portName
       domL  = m ^. idDomain (portL ^. portDomain)
       portR = m ^. idPort (rightPort m conn)
       nameR = portR ^. portName
@@ -305,6 +355,10 @@ moduleTypes dt = filter (domainIsType) (allDomains dt)
 moduleAttrs :: DomainTree l -> [Domain l]
 moduleAttrs dt = filter (domainIsAttr) (allDomains dt)
 
+-- | Return SELinux misc. statements for a module.
+moduleMiscStmts :: DomainTree l -> [SEStmt]
+moduleMiscStmts dt = catMaybes $ map domainIsMiscStmt (allDomains dt)
+
 -- | Return all attribute memberships in a module.
 --
 -- XXX I'm not sure this does the right thing for subdomains.
@@ -353,7 +407,7 @@ moduleCalls m = [SECall f args | (f, args) <- moduleMacros m]
 -- TODO: Consider returning a data type here so we can pretty
 -- print it more nicely.
 moduleDecls :: Module l -> [SEStmt]
-moduleDecls m = types ++ attrs ++ typeAttrs ++ allows ++ calls
+moduleDecls m = types ++ attrs ++ typeAttrs ++ allows ++ calls ++ misc
   where
     dtree = domainTree m
     types = moduleTypeDecls dtree
@@ -361,6 +415,7 @@ moduleDecls m = types ++ attrs ++ typeAttrs ++ allows ++ calls
     typeAttrs = moduleTypeAttrDecls m
     allows = moduleAllowDecls m
     calls = moduleCalls m
+    misc = moduleMiscStmts dtree
 
 -- | Export a Lobster module to an SELinux policy file as lazy text.
 exportSELinux :: Module l -> TL.Text

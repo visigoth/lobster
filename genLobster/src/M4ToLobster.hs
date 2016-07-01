@@ -1,4 +1,5 @@
 {-# OPTIONS -Wall #-}
+{-# LANGUAGE OverloadedStrings #-}
 module M4ToLobster where
 
 import Control.Error
@@ -9,9 +10,12 @@ import Data.Foldable (toList)
 import Data.List (foldl')
 import Data.Map (Map)
 import Data.Set (Set)
+import Data.Text (Text)
+
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import qualified Data.MapSet as MapSet
+import qualified Data.Text as T
 
 import SCD.M4.PrettyPrint ()
 import SCD.M4.Syntax hiding (avPerms)
@@ -40,6 +44,12 @@ data AllowRule = AllowRule
   , allowConditions :: [(Either M4.IfdefId S.CondExpr, Bool)]
   } deriving (Eq, Ord, Show)
 
+data SysDomain l = SysDomain
+  { sysDomainType    :: !(C.VarName l)
+  , sysDomainVar     :: !(C.VarName l)
+  , sysDomainArgs    :: [(Text, [C.Exp l])]
+  } deriving Show
+
 data St = St
   { object_classes   :: !(Map S.TypeOrAttributeId (Set S.ClassId))
   , class_perms      :: !(Map S.ClassId (Set S.PermissionId))
@@ -55,6 +65,7 @@ data St = St
   , type_aliases     :: !(Map S.Identifier S.Identifier)
   , roles            :: !(Map S.TypeOrAttributeId (Set S.RoleId))
   , unique_supply    :: Int
+  , sys_domains      :: ![SysDomain C.Span]
   }
 
 processClassId :: S.ClassId
@@ -77,6 +88,7 @@ initSt = St
   , type_aliases     = Map.empty
   , roles            = Map.empty
   , unique_supply    = 0
+  , sys_domains      = []
   }
 
 data Env = Env
@@ -113,6 +125,13 @@ getUnique = do
   put $ st { unique_supply = n + 1 }
   return n
 
+addSysDomain :: Text -> [(Text, [C.Exp C.Span])] -> M ()
+addSysDomain ty args = do
+  n <- getUnique
+  let varName = C.VarName C.emptySpan (T.pack $ "dom" ++ show n)
+  let sysDom = SysDomain (C.VarName C.emptySpan ty) varName args
+  modify $ \st -> st { sys_domains = sysDom : (sys_domains st) }
+
 ----------------------------------------------------------------------
 -- Processing of M4 policy
 
@@ -122,6 +141,15 @@ filterSignedId xs = [ y | y <- ys, y `notElem` zs ]
     (ys, zs) = partitionEithers (map f xs)
     f (S.SignedId S.Positive y) = Left y
     f (S.SignedId S.Negative z) = Right z
+
+identifierToExp :: S.IsIdentifier a => a -> C.Exp C.Span
+identifierToExp x = C.ExpVar (C.Unqualified (C.VarName C.emptySpan (T.pack $ S.idString $ S.toId x)))
+
+signedIdToExp :: S.IsIdentifier a => S.SignedId a -> C.Exp C.Span
+signedIdToExp signedId =
+  case signedId of
+    S.SignedId S.Negative x -> C.ExpUnaryOp C.emptySpan C.UnaryOpNot (identifierToExp x)
+    S.SignedId S.Positive x -> identifierToExp x
 
 fromSelf :: S.TypeOrAttributeId -> S.Self -> S.TypeOrAttributeId
 fromSelf x S.Self = x
@@ -302,16 +330,41 @@ processStmt stmt =
         , c <- map (S.fromId . S.toId) $ filterSignedId $ toList cl
         ]
     Call _ _ -> return () -- FIXME
-    Role roleId ts    -> addRoles roleId ts
-    AttributeRole {}  -> return () -- attribute_role
-    RoleAttribute {}  -> return () -- roleattribute
-    RoleTransition {} -> return ()
-    RoleAllow {}      -> return ()
+    Role roleId ts    -> do
+      addRoles roleId ts
+      addSysDomain "role"
+        [ ("Name", [identifierToExp roleId])
+        , ("Types", map signedIdToExp ts)
+        ]
+    AttributeRole x ->
+      addSysDomain "attribute_role"
+        [ ("Name", [identifierToExp x])
+        ]
+    RoleAttribute roleId attrs ->
+      addSysDomain "role_attribute"
+        [ ("Role", [identifierToExp roleId])
+        , ("Attributes", map identifierToExp (toList attrs))
+        ]
+    RoleTransition currentRoles typeIds newRole ->
+      addSysDomain "role_transition"
+        [ ("CurrentRoles", map identifierToExp (toList currentRoles))
+        , ("Types", map signedIdToExp (toList typeIds))
+        , ("NewRole", [identifierToExp newRole])
+        ]
+    RoleAllow fromRoles toRoles ->
+      addSysDomain "role_allow"
+        [ ("FromRole", map identifierToExp (toList fromRoles))
+        , ("ToRole", map identifierToExp (toList toRoles))
+        ]
     Attribute attr -> addDeclaration attr >> addAttrib attr
     Type t aliases attrs  -> do
       addDeclaration t
       addTypeAttribs t attrs
-    TypeAlias t aliases   -> return ()
+    TypeAlias t aliases ->
+      addSysDomain "type_alias"
+        [ ("Name", [identifierToExp t])
+        , ("Aliases", map identifierToExp (toList aliases))
+        ]
     TypeAttribute t attrs -> addTypeAttribs t (toList attrs)
     RangeTransition {} -> return ()
     TeNeverAllow {}    -> return () -- neverallow
@@ -658,12 +711,22 @@ rolesAnn ty st = do
   let roleNames = fmap (L.annotationName . L.mkName . S.idString) (Set.toList roleIds)
   return $ L.mkAnnotation (L.mkName "Roles") roleNames
 
+sysDomainToLobster :: SysDomain C.Span -> L.Decl
+sysDomainToLobster sysDom =
+  L.anonDomain' (sysDomainVar sysDom) []
+    ([ L.mkAnnotation (L.mkName "SysDomain") [L.annotationName $ sysDomainType sysDom]
+     ] ++ map go (sysDomainArgs sysDom))
+  where
+    go (name, exprs) =
+      L.mkAnnotation (C.VarName C.emptySpan name) exprs
+
 outputLobster :: M4.Policy -> (St, [SubAttribute]) -> [L.Decl]
 outputLobster _ (st, subattrs) =
   domtransDecl :
   [ L.lobsterModule (toMod m) (reverse ds)
     | (Just m, ds) <- Map.assocs groupedDecls ] ++
-  Map.findWithDefault [] Nothing groupedDecls
+  Map.findWithDefault [] Nothing groupedDecls ++
+  [selinuxModule]
   where
     isAttr ty =
       Map.member (S.fromId (S.toId ty)) (attrib_members st)
@@ -750,6 +813,10 @@ outputLobster _ (st, subattrs) =
 
     groupedDecls :: Map (Maybe M4.ModuleId) [L.Decl] -- in reverse order
     groupedDecls = Map.fromListWith (++) [ (m, [d]) | (m, d) <- taggedDecls ]
+
+    selinuxModule :: L.Decl
+    selinuxModule =
+      L.lobsterModule (L.mkName "selinux__") $ reverse $ map sysDomainToLobster (sys_domains st)
 
 ----------------------------------------------------------------------
 
