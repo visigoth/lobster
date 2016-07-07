@@ -69,9 +69,9 @@ be shortened by excluding the `net::` prefix.
 
 ## Integration with v3spa
 
-We plan to update the API of the v3spa service to allow projects to be broken
-up into multiple files. The service will accept uploads of individually-changed
-files, and will handle combining the changes with the rest of the project. We
+We have updated the API of the v3spa service to allow projects to be broken
+up into multiple files. The service accepts uploads of individually-changed
+files, and handles combining the changes with the rest of the project. We
 hope that support for modules will make spreading code over multiple files more
 manageable.
 
