@@ -1,6 +1,7 @@
 # v3spa-lobster API Reference
 
 James Bielman `<jamesjb@galois.com>`
+
 Jesse Hallett `<jesse@galois.com>`
 
 # Revision History

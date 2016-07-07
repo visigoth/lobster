@@ -5,11 +5,11 @@
 # All Rights Reserved.
 #
 
-PDF_FILES := v3spa-modules.pdf
+PDF_FILES := phase2-report.pdf
 
 all: $(PDF_FILES)
 
-v3spa-modules.pdf: modules.md
+%.pdf: %.md
 	@echo "PANDOC      $@"
 	@pandoc -V documentclass=galois-proposal -f markdown+simple_tables -t latex -o $@ $<
 

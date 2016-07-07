@@ -1,3 +1,9 @@
+# v3spa-lobster Phase 2 Report
+
+James Bielman `<jamesjb@galois.com>`
+
+Jesse Hallett `<jesse@galois.com>`
+
 # Modules in Lobster
 
 Lobster supports modules of 2016-02-09 (commit eee438).
@@ -73,7 +79,8 @@ We have updated the API of the v3spa service to allow projects to be broken
 up into multiple files. The service accepts uploads of individually-changed
 files, and handles combining the changes with the rest of the project. We
 hope that support for modules will make spreading code over multiple files more
-manageable.
+manageable. These changes are documented in the **V3SPA 2.0 API Reference**
+document.
 
 ## Example
 
@@ -126,4 +133,35 @@ domains in the `system` and `net` modules.
 
       application.log --> system::syslog.log;
     }
+
+# Enhanced SELinux Import/Export
+
+Lobster 2.x contains a mechanism for supporting constructs in the SELinux
+language that are not part of the type enforcement graph. These statements
+are represented as domains in the special `selinux__` module, which is
+ignored by normal analysis. Arguments to these statements are stored in
+annotations on these domains.
+
+For example, given the following declarations:
+
+    role system_r httpd_passwd_t;
+    typealias httpd_unconfined_rw_content_t { httpd_unconfined_script_rw_t httpd_unconfined_content_rw_t };
+    role_transition unconfined_r direct_init_entry system_r;
+
+Lobster will generate the following module and domains:
+
+    mod selinux__ {
+      [SysDomain(role), Name(system_r), Types(httpd_passwd_t)]
+      domain dom40 = {};
+
+      [SysDomain(type_alias), Name(httpd_unconfined_rw_content_t),
+       Aliases(httpd_unconfined_script_rw_t, httpd_unconfined_content_rw_t)]
+      domain dom51 = {};
+
+      [SysDomain(role_transition), CurrentRoles(unconfined_r), Types(direct_init_entry), NewRole(system_r)]
+      domain dom77 = {};
+    }
+
+These special annotations used by the Lobster export code to reconstruct these
+statements in their original form.
 
