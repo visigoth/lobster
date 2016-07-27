@@ -107,10 +107,16 @@ instance Pretty SEBoolExp where
   ppr (SEEqual e1 e2)    = parens (ppr e1 <+> text "==" <+> ppr e2)
   ppr (SENotEqual e1 e2) = parens (ppr e1 <+> text "!=" <+> ppr e2)
 
-braceList :: Pretty a => [a] -> Doc
+braceList :: [Exp a] -> Doc
 braceList []  = lbrace <> rbrace
-braceList [x] = ppr x
-braceList xs  = lbrace <+> (sep $ map ppr xs) <+> rbrace
+braceList [x] = pprId x
+braceList xs  = lbrace <+> (sep $ map pprId xs) <+> rbrace
+
+-- | Pretty print an identifier, stripping quotes off of escaped string
+-- literals. Used for "SEMisc" annotations.
+pprId :: Exp a -> Doc
+pprId (ExpString (LitString _ x)) = PP.fromText x
+pprId expr = ppr expr
 
 instance Pretty SEStmt where
   ppr (SEAttr name) =
@@ -138,8 +144,8 @@ instance Pretty SEStmt where
     , Just [name] <- lookupAnnotation "Name" ann
     , Just types <- lookupAnnotation "Types" ann
       = if null types
-        then text "role" <+> ppr name <> semi
-        else text "role" <+> ppr name <+> braceList types <> semi
+        then text "role" <+> pprId name <> semi
+        else text "role" <+> pprId name <+> braceList types <> semi
     | ty == "attribute_role"
     , Just [ExpVar (Unqualified (VarName _ name))] <- lookupAnnotation "Name" ann
       = text "attribute_role" <+> ppr (SEName name) <> semi
@@ -147,7 +153,7 @@ instance Pretty SEStmt where
     , Just [ExpVar (Unqualified (VarName _ name))] <- lookupAnnotation "Role" ann
     , Just attributes <- lookupAnnotation "Attributes" ann
       = text "roleattribute" <+> ppr (SEName name)
-                             <+> (commasep $ map ppr attributes)
+                             <+> (commasep $ map pprId attributes)
                              <>  semi
     | ty == "type_alias"
     , Just [ExpVar (Unqualified (VarName _ name))] <- lookupAnnotation "Name" ann
@@ -159,7 +165,7 @@ instance Pretty SEStmt where
     , Just [newRole] <- lookupAnnotation "NewRole" ann
       = text "role_transition" <+> braceList currentRoles
                                <+> braceList types
-                               <+> ppr newRole
+                               <+> pprId newRole
                                <>  semi
     | ty == "role_allow"
       , Just fromRoles <- lookupAnnotation "FromRole" ann

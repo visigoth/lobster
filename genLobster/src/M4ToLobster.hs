@@ -143,7 +143,14 @@ filterSignedId xs = [ y | y <- ys, y `notElem` zs ]
     f (S.SignedId S.Negative z) = Right z
 
 identifierToExp :: S.IsIdentifier a => a -> C.Exp C.Span
-identifierToExp x = C.ExpVar (C.Unqualified (C.VarName C.emptySpan (T.pack $ S.idString $ S.toId x)))
+identifierToExp x =
+  let s = T.pack $ S.idString $ S.toId x in
+    -- Note: If the SELinux identifier would be confused for a Lobster
+    -- type due to an initial upper-case letter, we turn it into a string
+    -- literal, which is also supported by the exporter.
+    if isUpper (T.head s)
+      then C.ExpString (C.LitString C.emptySpan s)
+      else C.ExpVar (C.Unqualified (C.VarName C.emptySpan s))
 
 signedIdToExp :: S.IsIdentifier a => S.SignedId a -> C.Exp C.Span
 signedIdToExp signedId =
