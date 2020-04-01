@@ -14,7 +14,14 @@ packages:
 - '../SCD'
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
-extra-deps: []
+extra-deps:
+- base-orphans-0.8.2@sha256:40ef37ed043aac2cbb6c538fdebfc62e601ee65ee161e4a6327452133b574d7e,2958
+- deepseq-1.3.0.2@sha256:4d513aff21f43be3d3ab166f6cd19b29e2eaad487ce2eca59159c61d91d72f3e,1983
+- errors-1.4.7@sha256:97a05d6f0f833181e137861ced517202e40357f26241627551e3795482ca6f7b,1084
+- filepath-1.3.0.2@sha256:42c2b0c550f4c73d044f186a58e34285632705b6936dc24fb6012eb10bf70cc7,2044
+- mainland-pretty-0.2.7.2@sha256:76d95b87fa38a79188f63c11838a1b70ea44de70e2caf399c4711b55850df71a,1362
+- mtl-2.1.3.1@sha256:a4283d5070cef5061aa8888c88baf50cd2db1904b254701321a93cf6c0835a11,1618
+- transformers-0.3.0.0@sha256:4ec3dd53be60415dad46e00ec6c7f78bdc37dcda1670cf5abe5c480719b78b60,2318
 
 # Override default flag values for local packages and extra-deps
 flags: {}
